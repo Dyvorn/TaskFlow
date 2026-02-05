@@ -4,7 +4,7 @@ import json
 import shutil
 import uuid
 import webbrowser
-import traceback
+import traceback  
 
 # Global exception handler to catch startup crashes (defined early)
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -31,14 +31,16 @@ from PyQt6.QtCore import (
     pyqtSignal, QThread, QRect, QPoint
 )
 from PyQt6.QtGui import (
-    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap
+    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap,
+    QPainter, QBrush, QIcon
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QFrame, QScrollArea,
     QGraphicsDropShadowEffect, QMenu,
     QListWidget, QListWidgetItem, QStackedWidget, QTextEdit,
-    QComboBox, QInputDialog, QSplitter, QMessageBox, QProgressBar
+    QComboBox, QInputDialog, QSplitter, QMessageBox, QProgressBar,
+    QSystemTrayIcon
 )
 from PyQt6.QtCore import QMimeData
 
@@ -590,6 +592,8 @@ class UltimateTaskFlow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(WIN_W, WIN_H)
 
+        self._setup_tray()
+
         root = QWidget()
         self.setCentralWidget(root)
         root_lay = QVBoxLayout(root)
@@ -620,6 +624,34 @@ class UltimateTaskFlow(QMainWindow):
         self._clamp_to_screen()
         if self.state.get("ui", {}).get("collapsed", False):
             self._snap(self._collapsed_geometry(), animated=False)
+
+    def _setup_tray(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        # Create a simple icon programmatically
+        pixmap = QPixmap(32, 32)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setBrush(QBrush(QColor(GOLD)))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(4, 4, 24, 24, 6, 6)
+        painter.end()
+        
+        self.tray_icon.setIcon(QIcon(pixmap))
+        self.tray_icon.activated.connect(self._tray_activated)
+        self.tray_icon.show()
+        
+        menu = QMenu()
+        menu.addAction("Show TaskFlow", self._restore_from_tray)
+        menu.addAction("Quit", self._quit)
+        self.tray_icon.setContextMenu(menu)
+
+    def _tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            if self.isVisible():
+                self._minimize_to_tray()
+            else:
+                self._restore_from_tray()
 
     def _open_header_menu(self, pos):
         menu = QMenu(self)
@@ -699,9 +731,25 @@ class UltimateTaskFlow(QMainWindow):
 
     def enterEvent(self, event):
         self._auto_timer.stop()
+        # Speed detection for opening
         if self.state.get("ui", {}).get("collapsed", False):
-            self.toggle_collapse()
+            self._entry_pos = QCursor.pos()
+            QTimer.singleShot(20, self._resolve_entry_speed)
         super().enterEvent(event)
+
+    def _resolve_entry_speed(self):
+        if not self.state.get("ui", {}).get("collapsed", False):
+            return
+        if not self.frameGeometry().contains(QCursor.pos()):
+            return
+            
+        curr = QCursor.pos()
+        dist = (curr - self._entry_pos).manhattanLength()
+        
+        # If moved more than 10px in 20ms -> fast entry
+        # Fast: 150ms, Slow: 400ms
+        dur = 150 if dist > 10 else 400
+        self.toggle_collapse(duration=dur)
 
     def leaveEvent(self, event):
         self._schedule_autocollapse()
@@ -729,6 +777,11 @@ class UltimateTaskFlow(QMainWindow):
         if isinstance(w, (QPushButton, QLineEdit, QComboBox)):
             return
         self._dragging = True
+        
+        # Visual feedback when dragging collapsed handle
+        if self.state.get("ui", {}).get("collapsed", False):
+             self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:0px;border:2px solid {GOLD};}}")
+
         self._drag_offset = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
         self._mark_busy(2500)
 
@@ -744,11 +797,25 @@ class UltimateTaskFlow(QMainWindow):
         if e.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             if self.state.get("ui", {}).get("collapsed", False):
+                # Update logic for multi-screen / side switching
+                self._update_geom_after_drag()
+                
+                # Restore invisible style and correct alignment
+                side = self._collapse_side()
+                self._update_layout_for_collapse(True, side)
+                
                 # allow repositioning the collapsed handle too
                 self._snap(self._collapsed_geometry(), animated=False)
             else:
                 self._clamp_to_screen()
                 self._remember_expanded_geom()
+
+    def _minimize_to_tray(self):
+        self.hide()
+
+    def _restore_from_tray(self):
+        self.show()
+        self.activateWindow()
 
     # ---------- UI ----------
     def _build_header(self):
@@ -779,6 +846,15 @@ class UltimateTaskFlow(QMainWindow):
         self.btn_tasks.clicked.connect(lambda: self._switch_tab("Tasks"))
         self.btn_notes.clicked.connect(lambda: self._switch_tab("Notes"))
 
+        self.btn_minimize = QPushButton("−")
+        self.btn_minimize.setFixedSize(30, 30)
+        self.btn_minimize.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_minimize.setStyleSheet(
+            f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;}}"
+            f"QPushButton:hover{{background:{HOVER_BG};color:{TEXT_WHITE};}}"
+        )
+        self.btn_minimize.clicked.connect(self._minimize_to_tray)
+
         self.btn_collapse = QPushButton("<")
         self.btn_collapse.setFixedSize(30, 30)
         self.btn_collapse.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -800,6 +876,7 @@ class UltimateTaskFlow(QMainWindow):
         lay.addWidget(self.btn_tasks)
         lay.addWidget(self.btn_notes)
         lay.addStretch()
+        lay.addWidget(self.btn_minimize)
         lay.addWidget(self.btn_collapse)
         lay.addWidget(self.btn_close)
 
@@ -1061,24 +1138,70 @@ class UltimateTaskFlow(QMainWindow):
         y = max(scr.top(), min(g.y(), scr.bottom() - g.height()))
         self.move(x, y)
 
+    def _update_geom_after_drag(self):
+        if not self._last_expanded_geom:
+            return
+
+        scr = self.screen().availableGeometry()
+        g = self.geometry()
+        side = self._collapse_side()
+        
+        w = self._last_expanded_geom.width()
+        h = self._last_expanded_geom.height()
+        
+        if side in ("left", "right"):
+            new_y = max(scr.top(), min(g.y(), scr.bottom() - h))
+            if side == "left":
+                new_x = scr.left() + 10
+            else:
+                new_x = scr.right() - w - 10
+        else:
+            new_x = max(scr.left(), min(g.x(), scr.right() - w))
+            if side == "top":
+                new_y = scr.top() + 50
+            else:
+                new_y = scr.bottom() - h - 50
+                
+        self._last_expanded_geom = QRect(int(new_x), int(new_y), w, h)
+
     def _collapse_side(self) -> str:
         scr = self.screen().availableGeometry()
-        g = self._last_expanded_geom or self.geometry()
+        g = self.geometry()
+        
         center_x = g.x() + g.width() / 2
-        return "left" if center_x < (scr.x() + scr.width() / 2) else "right"
+        center_y = g.y() + g.height() / 2
+
+        # If in the middle third horizontally, check vertical
+        if scr.left() + scr.width() / 3 < center_x < scr.right() - scr.width() / 3:
+            if center_y < scr.top() + scr.height() / 2:
+                return "top"
+            else:
+                return "bottom"
+        else:
+            return "left" if center_x < (scr.x() + scr.width() / 2) else "right"
 
     def _collapsed_geometry(self) -> QRect:
         scr = self.screen().availableGeometry()
         g = self._last_expanded_geom or self.geometry()
-        y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
         side = self._collapse_side()
 
         if side == "left":
+            y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
             x = scr.left() - (COLLAPSED_W - COLLAPSED_VISIBLE)
-        else:
+            return QRect(int(x), int(y), COLLAPSED_W, WIN_H)
+        elif side == "right":
+            y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
             x = scr.right() - COLLAPSED_VISIBLE
-
-        return QRect(int(x), int(y), COLLAPSED_W, WIN_H)
+            return QRect(int(x), int(y), COLLAPSED_W, WIN_H)
+        elif side == "top":
+            x = max(scr.left(), min(g.x(), scr.right() - WIN_W))
+            y = scr.top() - (COLLAPSED_W - COLLAPSED_VISIBLE)
+            # For top/bottom, we make it a horizontal tab (WIN_W wide, COLLAPSED_W high)
+            return QRect(int(x), int(y), WIN_W, COLLAPSED_W)
+        else: # bottom
+            x = max(scr.left(), min(g.x(), scr.right() - WIN_W))
+            y = scr.bottom() - COLLAPSED_VISIBLE
+            return QRect(int(x), int(y), WIN_W, COLLAPSED_W)
 
     def _expanded_geometry(self) -> QRect:
         scr = self.screen().availableGeometry()
@@ -1092,12 +1215,12 @@ class UltimateTaskFlow(QMainWindow):
         y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
         return QRect(int(x), int(y), WIN_W, WIN_H)
 
-    def _snap(self, target: QRect, animated: bool = True):
+    def _snap(self, target: QRect, animated: bool = True, duration: int = 260):
         if not animated:
             self.setGeometry(target)
             return
         self.geom_anim = QPropertyAnimation(self, b"geometry")
-        self.geom_anim.setDuration(260)
+        self.geom_anim.setDuration(duration)
         self.geom_anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.geom_anim.setStartValue(self.geometry())
         self.geom_anim.setEndValue(target)
@@ -1638,7 +1761,25 @@ class UltimateTaskFlow(QMainWindow):
             self.state["ui"]["active_tab"] = name
             self._schedule_save()
 
-    def toggle_collapse(self):
+    def _update_layout_for_collapse(self, collapsed: bool, side: str):
+        root_lay = self.centralWidget().layout()
+        if collapsed:
+            root_lay.setContentsMargins(0, 0, 0, 0)
+            # Invisible handle that catches mouse events (0.01 alpha)
+            self.container.setStyleSheet(f"#container{{background:rgba(0,0,0,0.01);border-radius:0px;border:none;}}")
+            
+            if side == "top":
+                # If collapsed to top (bottom visible), push content to bottom
+                self.main.setAlignment(Qt.AlignmentFlag.AlignBottom)
+            else:
+                # For bottom/left/right, top alignment is fine
+                self.main.setAlignment(Qt.AlignmentFlag.AlignTop)
+        else:
+            root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
+            self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
+            self.main.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    def toggle_collapse(self, duration: int = 260):
         collapsed = not bool(self.state.get("ui", {}).get("collapsed", False))
 
         if collapsed:
@@ -1652,12 +1793,16 @@ class UltimateTaskFlow(QMainWindow):
         self.btn_tasks.setVisible(not collapsed)
         self.btn_notes.setVisible(not collapsed)
 
+        # Update layout to ensure the handle is visible in the small window
+        side = self._collapse_side() if collapsed else "left"
+        self._update_layout_for_collapse(collapsed, side)
+
         self._schedule_save()
 
         if collapsed:
-            self._snap(self._collapsed_geometry(), animated=True)
+            self._snap(self._collapsed_geometry(), animated=True, duration=duration)
         else:
-            self._snap(self._expanded_geometry(), animated=True)
+            self._snap(self._expanded_geometry(), animated=True, duration=duration)
 
     def _focus_add(self):
         if self.state.get("ui", {}).get("collapsed", False):
@@ -1680,6 +1825,11 @@ class UltimateTaskFlow(QMainWindow):
         self.stack.setVisible(not collapsed)
         self.btn_tasks.setVisible(not collapsed)
         self.btn_notes.setVisible(not collapsed)
+        
+        # Restore layout state on startup
+        if collapsed:
+            side = self._collapse_side()
+            self._update_layout_for_collapse(True, side)
 
     def _rollover_if_new_day(self):
         last = self.state.get("last_opened", _today_str())
