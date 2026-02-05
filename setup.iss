@@ -1,8 +1,8 @@
 [Setup]
 ; Basic Application Information
-AppId={D81329C6-89AB-4567-1234-CDEF01234567}
+AppId={{D81329C6-89AB-4567-1234-CDEF01234567}
 AppName=TaskFlow
-AppVersion=1.1
+AppVersion=1.2
 AppPublisher=Lennard Finn Penzler
 
 ; Install to the user's local application data folder so the app can save its JSON file without admin rights
@@ -11,7 +11,7 @@ DisableProgramGroupPage=yes
 
 ; Output the installer to the current project folder
 OutputDir=.
-OutputBaseFilename=TaskFlow_Setup_v1.1
+OutputBaseFilename=TaskFlow_Setup_v1.2
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
