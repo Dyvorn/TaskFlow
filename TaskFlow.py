@@ -12,12 +12,12 @@ def global_exception_handler(exc_type, exc_value, exc_tb):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
         return
     error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    print(f"CRITICAL ERROR:\n{error_msg}", file=sys.stderr)
     try:
         import ctypes
         ctypes.windll.user32.MessageBoxW(0, f"Startup Error:\n{error_msg}", "TaskFlow Crash", 0x10)
     except:
         pass
+    sys.exit(1)
 sys.excepthook = global_exception_handler
 
 try:
@@ -47,7 +47,7 @@ from PyQt6.QtCore import QMimeData
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
 VERSION = "1.0"
-UPDATE_URL = "https://your-server.com/path/to/version.json"  # <-- IMPORTANT: Change this URL
+UPDATE_URL = "https://raw.githubusercontent.com/Dyvorn/TaskFlow/main/version.json"
 
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -590,6 +590,37 @@ class UltimateTaskFlow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(WIN_W, WIN_H)
 
+        root = QWidget()
+        self.setCentralWidget(root)
+        root_lay = QVBoxLayout(root)
+        root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
+
+        self.container = QFrame()
+        self.container.setObjectName("container")
+        self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
+        root_lay.addWidget(self.container)
+
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(22)
+        shadow.setColor(QColor(0, 0, 0, 130))
+        shadow.setOffset(0, 6)
+        self.container.setGraphicsEffect(shadow)
+
+        self.main = QVBoxLayout(self.container)
+        self.main.setContentsMargins(0, 0, 0, 0)
+        self.main.setSpacing(0)
+
+        self._build_header()
+        self._build_stack()
+        self._wire_shortcuts()
+
+        self._apply_ui_state()
+        self._remember_expanded_geom()
+
+        self._clamp_to_screen()
+        if self.state.get("ui", {}).get("collapsed", False):
+            self._snap(self._collapsed_geometry(), animated=False)
+
     def _open_header_menu(self, pos):
         menu = QMenu(self)
         menu.setStyleSheet(
@@ -633,37 +664,6 @@ class UltimateTaskFlow(QMainWindow):
                 webbrowser.open(download_url)
         else:
             QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
-
-        root = QWidget()
-        self.setCentralWidget(root)
-        root_lay = QVBoxLayout(root)
-        root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
-
-        self.container = QFrame()
-        self.container.setObjectName("container")
-        self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
-        root_lay.addWidget(self.container)
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(22)
-        shadow.setColor(QColor(0, 0, 0, 130))
-        shadow.setOffset(0, 6)
-        self.container.setGraphicsEffect(shadow)
-
-        self.main = QVBoxLayout(self.container)
-        self.main.setContentsMargins(0, 0, 0, 0)
-        self.main.setSpacing(0)
-
-        self._build_header()
-        self._build_stack()
-        self._wire_shortcuts()
-
-        self._apply_ui_state()
-        self._remember_expanded_geom()
-
-        self._clamp_to_screen()
-        if self.state.get("ui", {}).get("collapsed", False):
-            self._snap(self._collapsed_geometry(), animated=False)
 
     # ---------- Helpers ----------
     def _focus_is_text_entry(self) -> bool:
@@ -1696,7 +1696,6 @@ class UltimateTaskFlow(QMainWindow):
 
 if __name__ == "__main__":
     try:
-        print("Starting TaskFlow...")
         app = QApplication(sys.argv)
         app.setFont(QFont("Segoe UI", 10))
 
@@ -1719,5 +1718,4 @@ if __name__ == "__main__":
             import ctypes
             ctypes.windll.user32.MessageBoxW(0, err_msg, "TaskFlow Error", 0x10)
         except:
-            print(err_msg)
-            input("Press Enter to close...")
+            pass
