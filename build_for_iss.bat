@@ -5,7 +5,7 @@ echo ========================================================
 echo.
 
 echo [1/4] Installing dependencies...
-pip install pyinstaller requests PyQt6
+pip install pyinstaller requests PyQt6 keyboard
 
 echo.
 echo [2/4] Cleaning workspace...

@@ -4,9 +4,7 @@ import json
 import shutil
 import uuid
 import webbrowser
-import traceback  
-import subprocess
-import tempfile
+import traceback
 
 # Global exception handler to catch startup crashes (defined early)
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -14,18 +12,24 @@ def global_exception_handler(exc_type, exc_value, exc_tb):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
         return
     error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    print(f"CRITICAL ERROR:\n{error_msg}", file=sys.stderr)
     try:
         import ctypes
         ctypes.windll.user32.MessageBoxW(0, f"Startup Error:\n{error_msg}", "TaskFlow Crash", 0x10)
     except:
         pass
-    sys.exit(1)
 sys.excepthook = global_exception_handler
 
 try:
     import requests
 except ImportError:
     requests = None
+
+try:
+    import keyboard
+except ImportError:
+    keyboard = None
+
 from datetime import datetime, date
 
 from PyQt6.QtCore import (
@@ -33,8 +37,7 @@ from PyQt6.QtCore import (
     pyqtSignal, QThread, QRect, QPoint
 )
 from PyQt6.QtGui import (
-    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap,
-    QPainter, QBrush, QIcon
+    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -42,7 +45,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QMenu,
     QListWidget, QListWidgetItem, QStackedWidget, QTextEdit,
     QComboBox, QInputDialog, QSplitter, QMessageBox, QProgressBar,
-    QSystemTrayIcon, QProgressDialog
+    QDialog, QSystemTrayIcon, QProgressDialog
 )
 from PyQt6.QtCore import QMimeData
 
@@ -50,8 +53,8 @@ from PyQt6.QtCore import QMimeData
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "1.2"
-UPDATE_URL = "https://raw.githubusercontent.com/Dyvorn/TaskFlow/main/version.json"
+VERSION = "1.0"
+UPDATE_URL = "https://your-server.com/path/to/version.json"  # <-- IMPORTANT: Change this URL
 
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -115,7 +118,6 @@ def load_state() -> dict:
         "notes": {"groups": {"General": []}, "order": ["General"]},
         "sections": SECTIONS.copy(),
         "ui": {"collapsed": False, "active_tab": "Tasks", "section_states": {}},
-        "settings": {"auto_update": True},
     }
 
     def _read(p):
@@ -143,7 +145,6 @@ def load_state() -> dict:
     data.setdefault("ui", default["ui"])
     data.setdefault("last_opened", _today_str())
     data.setdefault("sections", default["sections"])
-    data.setdefault("settings", default["settings"])
 
     data["notes"].setdefault("groups", {"General": []})
     data["notes"].setdefault("order", list(data["notes"]["groups"].keys()) or ["General"])
@@ -227,38 +228,61 @@ class UpdateCheckThread(QThread):
             self.finished.emit({"error": f"Could not connect to the update server:\n{str(e)}"})
 
 
-class DownloadUpdateThread(QThread):
-    progress = pyqtSignal(int)
-    finished = pyqtSignal(str)
+class QuickCaptureDialog(QDialog):
+    submitted = pyqtSignal(str)
 
-    def __init__(self, url, dest_path):
-        super().__init__()
-        self.url = url
-        self.dest_path = dest_path
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.resize(600, 70)
 
-    def run(self):
-        if not requests:
-            self.finished.emit("error: The 'requests' library is missing.")
-            return
-        try:
-            response = requests.get(self.url, stream=True, timeout=30)
-            response.raise_for_status()
-            total = int(response.headers.get('content-length', 0))
-            
-            with open(self.dest_path, "wb") as f:
-                if total == 0:
-                    f.write(response.content)
-                    self.progress.emit(100)
-                else:
-                    downloaded = 0
-                    for data in response.iter_content(chunk_size=8192):
-                        downloaded += len(data)
-                        f.write(data)
-                        pct = int(downloaded * 100 / total)
-                        self.progress.emit(pct)
-            self.finished.emit(self.dest_path)
-        except Exception as e:
-            self.finished.emit(f"error: {str(e)}")
+        self.container = QFrame(self)
+        self.container.setGeometry(0, 0, 600, 70)
+        self.container.setStyleSheet(
+            f"background:{DARK_BG};border:1px solid {GOLD};border-radius:12px;"
+        )
+        
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setOffset(0, 4)
+        self.container.setGraphicsEffect(shadow)
+
+        self.input = QLineEdit(self.container)
+        self.input.setGeometry(20, 10, 560, 50)
+        self.input.setPlaceholderText("Quick Capture...")
+        self.input.setStyleSheet(
+            f"background:transparent;border:none;color:{TEXT_WHITE};font-size:18px;"
+        )
+        self.input.returnPressed.connect(self._submit)
+        
+    def _submit(self):
+        text = self.input.text().strip()
+        if text:
+            self.submitted.emit(text)
+        self.hide()
+        self.input.clear()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.hide()
+            self.input.clear()
+        else:
+            super().keyPressEvent(event)
+
+    def show_centered(self):
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 3
+        self.move(screen.x() + x, screen.y() + y)
+        self.show()
+        self.activateWindow()
+        self.input.setFocus()
 
 
 class TaskListWidget(QListWidget):
@@ -598,14 +622,13 @@ class BoardListWidget(QListWidget):
 
 
 class UltimateTaskFlow(QMainWindow):
+    request_quick_capture = pyqtSignal()
+
     def __init__(self):
         super().__init__()
 
         self.state = load_state()
         self._rollover_if_new_day()
-
-        if self.state.get("settings", {}).get("auto_update", True):
-            QTimer.singleShot(3000, lambda: self._check_for_updates(silent=True))
 
         self.input = None
         self.note_editor = None
@@ -633,7 +656,16 @@ class UltimateTaskFlow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(WIN_W, WIN_H)
 
-        self._setup_tray()
+        # Quick Capture Setup
+        self.quick_capture = QuickCaptureDialog(self)
+        self.quick_capture.submitted.connect(self._on_quick_capture)
+        self.request_quick_capture.connect(self.quick_capture.show_centered)
+        
+        if keyboard:
+            try:
+                keyboard.add_hotkey('alt+space', self.request_quick_capture.emit)
+            except Exception as e:
+                print(f"Failed to register hotkey: {e}")
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -666,34 +698,6 @@ class UltimateTaskFlow(QMainWindow):
         if self.state.get("ui", {}).get("collapsed", False):
             self._snap(self._collapsed_geometry(), animated=False)
 
-    def _setup_tray(self):
-        self.tray_icon = QSystemTrayIcon(self)
-        
-        # Create a simple icon programmatically
-        pixmap = QPixmap(32, 32)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        painter.setBrush(QBrush(QColor(GOLD)))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(4, 4, 24, 24, 6, 6)
-        painter.end()
-        
-        self.tray_icon.setIcon(QIcon(pixmap))
-        self.tray_icon.activated.connect(self._tray_activated)
-        self.tray_icon.show()
-        
-        menu = QMenu()
-        menu.addAction("Show TaskFlow", self._restore_from_tray)
-        menu.addAction("Quit", self._quit)
-        self.tray_icon.setContextMenu(menu)
-
-    def _tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            if self.isVisible():
-                self._minimize_to_tray()
-            else:
-                self._restore_from_tray()
-
     def _open_header_menu(self, pos):
         menu = QMenu(self)
         menu.setStyleSheet(
@@ -702,95 +706,46 @@ class UltimateTaskFlow(QMainWindow):
             f"QMenu::item:selected{{background:{HOVER_BG};}}"
         )
         act_update = menu.addAction("Check for Updates...")
-        
-        is_auto = self.state.get("settings", {}).get("auto_update", True)
-        act_auto = menu.addAction("Check on Startup")
-        act_auto.setCheckable(True)
-        act_auto.setChecked(is_auto)
-
         chosen = menu.exec(self.header_bar.mapToGlobal(pos))
         if chosen == act_update:
-            self._check_for_updates(silent=False)
-        elif chosen == act_auto:
-            self._toggle_auto_update(not is_auto)
+            self._check_for_updates()
 
-    def _toggle_auto_update(self, enabled: bool):
-        self.state.setdefault("settings", {})
-        self.state["settings"]["auto_update"] = enabled
-        self._schedule_save()
-
-    def _check_for_updates(self, silent=False):
+    def _check_for_updates(self):
         self.update_thread = UpdateCheckThread()
-        self.update_thread.finished.connect(lambda res: self._on_update_check_finished(res, silent))
+        self.update_thread.finished.connect(self._on_update_check_finished)
         self.update_thread.start()
 
-    def _on_update_check_finished(self, result, silent=False):
+    def _on_update_check_finished(self, result):
         error = result.get("error")
         if error:
-            if not silent:
-                QMessageBox.warning(self, "Update Check Failed", error)
+            QMessageBox.warning(self, "Update Check Failed", error)
             return
 
         latest_version_str = result.get("latest_version")
         download_url = result.get("download_url")
 
         if not latest_version_str or not download_url:
-            if not silent:
-                QMessageBox.warning(self, "Update Check Failed", "Invalid version information received from the server.")
+            QMessageBox.warning(self, "Update Check Failed", "Invalid version information received from the server.")
             return
 
         try:
             latest_v = tuple(map(int, latest_version_str.split('.')))
             current_v = tuple(map(int, VERSION.split('.')))
         except ValueError:
-            if not silent:
-                QMessageBox.warning(self, "Update Check Failed", f"Invalid version format received: '{latest_version_str}'")
+            QMessageBox.warning(self, "Update Check Failed", f"Invalid version format received: '{latest_version_str}'")
             return
 
         if latest_v > current_v:
-            reply = QMessageBox.question(self, "Update Available", f"A new version ({latest_version_str}) of TaskFlow is available.\n\nDo you want to download and install it now?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+            reply = QMessageBox.information(self, "Update Available", f"A new version ({latest_version_str}) of TaskFlow is available.\n\nDo you want to open the download page?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
             if reply == QMessageBox.StandardButton.Yes:
-                self._start_update_download(download_url, latest_version_str)
+                webbrowser.open(download_url)
         else:
-            if not silent:
-                QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
+            QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
 
-    def _start_update_download(self, url, version):
-        filename = f"TaskFlow_Setup_v{version}.exe"
-        dest_path = os.path.join(tempfile.gettempdir(), filename)
-        
-        self.progress_dlg = QProgressDialog("Downloading update...", "Cancel", 0, 100, self)
-        self.progress_dlg.setWindowModality(Qt.WindowModality.WindowModal)
-        self.progress_dlg.setMinimumDuration(0)
-        self.progress_dlg.setValue(0)
-        
-        self.download_thread = DownloadUpdateThread(url, dest_path)
-        self.download_thread.progress.connect(self.progress_dlg.setValue)
-        self.download_thread.finished.connect(self._on_download_finished)
-        self.progress_dlg.canceled.connect(self.download_thread.terminate)
-        
-        self.download_thread.start()
-
-    def _on_download_finished(self, result):
-        self.progress_dlg.close()
-        if result.startswith("error:"):
-            QMessageBox.warning(self, "Download Failed", result)
-            return
-            
-        installer_path = result
-        reply = QMessageBox.question(
-            self,
-            "Download Complete",
-            "The update is ready. TaskFlow needs to close to install it.\n\nInstall now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                subprocess.Popen([installer_path])
-                self._quit()
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Could not launch installer:\n{e}")
+    def _on_quick_capture(self, text):
+        self._create_task(text, "Today", "📝")
+        self._schedule_save()
+        self._refresh_tasks_ui()
 
     # ---------- Helpers ----------
     def _focus_is_text_entry(self) -> bool:
@@ -826,25 +781,9 @@ class UltimateTaskFlow(QMainWindow):
 
     def enterEvent(self, event):
         self._auto_timer.stop()
-        # Speed detection for opening
         if self.state.get("ui", {}).get("collapsed", False):
-            self._entry_pos = QCursor.pos()
-            QTimer.singleShot(20, self._resolve_entry_speed)
+            self.toggle_collapse()
         super().enterEvent(event)
-
-    def _resolve_entry_speed(self):
-        if not self.state.get("ui", {}).get("collapsed", False):
-            return
-        if not self.frameGeometry().contains(QCursor.pos()):
-            return
-            
-        curr = QCursor.pos()
-        dist = (curr - self._entry_pos).manhattanLength()
-        
-        # If moved more than 10px in 20ms -> fast entry
-        # Fast: 150ms, Slow: 400ms
-        dur = 150 if dist > 10 else 400
-        self.toggle_collapse(duration=dur)
 
     def leaveEvent(self, event):
         self._schedule_autocollapse()
@@ -872,11 +811,6 @@ class UltimateTaskFlow(QMainWindow):
         if isinstance(w, (QPushButton, QLineEdit, QComboBox)):
             return
         self._dragging = True
-        
-        # Visual feedback when dragging collapsed handle
-        if self.state.get("ui", {}).get("collapsed", False):
-             self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:0px;border:2px solid {GOLD};}}")
-
         self._drag_offset = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
         self._mark_busy(2500)
 
@@ -892,25 +826,11 @@ class UltimateTaskFlow(QMainWindow):
         if e.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             if self.state.get("ui", {}).get("collapsed", False):
-                # Update logic for multi-screen / side switching
-                self._update_geom_after_drag()
-                
-                # Restore invisible style and correct alignment
-                side = self._collapse_side()
-                self._update_layout_for_collapse(True, side)
-                
                 # allow repositioning the collapsed handle too
                 self._snap(self._collapsed_geometry(), animated=False)
             else:
                 self._clamp_to_screen()
                 self._remember_expanded_geom()
-
-    def _minimize_to_tray(self):
-        self.hide()
-
-    def _restore_from_tray(self):
-        self.show()
-        self.activateWindow()
 
     # ---------- UI ----------
     def _build_header(self):
@@ -941,15 +861,6 @@ class UltimateTaskFlow(QMainWindow):
         self.btn_tasks.clicked.connect(lambda: self._switch_tab("Tasks"))
         self.btn_notes.clicked.connect(lambda: self._switch_tab("Notes"))
 
-        self.btn_minimize = QPushButton("−")
-        self.btn_minimize.setFixedSize(30, 30)
-        self.btn_minimize.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_minimize.setStyleSheet(
-            f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;}}"
-            f"QPushButton:hover{{background:{HOVER_BG};color:{TEXT_WHITE};}}"
-        )
-        self.btn_minimize.clicked.connect(self._minimize_to_tray)
-
         self.btn_collapse = QPushButton("<")
         self.btn_collapse.setFixedSize(30, 30)
         self.btn_collapse.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -971,7 +882,6 @@ class UltimateTaskFlow(QMainWindow):
         lay.addWidget(self.btn_tasks)
         lay.addWidget(self.btn_notes)
         lay.addStretch()
-        lay.addWidget(self.btn_minimize)
         lay.addWidget(self.btn_collapse)
         lay.addWidget(self.btn_close)
 
@@ -1233,70 +1143,24 @@ class UltimateTaskFlow(QMainWindow):
         y = max(scr.top(), min(g.y(), scr.bottom() - g.height()))
         self.move(x, y)
 
-    def _update_geom_after_drag(self):
-        if not self._last_expanded_geom:
-            return
-
-        scr = self.screen().availableGeometry()
-        g = self.geometry()
-        side = self._collapse_side()
-        
-        w = self._last_expanded_geom.width()
-        h = self._last_expanded_geom.height()
-        
-        if side in ("left", "right"):
-            new_y = max(scr.top(), min(g.y(), scr.bottom() - h))
-            if side == "left":
-                new_x = scr.left() + 10
-            else:
-                new_x = scr.right() - w - 10
-        else:
-            new_x = max(scr.left(), min(g.x(), scr.right() - w))
-            if side == "top":
-                new_y = scr.top() + 50
-            else:
-                new_y = scr.bottom() - h - 50
-                
-        self._last_expanded_geom = QRect(int(new_x), int(new_y), w, h)
-
     def _collapse_side(self) -> str:
         scr = self.screen().availableGeometry()
-        g = self.geometry()
-        
+        g = self._last_expanded_geom or self.geometry()
         center_x = g.x() + g.width() / 2
-        center_y = g.y() + g.height() / 2
-
-        # If in the middle third horizontally, check vertical
-        if scr.left() + scr.width() / 3 < center_x < scr.right() - scr.width() / 3:
-            if center_y < scr.top() + scr.height() / 2:
-                return "top"
-            else:
-                return "bottom"
-        else:
-            return "left" if center_x < (scr.x() + scr.width() / 2) else "right"
+        return "left" if center_x < (scr.x() + scr.width() / 2) else "right"
 
     def _collapsed_geometry(self) -> QRect:
         scr = self.screen().availableGeometry()
         g = self._last_expanded_geom or self.geometry()
+        y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
         side = self._collapse_side()
 
         if side == "left":
-            y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
             x = scr.left() - (COLLAPSED_W - COLLAPSED_VISIBLE)
-            return QRect(int(x), int(y), COLLAPSED_W, WIN_H)
-        elif side == "right":
-            y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
+        else:
             x = scr.right() - COLLAPSED_VISIBLE
-            return QRect(int(x), int(y), COLLAPSED_W, WIN_H)
-        elif side == "top":
-            x = max(scr.left(), min(g.x(), scr.right() - WIN_W))
-            y = scr.top() - (COLLAPSED_W - COLLAPSED_VISIBLE)
-            # For top/bottom, we make it a horizontal tab (WIN_W wide, COLLAPSED_W high)
-            return QRect(int(x), int(y), WIN_W, COLLAPSED_W)
-        else: # bottom
-            x = max(scr.left(), min(g.x(), scr.right() - WIN_W))
-            y = scr.bottom() - COLLAPSED_VISIBLE
-            return QRect(int(x), int(y), WIN_W, COLLAPSED_W)
+
+        return QRect(int(x), int(y), COLLAPSED_W, WIN_H)
 
     def _expanded_geometry(self) -> QRect:
         scr = self.screen().availableGeometry()
@@ -1310,12 +1174,12 @@ class UltimateTaskFlow(QMainWindow):
         y = max(scr.top(), min(g.y(), scr.bottom() - WIN_H))
         return QRect(int(x), int(y), WIN_W, WIN_H)
 
-    def _snap(self, target: QRect, animated: bool = True, duration: int = 260):
+    def _snap(self, target: QRect, animated: bool = True):
         if not animated:
             self.setGeometry(target)
             return
         self.geom_anim = QPropertyAnimation(self, b"geometry")
-        self.geom_anim.setDuration(duration)
+        self.geom_anim.setDuration(260)
         self.geom_anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.geom_anim.setStartValue(self.geometry())
         self.geom_anim.setEndValue(target)
@@ -1856,25 +1720,7 @@ class UltimateTaskFlow(QMainWindow):
             self.state["ui"]["active_tab"] = name
             self._schedule_save()
 
-    def _update_layout_for_collapse(self, collapsed: bool, side: str):
-        root_lay = self.centralWidget().layout()
-        if collapsed:
-            root_lay.setContentsMargins(0, 0, 0, 0)
-            # Invisible handle that catches mouse events (0.01 alpha)
-            self.container.setStyleSheet(f"#container{{background:rgba(0,0,0,0.01);border-radius:0px;border:none;}}")
-            
-            if side == "top":
-                # If collapsed to top (bottom visible), push content to bottom
-                self.main.setAlignment(Qt.AlignmentFlag.AlignBottom)
-            else:
-                # For bottom/left/right, top alignment is fine
-                self.main.setAlignment(Qt.AlignmentFlag.AlignTop)
-        else:
-            root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
-            self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
-            self.main.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-    def toggle_collapse(self, duration: int = 260):
+    def toggle_collapse(self):
         collapsed = not bool(self.state.get("ui", {}).get("collapsed", False))
 
         if collapsed:
@@ -1888,16 +1734,12 @@ class UltimateTaskFlow(QMainWindow):
         self.btn_tasks.setVisible(not collapsed)
         self.btn_notes.setVisible(not collapsed)
 
-        # Update layout to ensure the handle is visible in the small window
-        side = self._collapse_side() if collapsed else "left"
-        self._update_layout_for_collapse(collapsed, side)
-
         self._schedule_save()
 
         if collapsed:
-            self._snap(self._collapsed_geometry(), animated=True, duration=duration)
+            self._snap(self._collapsed_geometry(), animated=True)
         else:
-            self._snap(self._expanded_geometry(), animated=True, duration=duration)
+            self._snap(self._expanded_geometry(), animated=True)
 
     def _focus_add(self):
         if self.state.get("ui", {}).get("collapsed", False):
@@ -1920,11 +1762,6 @@ class UltimateTaskFlow(QMainWindow):
         self.stack.setVisible(not collapsed)
         self.btn_tasks.setVisible(not collapsed)
         self.btn_notes.setVisible(not collapsed)
-        
-        # Restore layout state on startup
-        if collapsed:
-            side = self._collapse_side()
-            self._update_layout_for_collapse(True, side)
 
     def _rollover_if_new_day(self):
         last = self.state.get("last_opened", _today_str())
@@ -1941,6 +1778,7 @@ class UltimateTaskFlow(QMainWindow):
 
 if __name__ == "__main__":
     try:
+        print("Starting TaskFlow...")
         app = QApplication(sys.argv)
         app.setFont(QFont("Segoe UI", 10))
 
@@ -1963,4 +1801,5 @@ if __name__ == "__main__":
             import ctypes
             ctypes.windll.user32.MessageBoxW(0, err_msg, "TaskFlow Error", 0x10)
         except:
-            pass
+            print(err_msg)
+            input("Press Enter to close...")
