@@ -1,6 +1,6 @@
 @echo off
 echo ========================================================
-echo  TaskFlow v1.0 - Final Build
+echo  TaskFlow v1.1 - Build
 echo ========================================================
 echo.
 
@@ -24,7 +24,7 @@ if exist %ISCC% (
     echo.
     echo ========================================================
     echo  BUILD SUCCESSFUL!
-    echo  Installer: TaskFlow_Setup_v1.0.exe
+    echo  Installer: TaskFlow_Setup_v1.1.exe
     echo ========================================================
 ) else (
     echo.
