@@ -5,6 +5,7 @@ import shutil
 import uuid
 import webbrowser
 import traceback
+import re
 
 # Global exception handler to catch startup crashes (defined early)
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -297,10 +298,13 @@ class TaskListWidget(QListWidget):
         self.setDragDropMode(QListWidget.DragDropMode.DropOnly)
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setSpacing(2)
         self.setStyleSheet(
-            "QListWidget{background:transparent;border:none;}"
-            "QListWidget::item{background:transparent;border:none;}"
+            f"QListWidget{{background:transparent;border:1px solid transparent;border-radius:8px;}}"
+            f"QListWidget:focus{{border:1px solid {GOLD};}}"
+            f"QListWidget::item{{background:transparent;border:none;padding:4px;}}"
+            f"QListWidget::item:selected{{background:{HOVER_BG};border-radius:8px;}}"
         )
 
     def update_height(self):
@@ -373,6 +377,7 @@ class TaskRow(QFrame):
     toggled = pyqtSignal(str)
     subtaskToggled = pyqtSignal(str)
     resized = pyqtSignal()
+    focusRequested = pyqtSignal(str)
 
     def __init__(self, task: dict, subtasks: list, number_text: str, parent=None):
         super().__init__(parent)
@@ -410,6 +415,15 @@ class TaskRow(QFrame):
         self.lbl_text = QLabel(task.get("text", ""))
         self.lbl_text.setWordWrap(True)
 
+        self.btn_focus = QPushButton("👁")
+        self.btn_focus.setFixedSize(24, 24)
+        self.btn_focus.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_focus.setStyleSheet(
+            f"QPushButton{{color:{TEXT_GRAY};background:transparent;border:none;font-size:14px;}}"
+            f"QPushButton:hover{{color:{GOLD};}}"
+        )
+        self.btn_focus.clicked.connect(lambda: self.focusRequested.emit(self.task["id"]))
+
         self.lbl_note = QLabel("•")
         self.lbl_note.setFixedWidth(10)
         self.lbl_note.setStyleSheet(f"color:{TEXT_GRAY};font-size:20px;")
@@ -424,6 +438,7 @@ class TaskRow(QFrame):
         lay.addWidget(self.lbl_recur)
         lay.addWidget(self.lbl_emoji)
         lay.addWidget(self.lbl_text, 1)
+        lay.addWidget(self.btn_focus)
         lay.addWidget(self.lbl_note)
         lay.addWidget(self.chk)
 
@@ -614,6 +629,7 @@ class BoardListWidget(QListWidget):
             "QListWidget::item{background:transparent;border:none;}"
         )
         self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def dropEvent(self, event):
         super().dropEvent(event)
@@ -630,6 +646,7 @@ class UltimateTaskFlow(QMainWindow):
         self.state = load_state()
         self._rollover_if_new_day()
 
+        self._zen_task_id = None
         self.input = None
         self.note_editor = None
 
@@ -666,37 +683,6 @@ class UltimateTaskFlow(QMainWindow):
                 keyboard.add_hotkey('alt+space', self.request_quick_capture.emit)
             except Exception as e:
                 print(f"Failed to register hotkey: {e}")
-
-        root = QWidget()
-        self.setCentralWidget(root)
-        root_lay = QVBoxLayout(root)
-        root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
-
-        self.container = QFrame()
-        self.container.setObjectName("container")
-        self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
-        root_lay.addWidget(self.container)
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(22)
-        shadow.setColor(QColor(0, 0, 0, 130))
-        shadow.setOffset(0, 6)
-        self.container.setGraphicsEffect(shadow)
-
-        self.main = QVBoxLayout(self.container)
-        self.main.setContentsMargins(0, 0, 0, 0)
-        self.main.setSpacing(0)
-
-        self._build_header()
-        self._build_stack()
-        self._wire_shortcuts()
-
-        self._apply_ui_state()
-        self._remember_expanded_geom()
-
-        self._clamp_to_screen()
-        if self.state.get("ui", {}).get("collapsed", False):
-            self._snap(self._collapsed_geometry(), animated=False)
 
     def _open_header_menu(self, pos):
         menu = QMenu(self)
@@ -742,8 +728,40 @@ class UltimateTaskFlow(QMainWindow):
         else:
             QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
 
+        root = QWidget()
+        self.setCentralWidget(root)
+        root_lay = QVBoxLayout(root)
+        root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
+
+        self.container = QFrame()
+        self.container.setObjectName("container")
+        self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
+        root_lay.addWidget(self.container)
+
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(22)
+        shadow.setColor(QColor(0, 0, 0, 130))
+        shadow.setOffset(0, 6)
+        self.container.setGraphicsEffect(shadow)
+
+        self.main = QVBoxLayout(self.container)
+        self.main.setContentsMargins(0, 0, 0, 0)
+        self.main.setSpacing(0)
+
+        self._build_header()
+        self._build_stack()
+        self._wire_shortcuts()
+
+        self._apply_ui_state()
+        self._remember_expanded_geom()
+
+        self._clamp_to_screen()
+        if self.state.get("ui", {}).get("collapsed", False):
+            self._snap(self._collapsed_geometry(), animated=False)
+
     def _on_quick_capture(self, text):
-        self._create_task(text, "Today", "📝")
+        text, section, emoji = self._parse_task_input(text)
+        self._create_task(text, section, emoji)
         self._schedule_save()
         self._refresh_tasks_ui()
 
@@ -893,11 +911,14 @@ class UltimateTaskFlow(QMainWindow):
 
         self.page_tasks = QWidget()
         self.page_notes = QWidget()
+        self.page_zen = QWidget()
         self.stack.addWidget(self.page_tasks)
         self.stack.addWidget(self.page_notes)
+        self.stack.addWidget(self.page_zen)
 
         self._build_tasks_page()
         self._build_notes_page()
+        self._build_zen_page()
 
     def _build_tasks_page(self):
         lay = QVBoxLayout(self.page_tasks)
@@ -928,6 +949,96 @@ class UltimateTaskFlow(QMainWindow):
 
         self.section_blocks = {}
         self._refresh_tasks_ui()
+
+    def _build_zen_page(self):
+        # Allow dragging on the Zen page background since header is hidden
+        self.page_zen.mousePressEvent = self._drag_press
+        self.page_zen.mouseMoveEvent = self._drag_move
+        self.page_zen.mouseReleaseEvent = self._drag_release
+
+        lay = QVBoxLayout(self.page_zen)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(20)
+
+        # Top bar with Exit button
+        top = QHBoxLayout()
+        top.addStretch()
+        self.btn_exit_zen = QPushButton("×")
+        self.btn_exit_zen.setFixedSize(30, 30)
+        self.btn_exit_zen.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_exit_zen.setStyleSheet(
+            f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;font-size:16px;}}"
+            f"QPushButton:hover{{background:{HOVER_BG};color:{TEXT_WHITE};}}"
+        )
+        self.btn_exit_zen.clicked.connect(self.exit_zen_mode)
+        top.addWidget(self.btn_exit_zen)
+        lay.addLayout(top)
+
+        # Center content
+        self.zen_content = QVBoxLayout()
+        self.zen_content.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.zen_emoji = QLabel("📝")
+        self.zen_emoji.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zen_emoji.setStyleSheet("font-size: 64px; background: transparent;")
+        
+        self.zen_text = QLabel("Task Text")
+        self.zen_text.setWordWrap(True)
+        self.zen_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zen_text.setStyleSheet(f"color:{TEXT_WHITE}; font-size: 24px; font-weight: bold;")
+        
+        self.zen_content.addWidget(self.zen_emoji)
+        self.zen_content.addWidget(self.zen_text)
+        
+        lay.addLayout(self.zen_content)
+        
+        # Subtasks area
+        self.zen_subtasks_scroll = QScrollArea()
+        self.zen_subtasks_scroll.setWidgetResizable(True)
+        self.zen_subtasks_scroll.setStyleSheet("background: transparent; border: none;")
+        self.zen_subtasks_container = QWidget()
+        self.zen_subtasks_container.setStyleSheet("background: transparent;")
+        self.zen_subtasks_layout = QVBoxLayout(self.zen_subtasks_container)
+        self.zen_subtasks_scroll.setWidget(self.zen_subtasks_container)
+        
+        lay.addWidget(self.zen_subtasks_scroll, 1)
+
+    def enter_zen_mode(self, task_id: str):
+        self._zen_task_id = task_id
+        self._populate_zen_view(task_id)
+        self.header_bar.setVisible(False)
+        self.stack.setCurrentWidget(self.page_zen)
+
+    def exit_zen_mode(self):
+        self._zen_task_id = None
+        self.header_bar.setVisible(True)
+        self.stack.setCurrentWidget(self.page_tasks)
+
+    def _populate_zen_view(self, task_id: str):
+        t = self._find_task(task_id)
+        if not t: return
+        
+        self.zen_emoji.setText(t.get("emoji", "📝"))
+        self.zen_text.setText(t.get("text", ""))
+        
+        # Clear subtasks
+        while self.zen_subtasks_layout.count():
+            item = self.zen_subtasks_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        subtasks = [st for st in self.state["tasks"] if st.get("parent_id") == task_id]
+        subtasks.sort(key=lambda x: x.get("order", 0))
+        
+        for st in subtasks:
+            sw = SubtaskWidget(st)
+            sw.toggled.connect(self._toggle_task)
+            # Larger font for zen mode
+            style = f"color:{TEXT_GRAY if st.get('completed') else TEXT_WHITE};font-size:16px;"
+            if st.get("completed"):
+                style += "text-decoration:line-through;"
+            sw.lbl.setStyleSheet(style)
+            self.zen_subtasks_layout.addWidget(sw)
 
     def _create_section_item(self, name: str):
         blk = SectionBlock(name)
@@ -1105,6 +1216,10 @@ class UltimateTaskFlow(QMainWindow):
         QShortcut(QKeySequence("Delete"), self, self._delete_selected_any)
         QShortcut(QKeySequence("Alt+Up"), self, lambda: self._move_selected_task(-1))
         QShortcut(QKeySequence("Alt+Down"), self, lambda: self._move_selected_task(1))
+        
+        QShortcut(QKeySequence("Ctrl+D"), self, self._toggle_selected_task)
+        QShortcut(QKeySequence("Ctrl+1"), self, lambda: self._switch_tab("Tasks"))
+        QShortcut(QKeySequence("Ctrl+2"), self, lambda: self._switch_tab("Notes"))
 
     def _esc_behavior(self):
         if self._focus_is_text_entry():
@@ -1242,6 +1357,7 @@ class UltimateTaskFlow(QMainWindow):
                 row.toggled.connect(self._toggle_task)
                 row.subtaskToggled.connect(self._toggle_task)
                 row.resized.connect(lambda: self._on_task_resize(lst, t_item, row))
+                row.focusRequested.connect(self.enter_zen_mode)
 
                 t_item.setSizeHint(row.sizeHint())
                 lst.addItem(t_item)
@@ -1276,6 +1392,33 @@ class UltimateTaskFlow(QMainWindow):
             if t.get("id") == task_id:
                 return t
         return None
+
+    def _parse_task_input(self, text: str):
+        text = text.strip()
+        section = "Today"
+        emoji = "📝"
+
+        # Priority detection
+        if re.search(r'\bimportant\b', text, re.IGNORECASE):
+            emoji = "🔥"
+            text = re.sub(r'\bimportant\b', '', text, flags=re.IGNORECASE)
+        
+        if text.endswith("!"):
+            emoji = "🔥"
+            text = text.rstrip("!")
+
+        # Section detection
+        if re.search(r'\btomorrow\b', text, re.IGNORECASE):
+            section = "Tomorrow"
+            text = re.sub(r'\btomorrow\b', '', text, flags=re.IGNORECASE)
+        elif re.search(r'\b(later|someday)\b', text, re.IGNORECASE):
+            section = "Someday"
+            text = re.sub(r'\b(later|someday)\b', '', text, flags=re.IGNORECASE)
+
+        # Cleanup whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text, section, emoji
 
     def _create_task(self, text: str, section: str, emoji: str, recur: str = "", parent_id=None):
         text = (text or "").strip()
@@ -1318,6 +1461,8 @@ class UltimateTaskFlow(QMainWindow):
 
         self._schedule_save()
         self._refresh_tasks_ui()
+        if self._zen_task_id:
+            self._populate_zen_view(self._zen_task_id)
 
     def _on_task_moved(self, task_id: str, new_section: str, new_index: int):
         t = self._find_task(task_id)
@@ -1358,12 +1503,22 @@ class UltimateTaskFlow(QMainWindow):
         self._refresh_tasks_ui()
 
     def _on_selection_changed(self):
-        for sec in self.state["sections"]:
-            if sec not in self.section_blocks:
-                continue
-            lst = self.section_blocks[sec].list
-            if lst.currentItem():
-                self._active_task_id = lst.currentItem().data(Qt.ItemDataRole.UserRole)
+        sender = self.sender()
+        if not sender: return
+
+        # If this list has a selection, clear others to ensure single focus
+        if sender.selectedItems():
+            for sec in self.state["sections"]:
+                if sec not in self.section_blocks: continue
+                lst = self.section_blocks[sec].list
+                if lst != sender:
+                    lst.blockSignals(True)
+                    lst.clearSelection()
+                    lst.setCurrentItem(None)
+                    lst.blockSignals(False)
+            
+            if sender.currentItem():
+                self._active_task_id = sender.currentItem().data(Qt.ItemDataRole.UserRole)
 
     def _selected_task_id(self):
         for sec in self.state["sections"]:
@@ -1498,7 +1653,8 @@ class UltimateTaskFlow(QMainWindow):
         if not raw:
             return
         self.input.clear()
-        self._create_task(text=raw, section="Today", emoji="📝")
+        text, section, emoji = self._parse_task_input(raw)
+        self._create_task(text=text, section=section, emoji=emoji)
         self._schedule_save()
         self._refresh_tasks_ui()
 
