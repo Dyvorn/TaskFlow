@@ -50,7 +50,7 @@ from PyQt6.QtCore import QMimeData
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "1.1"
+VERSION = "1.2"
 UPDATE_URL = "https://raw.githubusercontent.com/Dyvorn/TaskFlow/main/version.json"
 
 if getattr(sys, "frozen", False):
