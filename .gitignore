@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+*.tmp
+*.bak
+*.backup.json
+taskflow_data.json
+.vscode/
+.idea/
+*.exe
