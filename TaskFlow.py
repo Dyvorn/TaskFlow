@@ -37,7 +37,7 @@ from datetime import datetime, date
 
 from PyQt6.QtCore import (
     Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve,
-    pyqtSignal, QThread, QRect, QPoint
+    pyqtSignal, QThread, QRect, QPoint, QUrl
 )
 from PyQt6.QtGui import (
     QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap, QIcon
@@ -51,6 +51,7 @@ from PyQt6.QtWidgets import (
     QDialog, QSystemTrayIcon, QProgressDialog
 )
 from PyQt6.QtCore import QMimeData
+from PyQt6.QtMultimedia import QSoundEffect
 
 
 
@@ -754,6 +755,16 @@ class UltimateTaskFlow(QMainWindow):
         # Check for updates silently on startup (delayed slightly to let UI load)
         QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
 
+        # Audio Setup
+        self.sounds = {}
+        self._load_sounds()
+
+        # Zen Timer Setup
+        self.zen_timer = QTimer(self)
+        self.zen_timer.timeout.connect(self._update_zen_timer)
+        self.zen_remaining = 25 * 60
+        self.zen_running = False
+
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
         # Create a simple gold pixmap for the icon
@@ -786,6 +797,27 @@ class UltimateTaskFlow(QMainWindow):
         chosen = menu.exec(self.header_bar.mapToGlobal(pos))
         if chosen == act_update:
             self._check_for_updates()
+
+    def _load_sounds(self):
+        sound_map = {
+            "complete": "complete.wav",
+            "add": "add.wav",
+            "delete": "delete.wav",
+            "timer": "timer.wav"
+        }
+        sounds_dir = os.path.join(BASE_DIR, "sounds")
+        
+        for key, filename in sound_map.items():
+            path = os.path.join(sounds_dir, filename)
+            if os.path.exists(path):
+                effect = QSoundEffect()
+                effect.setSource(QUrl.fromLocalFile(path))
+                effect.setVolume(0.5)
+                self.sounds[key] = effect
+
+    def _play_sound(self, name):
+        if name in self.sounds:
+            self.sounds[name].play()
 
     def _check_for_updates(self, silent=False):
         self._update_silent = silent
@@ -867,6 +899,7 @@ class UltimateTaskFlow(QMainWindow):
         self._create_task(text, section, emoji)
         self._schedule_save()
         self._refresh_tasks_ui()
+        self._play_sound("add")
 
     # ---------- Helpers ----------
     def _focus_is_text_entry(self) -> bool:
@@ -1108,6 +1141,39 @@ class UltimateTaskFlow(QMainWindow):
         self.zen_content.addWidget(self.zen_emoji)
         self.zen_content.addWidget(self.zen_text)
         
+        # Timer UI
+        self.lbl_timer = QLabel("25:00")
+        self.lbl_timer.setStyleSheet(f"color:{GOLD}; font-size: 48px; font-weight: bold; margin-top: 20px;")
+        self.lbl_timer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        timer_controls = QHBoxLayout()
+        timer_controls.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        timer_controls.setSpacing(20)
+        
+        self.btn_timer_toggle = QPushButton("▶ Start")
+        self.btn_timer_toggle.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_timer_toggle.setFixedSize(100, 40)
+        self.btn_timer_toggle.setStyleSheet(
+            f"QPushButton{{background:{HOVER_BG};color:{TEXT_WHITE};border-radius:20px;font-weight:bold;}}"
+            f"QPushButton:hover{{background:{GOLD};color:{DARK_BG};}}"
+        )
+        self.btn_timer_toggle.clicked.connect(self._toggle_zen_timer)
+        
+        self.btn_timer_reset = QPushButton("↺")
+        self.btn_timer_reset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_timer_reset.setFixedSize(40, 40)
+        self.btn_timer_reset.setStyleSheet(
+            f"QPushButton{{background:{HOVER_BG};color:{TEXT_GRAY};border-radius:20px;font-weight:bold;font-size:18px;}}"
+            f"QPushButton:hover{{color:{TEXT_WHITE};}}"
+        )
+        self.btn_timer_reset.clicked.connect(self._reset_zen_timer)
+        
+        timer_controls.addWidget(self.btn_timer_toggle)
+        timer_controls.addWidget(self.btn_timer_reset)
+        
+        self.zen_content.addWidget(self.lbl_timer)
+        self.zen_content.addLayout(timer_controls)
+        
         lay.addLayout(self.zen_content)
         
         # Subtasks area
@@ -1128,6 +1194,8 @@ class UltimateTaskFlow(QMainWindow):
         self.stack.setCurrentWidget(self.page_zen)
 
     def exit_zen_mode(self):
+        if self.zen_running:
+            self._toggle_zen_timer()
         self._zen_task_id = None
         self.header_bar.setVisible(True)
         self.stack.setCurrentWidget(self.page_tasks)
@@ -1157,6 +1225,53 @@ class UltimateTaskFlow(QMainWindow):
                 style += "text-decoration:line-through;"
             sw.lbl.setStyleSheet(style)
             self.zen_subtasks_layout.addWidget(sw)
+
+    def _toggle_zen_timer(self):
+        if self.zen_running:
+            self.zen_timer.stop()
+            self.zen_running = False
+            self.btn_timer_toggle.setText("▶ Start")
+            self.btn_timer_toggle.setStyleSheet(
+                f"QPushButton{{background:{HOVER_BG};color:{TEXT_WHITE};border-radius:20px;font-weight:bold;}}"
+                f"QPushButton:hover{{background:{GOLD};color:{DARK_BG};}}"
+            )
+        else:
+            self.zen_timer.start(1000)
+            self.zen_running = True
+            self.btn_timer_toggle.setText("⏸ Pause")
+            self.btn_timer_toggle.setStyleSheet(
+                f"QPushButton{{background:{GOLD};color:{DARK_BG};border-radius:20px;font-weight:bold;}}"
+                f"QPushButton:hover{{background:#fcd34d;}}"
+            )
+
+    def _reset_zen_timer(self):
+        self.zen_timer.stop()
+        self.zen_running = False
+        self.zen_remaining = 25 * 60
+        self._update_timer_display()
+        self.btn_timer_toggle.setText("▶ Start")
+        self.btn_timer_toggle.setStyleSheet(
+            f"QPushButton{{background:{HOVER_BG};color:{TEXT_WHITE};border-radius:20px;font-weight:bold;}}"
+            f"QPushButton:hover{{background:{GOLD};color:{DARK_BG};}}"
+        )
+
+    def _update_zen_timer(self):
+        if self.zen_remaining > 0:
+            self.zen_remaining -= 1
+            self._update_timer_display()
+        else:
+            self.zen_timer.stop()
+            self.zen_running = False
+            self.btn_timer_toggle.setText("▶ Start")
+            self._play_sound("timer")
+            self.showNormal()
+            self.activateWindow()
+            QMessageBox.information(self, "Flow Complete", "Focus session finished!")
+
+    def _update_timer_display(self):
+        m = self.zen_remaining // 60
+        s = self.zen_remaining % 60
+        self.lbl_timer.setText(f"{m:02}:{s:02}")
 
     def _create_section_item(self, name: str):
         blk = SectionBlock(name)
@@ -1572,6 +1687,9 @@ class UltimateTaskFlow(QMainWindow):
         t["completed"] = not bool(t.get("completed"))
         t["updated_at"] = _now_iso()
 
+        if t["completed"]:
+            self._play_sound("complete")
+
         if t["completed"] and t.get("recur"):
             freq = t.get("recur")
             next_section = "Tomorrow" if freq == "Daily" else ("This Week" if freq == "Weekly" else "Someday")
@@ -1664,6 +1782,7 @@ class UltimateTaskFlow(QMainWindow):
         self.state["tasks"] = [x for x in self.state["tasks"] if x.get("id") != tid and x.get("parent_id") != tid]
         self._schedule_save()
         self._refresh_tasks_ui()
+        self._play_sound("delete")
         return True
 
     def _move_selected_task(self, delta: int):
@@ -1775,6 +1894,7 @@ class UltimateTaskFlow(QMainWindow):
         self._create_task(text=text, section=section, emoji=emoji)
         self._schedule_save()
         self._refresh_tasks_ui()
+        self._play_sound("add")
 
     # ---------- Notes ----------
     def _ensure_group(self, name: str):
@@ -1945,6 +2065,7 @@ class UltimateTaskFlow(QMainWindow):
         if len(self.state["notes"]["groups"][g]) != before:
             self._schedule_save()
             self._refresh_notes_ui(group=g)
+            self._play_sound("delete")
             return True
         return False
 
