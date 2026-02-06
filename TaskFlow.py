@@ -51,7 +51,6 @@ from PyQt6.QtWidgets import (
     QDialog, QSystemTrayIcon, QProgressDialog
 )
 from PyQt6.QtCore import QMimeData
-from PyQt6.QtMultimedia import QSoundEffect
 
 
 
@@ -345,7 +344,8 @@ class TaskListWidget(QListWidget):
     def update_height(self):
         h = 0
         for i in range(self.count()):
-            h += self.sizeHintForRow(i)
+            if not self.item(i).isHidden():
+                h += self.sizeHintForRow(i)
         self.setFixedHeight(max(h, 25))
         self.heightChanged.emit()
 
@@ -755,15 +755,12 @@ class UltimateTaskFlow(QMainWindow):
         # Check for updates silently on startup (delayed slightly to let UI load)
         QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
 
-        # Audio Setup
-        self.sounds = {}
-        self._load_sounds()
+    
+        # (Sound removed for this version)
 
         # Zen Timer Setup
         self.zen_timer = QTimer(self)
         self.zen_timer.timeout.connect(self._update_zen_timer)
-        self.zen_remaining = 25 * 60
-        self.zen_running = False
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
@@ -797,27 +794,6 @@ class UltimateTaskFlow(QMainWindow):
         chosen = menu.exec(self.header_bar.mapToGlobal(pos))
         if chosen == act_update:
             self._check_for_updates()
-
-    def _load_sounds(self):
-        sound_map = {
-            "complete": "complete.wav",
-            "add": "add.wav",
-            "delete": "delete.wav",
-            "timer": "timer.wav"
-        }
-        sounds_dir = os.path.join(BASE_DIR, "sounds")
-        
-        for key, filename in sound_map.items():
-            path = os.path.join(sounds_dir, filename)
-            if os.path.exists(path):
-                effect = QSoundEffect()
-                effect.setSource(QUrl.fromLocalFile(path))
-                effect.setVolume(0.5)
-                self.sounds[key] = effect
-
-    def _play_sound(self, name):
-        if name in self.sounds:
-            self.sounds[name].play()
 
     def _check_for_updates(self, silent=False):
         self._update_silent = silent
@@ -899,7 +875,6 @@ class UltimateTaskFlow(QMainWindow):
         self._create_task(text, section, emoji)
         self._schedule_save()
         self._refresh_tasks_ui()
-        self._play_sound("add")
 
     # ---------- Helpers ----------
     def _focus_is_text_entry(self) -> bool:
@@ -1006,8 +981,33 @@ class UltimateTaskFlow(QMainWindow):
         lay.setContentsMargins(14, 0, 12, 0)
         lay.setSpacing(10)
 
+        # Navigation Group (Tasks/Notes)
+        self.nav_group = QWidget()
+        nav_lay = QHBoxLayout(self.nav_group)
+        nav_lay.setContentsMargins(0, 0, 0, 0)
+        nav_lay.setSpacing(10)
+
         self.btn_tasks = QPushButton("Tasks")
         self.btn_notes = QPushButton("Notes")
+        
+        # Search Group
+        self.search_group = QWidget()
+        self.search_group.setVisible(False)
+        search_lay = QHBoxLayout(self.search_group)
+        search_lay.setContentsMargins(0, 0, 0, 0)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search tasks & notes...")
+        self.search_input.setStyleSheet(
+            f"background:{HOVER_BG};color:{TEXT_WHITE};border:none;border-radius:15px;padding:4px 12px;font-size:14px;"
+        )
+        self.search_input.textChanged.connect(self._perform_search)
+        # Pressing Esc in search closes it
+        self.search_shortcut_esc = QShortcut(QKeySequence("Esc"), self.search_input)
+        self.search_shortcut_esc.activated.connect(self._toggle_search)
+        
+        search_lay.addWidget(self.search_input)
+
         for b in (self.btn_tasks, self.btn_notes):
             b.setCheckable(True)
             b.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -1019,6 +1019,15 @@ class UltimateTaskFlow(QMainWindow):
 
         self.btn_tasks.clicked.connect(lambda: self._switch_tab("Tasks"))
         self.btn_notes.clicked.connect(lambda: self._switch_tab("Notes"))
+
+        self.btn_search = QPushButton("🔍")
+        self.btn_search.setFixedSize(30, 30)
+        self.btn_search.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_search.setStyleSheet(
+            f"QPushButton{{color:{TEXT_GRAY};background:transparent;border:none;font-weight:800;font-size:16px;}}"
+            f"QPushButton:hover{{color:{TEXT_WHITE};}}"
+        )
+        self.btn_search.clicked.connect(self._toggle_search)
 
         self.btn_collapse = QPushButton("<")
         self.btn_collapse.setFixedSize(30, 30)
@@ -1047,8 +1056,12 @@ class UltimateTaskFlow(QMainWindow):
         )
         self.btn_close.clicked.connect(self._quit)
 
-        lay.addWidget(self.btn_tasks)
-        lay.addWidget(self.btn_notes)
+        nav_lay.addWidget(self.btn_tasks)
+        nav_lay.addWidget(self.btn_notes)
+
+        lay.addWidget(self.nav_group)
+        lay.addWidget(self.search_group, 1) # Stretch search bar
+        lay.addWidget(self.btn_search)
         lay.addStretch()
         lay.addWidget(self.btn_collapse)
         lay.addWidget(self.btn_minimize)
@@ -1263,7 +1276,6 @@ class UltimateTaskFlow(QMainWindow):
             self.zen_timer.stop()
             self.zen_running = False
             self.btn_timer_toggle.setText("▶ Start")
-            self._play_sound("timer")
             self.showNormal()
             self.activateWindow()
             QMessageBox.information(self, "Flow Complete", "Focus session finished!")
@@ -1440,6 +1452,7 @@ class UltimateTaskFlow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+T"), self, self.toggle_collapse)
         QShortcut(QKeySequence("Ctrl+N"), self, self._focus_add)
         QShortcut(QKeySequence("Ctrl+Q"), self, self._quit)
+        QShortcut(QKeySequence("Ctrl+F"), self, self._toggle_search)
 
         # Refined: Esc only collapses/expands when NOT typing.
         QShortcut(QKeySequence("Esc"), self, self._esc_behavior)
@@ -1456,8 +1469,46 @@ class UltimateTaskFlow(QMainWindow):
 
     def _esc_behavior(self):
         if self._focus_is_text_entry():
+            # If search is focused, toggle it off
+            if self.search_input.hasFocus():
+                self._toggle_search()
             return
         self.toggle_collapse()
+
+    def _toggle_search(self):
+        is_searching = self.search_group.isVisible()
+        if is_searching:
+            # Close search
+            self.search_group.setVisible(False)
+            self.nav_group.setVisible(True)
+            self.search_input.clear() # Clears filter
+            self.btn_search.setText("🔍")
+        else:
+            # Open search
+            self.nav_group.setVisible(False)
+            self.search_group.setVisible(True)
+            self.search_input.setFocus()
+            self.btn_search.setText("×")
+
+    def _perform_search(self, text):
+        text = text.lower().strip()
+        
+        # Filter Tasks
+        for blk in self.section_blocks.values():
+            lst = blk.list
+            for i in range(lst.count()):
+                item = lst.item(i)
+                widget = lst.itemWidget(item)
+                match = text in widget.task['text'].lower() or text in (widget.task.get('note') or "").lower()
+                item.setHidden(not match)
+            blk.list.update_height()
+        self.board_list.doItemsLayout()
+            
+        # Filter Notes
+        for i in range(self.note_list.count()):
+            item = self.note_list.item(i)
+            match = text in item.text().lower()
+            item.setHidden(not match)
 
     # ---------- Auto-collapse ----------
     def _mark_busy(self, ms: int):
@@ -1688,9 +1739,8 @@ class UltimateTaskFlow(QMainWindow):
         t["updated_at"] = _now_iso()
 
         if t["completed"]:
-            self._play_sound("complete")
-
-        if t["completed"] and t.get("recur"):
+            pass
+        elif t["completed"] and t.get("recur"):
             freq = t.get("recur")
             next_section = "Tomorrow" if freq == "Daily" else ("This Week" if freq == "Weekly" else "Someday")
             self._create_task(text=t.get("text", ""), section=next_section, emoji=t.get("emoji", "📝"), recur=freq)
@@ -1782,7 +1832,6 @@ class UltimateTaskFlow(QMainWindow):
         self.state["tasks"] = [x for x in self.state["tasks"] if x.get("id") != tid and x.get("parent_id") != tid]
         self._schedule_save()
         self._refresh_tasks_ui()
-        self._play_sound("delete")
         return True
 
     def _move_selected_task(self, delta: int):
@@ -1894,7 +1943,6 @@ class UltimateTaskFlow(QMainWindow):
         self._create_task(text=text, section=section, emoji=emoji)
         self._schedule_save()
         self._refresh_tasks_ui()
-        self._play_sound("add")
 
     # ---------- Notes ----------
     def _ensure_group(self, name: str):
@@ -2065,7 +2113,6 @@ class UltimateTaskFlow(QMainWindow):
         if len(self.state["notes"]["groups"][g]) != before:
             self._schedule_save()
             self._refresh_notes_ui(group=g)
-            self._play_sound("delete")
             return True
         return False
 
