@@ -48,7 +48,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QMenu,
     QListWidget, QListWidgetItem, QStackedWidget, QTextEdit,
     QComboBox, QInputDialog, QSplitter, QMessageBox, QProgressBar,
-    QDialog, QSystemTrayIcon, QProgressDialog
+     QDialog, QSystemTrayIcon, QProgressDialog, QSpinBox, QCheckBox
 )
 from PyQt6.QtCore import QMimeData
 
@@ -56,8 +56,21 @@ from PyQt6.QtCore import QMimeData
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "3.1"
+VERSION = "4.0"
 UPDATE_URL = "https://raw.githubusercontent.com/Dyvorn/TaskFlow/main/version.json"
+
+WHATS_NEW_HTML = (
+    "<p>This is a major release packed with power-user features:</p>"
+    "<ul>"
+    "<li><b>Global Quick Capture:</b> Press <code>Alt+Space</code> anywhere to add tasks instantly.</li>"
+    "<li><b>Zen Mode:</b> Focus on one task with a built-in Pomodoro timer.</li>"
+    "<li><b>Smart Search:</b> Press <code>Ctrl+F</code> to filter tasks and notes.</li>"
+    "<li><b>Notes Tab:</b> A dedicated space for your thoughts.</li>"
+    "<li><b>Settings:</b> Customize timer duration and auto-collapse.</li>"
+    "<li><b>Archive:</b> Clean up completed tasks easily.</li>"
+    "</ul>"
+    "<p>Enjoy your flow!</p>"
+)
 
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -122,6 +135,7 @@ def load_state() -> dict:
         "notes": {"groups": {"General": []}, "order": ["General"]},
         "sections": SECTIONS.copy(),
         "ui": {"collapsed": False, "active_tab": "Tasks", "section_states": {}},
+        "config": {"zen_duration": 25, "auto_collapse": True},
     }
 
     def _read(p):
@@ -150,6 +164,7 @@ def load_state() -> dict:
     data.setdefault("last_version", "0.0")
     data.setdefault("last_opened", _today_str())
     data.setdefault("sections", default["sections"])
+    data.setdefault("config", default["config"])
 
     data["notes"].setdefault("groups", {"General": []})
     data["notes"].setdefault("order", list(data["notes"]["groups"].keys()) or ["General"])
@@ -263,6 +278,91 @@ class UpdateDownloadThread(QThread):
             self.finished.emit(self.save_path)
         except Exception as e:
             self.error.emit(str(e))
+
+
+class SettingsDialog(QDialog):
+    def __init__(self, config, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setFixedSize(300, 180)
+        self.config = config.copy()
+        self.updated_config = None
+        
+        self.setStyleSheet(f"background:{DARK_BG};color:{TEXT_WHITE};font-size:14px;")
+        
+        lay = QVBoxLayout(self)
+        lay.setSpacing(15)
+        lay.setContentsMargins(20, 20, 20, 20)
+        
+        # Zen Duration
+        h1 = QHBoxLayout()
+        lbl = QLabel("Zen Timer (minutes):")
+        lbl.setStyleSheet(f"color:{TEXT_GRAY};")
+        self.spin_zen = QSpinBox()
+        self.spin_zen.setRange(1, 120)
+        self.spin_zen.setValue(self.config.get("zen_duration", 25))
+        self.spin_zen.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};padding:4px;color:{TEXT_WHITE};")
+        h1.addWidget(lbl)
+        h1.addWidget(self.spin_zen)
+        lay.addLayout(h1)
+        
+        # Auto Collapse
+        self.chk_collapse = QCheckBox("Auto-collapse when focus lost")
+        self.chk_collapse.setChecked(self.config.get("auto_collapse", True))
+        self.chk_collapse.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}")
+        lay.addWidget(self.chk_collapse)
+        
+        # Buttons
+        btns = QHBoxLayout()
+        btn_save = QPushButton("Save Settings")
+        btn_save.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_save.clicked.connect(self._save)
+        btn_save.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:6px;padding:8px;font-weight:bold;")
+        btns.addStretch()
+        btns.addWidget(btn_save)
+        lay.addLayout(btns)
+        
+    def _save(self):
+        self.updated_config = {
+            "zen_duration": self.spin_zen.value(),
+            "auto_collapse": self.chk_collapse.isChecked()
+        }
+        self.accept()
+
+
+class WhatsNewDialog(QDialog):
+    def __init__(self, version, features, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"What's New in v{version}")
+        self.setFixedSize(400, 420)
+        self.setStyleSheet(f"background:{DARK_BG};color:{TEXT_WHITE};")
+        
+        lay = QVBoxLayout(self)
+        lay.setSpacing(15)
+        lay.setContentsMargins(20, 20, 20, 20)
+        
+        lbl_title = QLabel(f"Welcome to TaskFlow v{version}!")
+        lbl_title.setStyleSheet(f"color:{GOLD};font-size:18px;font-weight:bold;")
+        lay.addWidget(lbl_title)
+        
+        self.content = QTextEdit()
+        self.content.setReadOnly(True)
+        self.content.setHtml(features)
+        self.content.setStyleSheet(f"border:none;background:{CARD_BG};border-radius:8px;padding:10px;font-size:14px;color:{TEXT_WHITE};")
+        lay.addWidget(self.content)
+        
+        self.chk_dont_show = QCheckBox("Don't show again until next update")
+        self.chk_dont_show.setChecked(True)
+        self.chk_dont_show.setStyleSheet(
+            f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}"
+        )
+        lay.addWidget(self.chk_dont_show)
+        
+        btn = QPushButton("Let's Flow")
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.clicked.connect(self.accept)
+        btn.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:6px;padding:8px;font-weight:bold;")
+        lay.addWidget(btn)
 
 
 class QuickCaptureDialog(QDialog):
@@ -799,24 +899,25 @@ class UltimateTaskFlow(QMainWindow):
             f"QMenu::item{{padding:8px 22px;}}"
             f"QMenu::item:selected{{background:{HOVER_BG};}}"
         )
+        act_settings = menu.addAction("Settings...")
+        act_archive = menu.addAction("Archive Completed Tasks")
+        menu.addSeparator()
         act_update = menu.addAction("Check for Updates...")
         chosen = menu.exec(self.header_bar.mapToGlobal(pos))
         if chosen == act_update:
             self._check_for_updates()
+        elif chosen == act_settings:
+            self._open_settings()
+        elif chosen == act_archive:
+            self._archive_completed()
 
     def _show_whats_new(self):
-        text = (
-            f"Welcome to TaskFlow v{VERSION}!\n\n"
-            "New Features:\n"
-            "• Global Quick Capture (Alt+Space)\n"
-            "• Smart Search (Ctrl+F)\n"
-            "• Zen Mode with Focus Timer\n"
-            "• Dedicated Notes Tab\n\n"
-            "Enjoy your flow!"
-        )
-        QMessageBox.information(self, f"What's New in v{VERSION}", text)
-        self.state["last_version"] = VERSION
-        self._schedule_save()
+        dlg = WhatsNewDialog(VERSION, WHATS_NEW_HTML, self)
+        dlg.exec()
+        
+        if dlg.chk_dont_show.isChecked():
+            self.state["last_version"] = VERSION
+            self._schedule_save()
 
     def _check_for_updates(self, silent=False):
         self._update_silent = silent
@@ -895,6 +996,30 @@ class UltimateTaskFlow(QMainWindow):
     def _on_download_error(self, msg):
         self.progress_dialog.close()
         QMessageBox.warning(self, "Download Failed", msg)
+
+    def _open_settings(self):
+        dlg = SettingsDialog(self.state.get("config", {}), self)
+        if dlg.exec():
+            self.state["config"] = dlg.updated_config
+            self._schedule_save()
+            # Apply changes immediately where possible
+            self._reset_zen_timer()
+
+    def _archive_completed(self):
+        completed = [t for t in self.state["tasks"] if t.get("completed")]
+        if not completed:
+            QMessageBox.information(self, "Archive", "No completed tasks to archive.")
+            return
+            
+        reply = QMessageBox.question(
+            self, "Archive Tasks",
+            f"Permanently delete {len(completed)} completed tasks?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.state["tasks"] = [t for t in self.state["tasks"] if not t.get("completed")]
+            self._schedule_save()
+            self._refresh_tasks_ui()
 
     def _on_quick_capture(self, text):
         text, section, emoji = self._parse_task_input(text)
@@ -1055,6 +1180,15 @@ class UltimateTaskFlow(QMainWindow):
         )
         self.btn_search.clicked.connect(self._toggle_search)
 
+        self.btn_settings = QPushButton("⚙")
+        self.btn_settings.setFixedSize(30, 30)
+        self.btn_settings.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_settings.setStyleSheet(
+            f"QPushButton{{color:{TEXT_GRAY};background:transparent;border:none;font-weight:800;font-size:18px;}}"
+            f"QPushButton:hover{{color:{TEXT_WHITE};}}"
+        )
+        self.btn_settings.clicked.connect(self._open_settings)
+
         self.btn_collapse = QPushButton("<")
         self.btn_collapse.setFixedSize(30, 30)
         self.btn_collapse.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -1089,6 +1223,7 @@ class UltimateTaskFlow(QMainWindow):
         lay.addWidget(self.search_group, 1) # Stretch search bar
         lay.addWidget(self.btn_search)
         lay.addStretch()
+        lay.addWidget(self.btn_settings)
         lay.addWidget(self.btn_collapse)
         lay.addWidget(self.btn_minimize)
         lay.addWidget(self.btn_close)

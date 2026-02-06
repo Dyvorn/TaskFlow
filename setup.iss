@@ -1,5 +1,5 @@
 #define MyAppName "TaskFlow"
-#define MyAppVersion "3.1"
+#define MyAppVersion "4.0"
 #define MyAppPublisher "Dyvorn"
 #define MyAppURL "https://github.com/Dyvorn/TaskFlow"
 #define MyAppExeName "TaskFlow.exe"
@@ -16,7 +16,7 @@ DefaultDirName={autopf}\{#MyAppName}
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 OutputDir=.
-OutputBaseFilename=TaskFlow_Setup_v3.1
+OutputBaseFilename=TaskFlow_Setup_v4.0
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
