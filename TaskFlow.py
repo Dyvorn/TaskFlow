@@ -6,6 +6,8 @@ import uuid
 import webbrowser
 import traceback
 import re
+import subprocess
+import tempfile
 
 # Global exception handler to catch startup crashes (defined early)
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -227,6 +229,38 @@ class UpdateCheckThread(QThread):
             self.finished.emit(data)
         except Exception as e:
             self.finished.emit({"error": f"Could not connect to the update server:\n{str(e)}"})
+
+
+class UpdateDownloadThread(QThread):
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, url, save_path):
+        super().__init__()
+        self.url = url
+        self.save_path = save_path
+
+    def run(self):
+        if not requests:
+            self.error.emit("The 'requests' library is not installed.")
+            return
+        try:
+            response = requests.get(self.url, stream=True, timeout=30)
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            with open(self.save_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            self.progress.emit(int(downloaded * 100 / total_size))
+            self.finished.emit(self.save_path)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class QuickCaptureDialog(QDialog):
@@ -717,6 +751,9 @@ class UltimateTaskFlow(QMainWindow):
         if self.state.get("ui", {}).get("collapsed", False):
             self._snap(self._collapsed_geometry(), animated=False)
 
+        # Check for updates silently on startup (delayed slightly to let UI load)
+        QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
+
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
         # Create a simple gold pixmap for the icon
@@ -750,7 +787,8 @@ class UltimateTaskFlow(QMainWindow):
         if chosen == act_update:
             self._check_for_updates()
 
-    def _check_for_updates(self):
+    def _check_for_updates(self, silent=False):
+        self._update_silent = silent
         self.update_thread = UpdateCheckThread()
         self.update_thread.finished.connect(self._on_update_check_finished)
         self.update_thread.start()
@@ -758,29 +796,71 @@ class UltimateTaskFlow(QMainWindow):
     def _on_update_check_finished(self, result):
         error = result.get("error")
         if error:
-            QMessageBox.warning(self, "Update Check Failed", error)
+            if not getattr(self, "_update_silent", False):
+                QMessageBox.warning(self, "Update Check Failed", error)
             return
 
         latest_version_str = result.get("latest_version")
         download_url = result.get("download_url")
 
         if not latest_version_str or not download_url:
-            QMessageBox.warning(self, "Update Check Failed", "Invalid version information received from the server.")
+            if not getattr(self, "_update_silent", False):
+                QMessageBox.warning(self, "Update Check Failed", "Invalid version information received from the server.")
             return
 
         try:
             latest_v = tuple(map(int, latest_version_str.split('.')))
             current_v = tuple(map(int, VERSION.split('.')))
         except ValueError:
-            QMessageBox.warning(self, "Update Check Failed", f"Invalid version format received: '{latest_version_str}'")
+            if not getattr(self, "_update_silent", False):
+                QMessageBox.warning(self, "Update Check Failed", f"Invalid version format received: '{latest_version_str}'")
             return
 
         if latest_v > current_v:
-            reply = QMessageBox.information(self, "Update Available", f"A new version ({latest_version_str}) of TaskFlow is available.\n\nDo you want to open the download page?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+            reply = QMessageBox.question(
+                self, 
+                "Update Available", 
+                f"A new version ({latest_version_str}) of TaskFlow is available.\n\nDo you want to download and install it now?", 
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
             if reply == QMessageBox.StandardButton.Yes:
-                webbrowser.open(download_url)
+                self._start_update_download(download_url)
         else:
-            QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
+            if not getattr(self, "_update_silent", False):
+                QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
+
+    def _start_update_download(self, url):
+        filename = url.split("/")[-1]
+        if not filename or "." not in filename:
+            filename = "TaskFlow_Update.exe"
+        
+        save_path = os.path.join(tempfile.gettempdir(), filename)
+        
+        self.progress_dialog = QProgressDialog("Downloading Update...", "Cancel", 0, 100, self)
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setAutoClose(False)
+        self.progress_dialog.setAutoReset(False)
+        self.progress_dialog.show()
+        
+        self.down_thread = UpdateDownloadThread(url, save_path)
+        self.down_thread.progress.connect(self.progress_dialog.setValue)
+        self.down_thread.finished.connect(self._on_download_finished)
+        self.down_thread.error.connect(self._on_download_error)
+        self.progress_dialog.canceled.connect(self.down_thread.terminate)
+        self.down_thread.start()
+
+    def _on_download_finished(self, path):
+        self.progress_dialog.close()
+        try:
+            # Run the installer/executable and close the app
+            subprocess.Popen([path], shell=True)
+            self._force_quit()
+        except Exception as e:
+            QMessageBox.critical(self, "Update Error", f"Failed to launch installer:\n{e}")
+
+    def _on_download_error(self, msg):
+        self.progress_dialog.close()
+        QMessageBox.warning(self, "Download Failed", msg)
 
     def _on_quick_capture(self, text):
         text, section, emoji = self._parse_task_input(text)
