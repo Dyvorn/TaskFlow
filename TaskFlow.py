@@ -116,6 +116,7 @@ def _atomic_write_json(path: str, backup_path: str, data: dict):
 def load_state() -> dict:
     default = {
         "schema": 1,
+        "last_version": "0.0",
         "last_opened": _today_str(),
         "tasks": [],
         "notes": {"groups": {"General": []}, "order": ["General"]},
@@ -146,6 +147,7 @@ def load_state() -> dict:
     data.setdefault("tasks", [])
     data.setdefault("notes", default["notes"])
     data.setdefault("ui", default["ui"])
+    data.setdefault("last_version", "0.0")
     data.setdefault("last_opened", _today_str())
     data.setdefault("sections", default["sections"])
 
@@ -752,6 +754,10 @@ class UltimateTaskFlow(QMainWindow):
         if self.state.get("ui", {}).get("collapsed", False):
             self._snap(self._collapsed_geometry(), animated=False)
 
+        # Show What's New if version changed
+        if self.state.get("last_version") != VERSION:
+            QTimer.singleShot(1000, self._show_whats_new)
+
         # Check for updates silently on startup (delayed slightly to let UI load)
         QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
 
@@ -794,6 +800,20 @@ class UltimateTaskFlow(QMainWindow):
         chosen = menu.exec(self.header_bar.mapToGlobal(pos))
         if chosen == act_update:
             self._check_for_updates()
+
+    def _show_whats_new(self):
+        text = (
+            f"Welcome to TaskFlow v{VERSION}!\n\n"
+            "New Features:\n"
+            "• Global Quick Capture (Alt+Space)\n"
+            "• Smart Search (Ctrl+F)\n"
+            "• Zen Mode with Focus Timer\n"
+            "• Dedicated Notes Tab\n\n"
+            "Enjoy your flow!"
+        )
+        QMessageBox.information(self, f"What's New in v{VERSION}", text)
+        self.state["last_version"] = VERSION
+        self._schedule_save()
 
     def _check_for_updates(self, silent=False):
         self._update_silent = silent
@@ -861,7 +881,10 @@ class UltimateTaskFlow(QMainWindow):
         self.progress_dialog.close()
         try:
             # Run the installer/executable and close the app
-            subprocess.Popen([path], shell=True)
+            if os.name == "nt":
+                os.startfile(path)
+            else:
+                subprocess.Popen([path], shell=False)
             self._force_quit()
         except Exception as e:
             QMessageBox.critical(self, "Update Error", f"Failed to launch installer:\n{e}")
