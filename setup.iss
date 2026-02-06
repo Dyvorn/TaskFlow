@@ -1,37 +1,40 @@
+#define MyAppName "TaskFlow"
+#define MyAppVersion "3.1"
+#define MyAppPublisher "Dyvorn"
+#define MyAppURL "https://github.com/Dyvorn/TaskFlow"
+#define MyAppExeName "TaskFlow.exe"
+
 [Setup]
-; Basic Application Information
-AppId={{D81329C6-89AB-4567-1234-CDEF01234567}
-AppName=TaskFlow
-AppVersion=3.0
-AppPublisher=Lennard Finn Penzler
-
-; Install to the user's local application data folder so the app can save its JSON file without admin rights
-DefaultDirName={userappdata}\TaskFlow
+AppId={{8C69D676-50C3-48C3-A339-7800D67650C3}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
+DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
-
-; Output the installer to the current project folder
 OutputDir=.
-OutputBaseFilename=TaskFlow_Setup_v3.0
+OutputBaseFilename=TaskFlow_Setup_v3.1
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-
-; Ensure the user doesn't need Admin rights to install (since we install to user folder)
-PrivilegesRequired=lowest
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "startup"; Description: "Start TaskFlow on system startup"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; IMPORTANT: This assumes you ran PyInstaller and the 'dist' folder is in the same directory as this script
+Source: "dist\TaskFlow\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\TaskFlow\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\TaskFlow"; Filename: "{app}\TaskFlow.exe"
-Name: "{autodesktop}\TaskFlow"; Filename: "{app}\TaskFlow.exe"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startup
 
 [Run]
-Filename: "{app}\TaskFlow.exe"; Description: "{cm:LaunchProgram,TaskFlow}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent

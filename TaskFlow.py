@@ -56,7 +56,7 @@ from PyQt6.QtCore import QMimeData
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "3.0"
+VERSION = "3.1"
 UPDATE_URL = "https://raw.githubusercontent.com/Dyvorn/TaskFlow/main/version.json"
 
 if getattr(sys, "frozen", False):
@@ -707,6 +707,7 @@ class UltimateTaskFlow(QMainWindow):
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.Window
         )
+        self.setWindowTitle(APP_NAME)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(WIN_W, WIN_H)
 
@@ -767,6 +768,8 @@ class UltimateTaskFlow(QMainWindow):
         # Zen Timer Setup
         self.zen_timer = QTimer(self)
         self.zen_timer.timeout.connect(self._update_zen_timer)
+        self.zen_remaining = 25 * 60
+        self.zen_running = False
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
