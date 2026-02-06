@@ -38,7 +38,7 @@ from PyQt6.QtCore import (
     pyqtSignal, QThread, QRect, QPoint
 )
 from PyQt6.QtGui import (
-    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap
+    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap, QIcon
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -54,8 +54,8 @@ from PyQt6.QtCore import QMimeData
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "1.0"
-UPDATE_URL = "https://your-server.com/path/to/version.json"  # <-- IMPORTANT: Change this URL
+VERSION = "2.0"
+UPDATE_URL = "https://raw.githubusercontent.com/Dyvorn/TaskFlow/main/version.json"
 
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -668,10 +668,12 @@ class UltimateTaskFlow(QMainWindow):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.Window
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(WIN_W, WIN_H)
+
+        self._setup_tray()
 
         # Quick Capture Setup
         self.quick_capture = QuickCaptureDialog(self)
@@ -683,6 +685,58 @@ class UltimateTaskFlow(QMainWindow):
                 keyboard.add_hotkey('alt+space', self.request_quick_capture.emit)
             except Exception as e:
                 print(f"Failed to register hotkey: {e}")
+
+        root = QWidget()
+        self.setCentralWidget(root)
+        root_lay = QVBoxLayout(root)
+        root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
+
+        self.container = QFrame()
+        self.container.setObjectName("container")
+        self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
+        root_lay.addWidget(self.container)
+
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(22)
+        shadow.setColor(QColor(0, 0, 0, 130))
+        shadow.setOffset(0, 6)
+        self.container.setGraphicsEffect(shadow)
+
+        self.main = QVBoxLayout(self.container)
+        self.main.setContentsMargins(0, 0, 0, 0)
+        self.main.setSpacing(0)
+
+        self._build_header()
+        self._build_stack()
+        self._wire_shortcuts()
+
+        self._apply_ui_state()
+        self._remember_expanded_geom()
+
+        self._clamp_to_screen()
+        if self.state.get("ui", {}).get("collapsed", False):
+            self._snap(self._collapsed_geometry(), animated=False)
+
+    def _setup_tray(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        # Create a simple gold pixmap for the icon
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(QColor(GOLD))
+        self.tray_icon.setIcon(QIcon(pixmap))
+        
+        tray_menu = QMenu()
+        act_show = tray_menu.addAction("Show/Hide")
+        act_show.triggered.connect(self.toggle_collapse)
+        act_quit = tray_menu.addAction("Quit")
+        act_quit.triggered.connect(self._force_quit)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.toggle_collapse()
 
     def _open_header_menu(self, pos):
         menu = QMenu(self)
@@ -728,37 +782,6 @@ class UltimateTaskFlow(QMainWindow):
         else:
             QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
 
-        root = QWidget()
-        self.setCentralWidget(root)
-        root_lay = QVBoxLayout(root)
-        root_lay.setContentsMargins(MARGIN, MARGIN, MARGIN, MARGIN)
-
-        self.container = QFrame()
-        self.container.setObjectName("container")
-        self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
-        root_lay.addWidget(self.container)
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(22)
-        shadow.setColor(QColor(0, 0, 0, 130))
-        shadow.setOffset(0, 6)
-        self.container.setGraphicsEffect(shadow)
-
-        self.main = QVBoxLayout(self.container)
-        self.main.setContentsMargins(0, 0, 0, 0)
-        self.main.setSpacing(0)
-
-        self._build_header()
-        self._build_stack()
-        self._wire_shortcuts()
-
-        self._apply_ui_state()
-        self._remember_expanded_geom()
-
-        self._clamp_to_screen()
-        if self.state.get("ui", {}).get("collapsed", False):
-            self._snap(self._collapsed_geometry(), animated=False)
-
     def _on_quick_capture(self, text):
         text, section, emoji = self._parse_task_input(text)
         self._create_task(text, section, emoji)
@@ -772,6 +795,10 @@ class UltimateTaskFlow(QMainWindow):
 
     # ---------- Close ----------
     def _quit(self):
+        # Override close button to just hide/minimize
+        self.hide()
+
+    def _force_quit(self):
         try:
             self._save_now()
         except Exception:
@@ -787,7 +814,8 @@ class UltimateTaskFlow(QMainWindow):
             self._save_now()
         except Exception:
             pass
-        super().closeEvent(event)
+        event.ignore()
+        self.hide()
 
     # ---------- Event handling ----------
     def eventFilter(self, obj, event):
@@ -888,6 +916,15 @@ class UltimateTaskFlow(QMainWindow):
         )
         self.btn_collapse.clicked.connect(self.toggle_collapse)
 
+        self.btn_minimize = QPushButton("−")
+        self.btn_minimize.setFixedSize(30, 30)
+        self.btn_minimize.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_minimize.setStyleSheet(
+            f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;}}"
+            f"QPushButton:hover{{background:{HOVER_BG};color:{TEXT_WHITE};}}"
+        )
+        self.btn_minimize.clicked.connect(self.showMinimized)
+
         self.btn_close = QPushButton("×")
         self.btn_close.setFixedSize(30, 30)
         self.btn_close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -901,6 +938,7 @@ class UltimateTaskFlow(QMainWindow):
         lay.addWidget(self.btn_notes)
         lay.addStretch()
         lay.addWidget(self.btn_collapse)
+        lay.addWidget(self.btn_minimize)
         lay.addWidget(self.btn_close)
 
         self.main.addWidget(self.header_bar)
