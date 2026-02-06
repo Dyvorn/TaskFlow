@@ -1,4 +1,4 @@
-# TaskFlow v3.0
+# TaskFlow v3.1
 
 The ultimate "Flow State" desktop widget. Minimalist, keyboard-first, and distraction-free.
 

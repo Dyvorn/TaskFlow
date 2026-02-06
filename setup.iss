@@ -13,6 +13,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
+PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 OutputDir=.
 OutputBaseFilename=TaskFlow_Setup_v3.1
