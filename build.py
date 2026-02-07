@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import shutil
 import zipfile
@@ -8,8 +9,23 @@ APP_NAME = "TaskFlow"
 MAIN_SCRIPT = "TaskFlow.py"
 VERSION = "5.1"
 
+def validate_icon(icon_path):
+    if not os.path.exists(icon_path):
+        print(f"Error: Icon file '{icon_path}' not found.")
+        sys.exit(1)
+    
+    with open(icon_path, "rb") as f:
+        header = f.read(4)
+        if header.startswith(b'\x89PNG'):
+            print(f"CRITICAL: '{icon_path}' is a PNG file renamed to .ico.")
+            print("Inno Setup will fail. Please convert it to a real ICO format.")
+            sys.exit(1)
+        if header != b'\x00\x00\x01\x00':
+            print(f"Warning: '{icon_path}' header does not match standard ICO format.")
+
 def build():
     print(f"Building {APP_NAME} v{VERSION}...")
+    validate_icon("icon.ico")
     
     # Clean previous builds
     if os.path.exists("dist"): shutil.rmtree("dist")

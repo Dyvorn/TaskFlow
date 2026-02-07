@@ -38,9 +38,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startup"; Description: "Start TaskFlow with Windows"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; NOTE: Run build_for_iss.bat first to generate the dist/TaskFlow folder!
-Source: "dist\TaskFlow\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\TaskFlow\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; NOTE: Run build.py first to generate the dist folder!
+Source: "dist\{#MyAppName}_v{#MyAppVersion}.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
