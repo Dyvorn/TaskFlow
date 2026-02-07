@@ -79,12 +79,16 @@ WHATS_NEW_HTML = (
 )
 
 if getattr(sys, "frozen", False):
-    BASE_DIR = os.path.dirname(sys.executable)
+    # Use AppData for installed version to ensure write permissions
+    BASE_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
 else:
     try:
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     except NameError:
         BASE_DIR = os.getcwd()
+
+if not os.path.exists(BASE_DIR):
+    os.makedirs(BASE_DIR, exist_ok=True)
 
 DATA_FILE = os.path.join(BASE_DIR, "taskflow_data.json")
 BACKUP_FILE = os.path.join(BASE_DIR, "taskflow_data.backup.json")
