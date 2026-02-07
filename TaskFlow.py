@@ -71,15 +71,15 @@ def resource_path(relative_path):
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "5.2"
+VERSION = "5.3"
 UPDATE_URL = "https://api.github.com/repos/Dyvorn/TaskFlow/releases/latest"
 
 WHATS_NEW_HTML = (
-    "<p>Welcome to TaskFlow 5.2!</p>"
+    "<p>Welcome to TaskFlow 5.3!</p>"
     "<ul>"
-    "<li><b>Smarter Updates:</b> The app can now automatically download and launch the installer for seamless updates.</li>"
-    "<li><b>Icon Everywhere:</b> The TaskFlow icon is now correctly displayed on the window, taskbar, and system tray.</li>"
-    "<li><b>Refinements:</b> Various bug fixes and performance improvements.</li>"
+    "<li><b>Update System Fixed:</b> Resolved issues with automatic updates.</li>"
+    "<li><b>Icon Fixes:</b> Application icon now appears correctly everywhere.</li>"
+    "<li><b>Refinements:</b> Stability improvements.</li>"
     "</ul>"
     "<p>Stay in the flow!</p>"
 )
@@ -263,16 +263,22 @@ class UpdateCheckThread(QThread):
             data = res.json()
             
             # Parse GitHub API response
-            tag = data.get("tag_name", "").lstrip("vV")
+            tag = data.get("tag_name", "")
+            # FIX: Robust version extraction to prevent "Invalid version format"
+            # Extracts "6.0" from "v6.0", "v6.0-beta", etc.
+            match = re.search(r"(\d+(\.\d+)+)", tag)
+            clean_version = match.group(1) if match else tag.strip().lstrip("vV")
+
             assets = data.get("assets", [])
             download_url = ""
             for asset in assets:
                 asset_name = asset.get("name", "").lower()
+                # Strict check: Must be an executable and contain "setup" to avoid zips/raw exes
                 if "setup" in asset_name and asset_name.endswith(".exe"):
                     download_url = asset.get("browser_download_url")
                     break
             
-            self.finished.emit({"latest_version": tag, "download_url": download_url})
+            self.finished.emit({"latest_version": clean_version, "download_url": download_url})
             
         except Exception as e:
             self.finished.emit({"error": f"Could not connect to the update server:\n{str(e)}"})

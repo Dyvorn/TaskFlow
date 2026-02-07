@@ -1,8 +1,8 @@
-; Script generated for TaskFlow v5.0
+; Script generated for TaskFlow v5.3
 ; Matches the dark aesthetic of the application.
 
 #define MyAppName "TaskFlow"
-#define MyAppVersion "5.2"
+#define MyAppVersion "5.3"
 #define MyAppPublisher "Dyvorn"
 #define MyAppURL "https://github.com/Dyvorn/TaskFlow"
 #define MyAppExeName "TaskFlow.exe"

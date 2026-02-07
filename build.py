@@ -7,7 +7,7 @@ import zipfile
 # Configuration
 APP_NAME = "TaskFlow"
 MAIN_SCRIPT = "TaskFlow.py"
-VERSION = "5.2"
+VERSION = "5.3"
 
 def validate_icon(icon_path):
     if not os.path.exists(icon_path):
