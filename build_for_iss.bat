@@ -1,6 +1,6 @@
 @echo off
 echo ========================================================
-echo  TaskFlow v5.0 - Build & Installer
+echo  TaskFlow v5.1 - Build & Installer
 echo ========================================================
 echo.
 
@@ -16,7 +16,7 @@ pip install --upgrade pyinstaller requests PyQt6 keyboard
 
 echo.
 echo [3/5] Building Executable (PyInstaller)...
-pyinstaller --noconfirm --onedir --windowed --noconsole --clean --name "TaskFlow" --add-data "README.md;." "TaskFlow.py"
+pyinstaller --noconfirm --onedir --windowed --noconsole --clean --name "TaskFlow" --icon "icon.ico" --add-data "README.md;." "TaskFlow.py"
 
 echo.
 echo [4/5] Building Installer (Inno Setup)...
@@ -26,7 +26,7 @@ if exist %ISCC% (
     echo.
     echo ========================================================
     echo  BUILD SUCCESSFUL!
-    echo  Installer: dist\TaskFlow_Setup_v5.0.exe
+    echo  Installer: dist\TaskFlow_Setup_v5.1.exe
     echo ========================================================
 ) else (
     echo.

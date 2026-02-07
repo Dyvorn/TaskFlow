@@ -66,18 +66,14 @@ from PyQt6.QtCore import QMimeData
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "5.0"
+VERSION = "5.1"
 UPDATE_URL = "https://api.github.com/repos/Dyvorn/TaskFlow/releases/latest"
 
 WHATS_NEW_HTML = (
-    "<p>Welcome to TaskFlow 5.0! This update brings a smoother, more refined experience:</p>"
+    "<p>Welcome to TaskFlow 5.1!</p>"
     "<ul>"
-    "<li><b>Satisfying Interactions:</b> Enjoy a gold flash on completion and confetti when you finish a section!</li>"
-    "<li><b>Window Snapping:</b> The window now magnetically snaps to screen edges.</li>"
-    "<li><b>Smooth Animations:</b> Enjoy seamless fade-in transitions between tabs and on startup.</li>"
-    "<li><b>Modern Overlays:</b> Native popups have been replaced with beautiful in-app overlays.</li>"
-    "<li><b>Integrated Settings:</b> Settings are now built directly into the main window.</li>"
-    "<li><b>Start with Windows:</b> You can now toggle auto-start directly from Settings.</li>"
+    "<li><b>Fresh Look:</b> Updated application icon.</li>"
+    "<li><b>Refinements:</b> Various bug fixes and performance improvements.</li>"
     "</ul>"
     "<p>Stay in the flow!</p>"
 )
@@ -1082,6 +1078,8 @@ class UltimateTaskFlow(QMainWindow):
             Qt.WindowType.Window
         )
         self.setWindowTitle(APP_NAME)
+        if os.path.exists("icon.ico"):
+            self.setWindowIcon(QIcon("icon.ico"))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(WIN_W, WIN_H)
 

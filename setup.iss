@@ -2,7 +2,7 @@
 ; Matches the dark aesthetic of the application.
 
 #define MyAppName "TaskFlow"
-#define MyAppVersion "5.0"
+#define MyAppVersion "5.1"
 #define MyAppPublisher "Dyvorn"
 #define MyAppURL "https://github.com/Dyvorn/TaskFlow"
 #define MyAppExeName "TaskFlow.exe"
@@ -25,6 +25,7 @@ OutputBaseFilename=TaskFlow_Setup_v{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=icon.ico
 
 ; Uninstall settings
 UninstallDisplayIcon={app}\{#MyAppExeName}
