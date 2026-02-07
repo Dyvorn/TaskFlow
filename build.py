@@ -7,7 +7,7 @@ import zipfile
 # Configuration
 APP_NAME = "TaskFlow"
 MAIN_SCRIPT = "TaskFlow.py"
-VERSION = "5.1"
+VERSION = "5.2"
 
 def validate_icon(icon_path):
     if not os.path.exists(icon_path):
@@ -42,6 +42,7 @@ def build():
         "--clean",
         "--icon", "icon.ico",
         "--add-data", f"README.md{os.pathsep}.",
+        "--add-data", f"icon.ico{os.pathsep}.",
         MAIN_SCRIPT
     ]
     

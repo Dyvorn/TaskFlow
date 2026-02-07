@@ -2,7 +2,7 @@
 ; Matches the dark aesthetic of the application.
 
 #define MyAppName "TaskFlow"
-#define MyAppVersion "5.1"
+#define MyAppVersion "5.2"
 #define MyAppPublisher "Dyvorn"
 #define MyAppURL "https://github.com/Dyvorn/TaskFlow"
 #define MyAppExeName "TaskFlow.exe"

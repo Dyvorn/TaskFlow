@@ -62,17 +62,23 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QMimeData
 
-
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "5.1"
+VERSION = "5.2"
 UPDATE_URL = "https://api.github.com/repos/Dyvorn/TaskFlow/releases/latest"
 
 WHATS_NEW_HTML = (
-    "<p>Welcome to TaskFlow 5.1!</p>"
+    "<p>Welcome to TaskFlow 5.2!</p>"
     "<ul>"
-    "<li><b>Fresh Look:</b> Updated application icon.</li>"
+    "<li><b>Smarter Updates:</b> The app can now automatically download and launch the installer for seamless updates.</li>"
+    "<li><b>Icon Everywhere:</b> The TaskFlow icon is now correctly displayed on the window, taskbar, and system tray.</li>"
     "<li><b>Refinements:</b> Various bug fixes and performance improvements.</li>"
     "</ul>"
     "<p>Stay in the flow!</p>"
@@ -161,6 +167,12 @@ def load_state() -> dict:
     if data is None and os.path.exists(BACKUP_FILE):
         try:
             data = _read(BACKUP_FILE)
+            # STABILITY FIX: If we successfully recovered from backup, 
+            # restore the main file immediately. This prevents the next save 
+            # from backing up the corrupt/missing main file over our good backup.
+            if data:
+                try: shutil.copy2(BACKUP_FILE, DATA_FILE)
+                except Exception: pass
         except Exception:
             data = None
 
@@ -255,7 +267,8 @@ class UpdateCheckThread(QThread):
             assets = data.get("assets", [])
             download_url = ""
             for asset in assets:
-                if asset.get("name", "").lower().endswith(".exe"):
+                asset_name = asset.get("name", "").lower()
+                if "setup" in asset_name and asset_name.endswith(".exe"):
                     download_url = asset.get("browser_download_url")
                     break
             
@@ -1078,8 +1091,7 @@ class UltimateTaskFlow(QMainWindow):
             Qt.WindowType.Window
         )
         self.setWindowTitle(APP_NAME)
-        if os.path.exists("icon.ico"):
-            self.setWindowIcon(QIcon("icon.ico"))
+        self.setWindowIcon(QIcon(resource_path("icon.ico")))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(WIN_W, WIN_H)
 
@@ -1191,10 +1203,7 @@ class UltimateTaskFlow(QMainWindow):
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
-        # Create a simple gold pixmap for the icon
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(QColor(GOLD))
-        self.tray_icon.setIcon(QIcon(pixmap))
+        self.tray_icon.setIcon(QIcon(resource_path("icon.ico")))
         
         tray_menu = QMenu()
         act_show = tray_menu.addAction("Show/Hide")
