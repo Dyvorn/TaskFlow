@@ -33,11 +33,16 @@ try:
 except ImportError:
     keyboard = None
 
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
 from datetime import datetime, date
 
 from PyQt6.QtCore import (
     Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve,
-    pyqtSignal, QThread, QRect, QPoint, QUrl
+    pyqtSignal, QThread, QRect, QPoint, QUrl, QParallelAnimationGroup
 )
 from PyQt6.QtGui import (
     QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap, QIcon
@@ -48,7 +53,8 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QMenu,
     QListWidget, QListWidgetItem, QStackedWidget, QTextEdit,
     QComboBox, QInputDialog, QSplitter, QMessageBox, QProgressBar,
-     QDialog, QSystemTrayIcon, QProgressDialog, QSpinBox, QCheckBox
+    QDialog, QSystemTrayIcon, QProgressDialog, QSpinBox, QCheckBox,
+    QGraphicsOpacityEffect
 )
 from PyQt6.QtCore import QMimeData
 
@@ -280,89 +286,123 @@ class UpdateDownloadThread(QThread):
             self.error.emit(str(e))
 
 
-class SettingsDialog(QDialog):
-    def __init__(self, config, parent=None):
+class OverlayDialog(QWidget):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Settings")
-        self.setFixedSize(300, 180)
-        self.config = config.copy()
-        self.updated_config = None
+        self.setVisible(False)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         
-        self.setStyleSheet(f"background:{DARK_BG};color:{TEXT_WHITE};font-size:14px;")
-        
-        lay = QVBoxLayout(self)
-        lay.setSpacing(15)
-        lay.setContentsMargins(20, 20, 20, 20)
-        
-        # Zen Duration
-        h1 = QHBoxLayout()
-        lbl = QLabel("Zen Timer (minutes):")
-        lbl.setStyleSheet(f"color:{TEXT_GRAY};")
-        self.spin_zen = QSpinBox()
-        self.spin_zen.setRange(1, 120)
-        self.spin_zen.setValue(self.config.get("zen_duration", 25))
-        self.spin_zen.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};padding:4px;color:{TEXT_WHITE};")
-        h1.addWidget(lbl)
-        h1.addWidget(self.spin_zen)
-        lay.addLayout(h1)
-        
-        # Auto Collapse
-        self.chk_collapse = QCheckBox("Auto-collapse when focus lost")
-        self.chk_collapse.setChecked(self.config.get("auto_collapse", True))
-        self.chk_collapse.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}")
-        lay.addWidget(self.chk_collapse)
-        
-        # Buttons
-        btns = QHBoxLayout()
-        btn_save = QPushButton("Save Settings")
-        btn_save.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn_save.clicked.connect(self._save)
-        btn_save.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:6px;padding:8px;font-weight:bold;")
-        btns.addStretch()
-        btns.addWidget(btn_save)
-        lay.addLayout(btns)
-        
-    def _save(self):
-        self.updated_config = {
-            "zen_duration": self.spin_zen.value(),
-            "auto_collapse": self.chk_collapse.isChecked()
-        }
-        self.accept()
+        # Dim background
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
 
+        # Opacity Effect for Fade In
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+        
+        # Content Container (Centered)
+        self.content = QFrame(self)
+        self.content.setFixedSize(320, 190)
+        self.content.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};border-radius:16px;")
+        
+        # Shadow for content
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(40)
+        shadow.setColor(QColor(0, 0, 0, 120))
+        shadow.setOffset(0, 10)
+        self.content.setGraphicsEffect(shadow)
+        
+        lay = QVBoxLayout(self.content)
+        lay.setContentsMargins(24, 24, 24, 24)
+        lay.setSpacing(16)
+        
+        self.lbl_title = QLabel("Title")
+        self.lbl_title.setStyleSheet(f"color:{GOLD};font-size:18px;font-weight:bold;background:transparent;border:none;")
+        self.lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.lbl_title)
+        
+        self.lbl_msg = QLabel("Message")
+        self.lbl_msg.setWordWrap(True)
+        self.lbl_msg.setStyleSheet(f"color:{TEXT_WHITE};font-size:14px;background:transparent;border:none;")
+        self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.lbl_msg, 1)
+        
+        self.btn_layout = QHBoxLayout()
+        lay.addLayout(self.btn_layout)
 
-class WhatsNewDialog(QDialog):
-    def __init__(self, version, features, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"What's New in v{version}")
-        self.setFixedSize(400, 420)
-        self.setStyleSheet(f"background:{DARK_BG};color:{TEXT_WHITE};")
+    def show_msg(self, title, msg, buttons):
+        self.lbl_title.setText(title)
+        self.lbl_msg.setText(msg)
         
-        lay = QVBoxLayout(self)
-        lay.setSpacing(15)
-        lay.setContentsMargins(20, 20, 20, 20)
+        # Clear old buttons
+        while self.btn_layout.count():
+            item = self.btn_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
         
-        lbl_title = QLabel(f"Welcome to TaskFlow v{version}!")
-        lbl_title.setStyleSheet(f"color:{GOLD};font-size:18px;font-weight:bold;")
-        lay.addWidget(lbl_title)
+        # Add new buttons: buttons = [("Text", callback, "primary"|"secondary")]
+        for text, cb, style_type in buttons:
+            btn = QPushButton(text)
+            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            if style_type == "primary":
+                btn.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:8px;padding:8px 16px;font-weight:bold;border:none;")
+            else:
+                btn.setStyleSheet(f"background:{HOVER_BG};color:{TEXT_WHITE};border-radius:8px;padding:8px 16px;border:none;")
+            
+            btn.clicked.connect(lambda checked, c=cb: self._handle_click(c))
+            self.btn_layout.addWidget(btn)
+            
+        # Ensure overlay covers the container before calculating positions
+        if self.parentWidget():
+            self.resize(self.parentWidget().size())
+
+        if hasattr(self, "anim_group") and self.anim_group.state() == QParallelAnimationGroup.State.Running:
+            self.anim_group.stop()
+
+        self.opacity_effect.setOpacity(0)
+        self.setVisible(True)
+        self.raise_()
+        self._center_content()
         
-        self.content = QTextEdit()
-        self.content.setReadOnly(True)
-        self.content.setHtml(features)
-        self.content.setStyleSheet(f"border:none;background:{CARD_BG};border-radius:8px;padding:10px;font-size:14px;color:{TEXT_WHITE};")
-        lay.addWidget(self.content)
+        # Slide + Fade Animation
+        final_pos = self.content.pos()
+        start_pos = final_pos + QPoint(0, 8)
+        self.content.move(start_pos)
         
-        self.chk_dont_show = QCheckBox("Don't show again until next update")
-        self.chk_dont_show.setChecked(True)
-        self.chk_dont_show.setStyleSheet(
-            f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}"
-        )
-        lay.addWidget(self.chk_dont_show)
+        self.anim_group = QParallelAnimationGroup(self)
         
-        btn = QPushButton("Let's Flow")
-        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn.clicked.connect(self.accept)
-        btn.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:6px;padding:8px;font-weight:bold;")
-        lay.addWidget(btn)
+        anim_fade = QPropertyAnimation(self.opacity_effect, b"opacity", self)
+        anim_fade.setStartValue(0.0)
+        anim_fade.setEndValue(1.0)
+        anim_fade.setDuration(200)
+        anim_fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        anim_slide = QPropertyAnimation(self.content, b"pos", self)
+        anim_slide.setStartValue(start_pos)
+        anim_slide.setEndValue(final_pos)
+        anim_slide.setDuration(200)
+        anim_slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        self.anim_group.addAnimation(anim_fade)
+        self.anim_group.addAnimation(anim_slide)
+        self.anim_group.start()
+
+    def _handle_click(self, callback):
+        self.setVisible(False)
+        if callback:
+            callback()
+
+    def resizeEvent(self, event):
+        if hasattr(self, "anim_group") and self.anim_group.state() == QParallelAnimationGroup.State.Running:
+            self.anim_group.stop()
+            self.opacity_effect.setOpacity(1.0)
+        self._center_content()
+        super().resizeEvent(event)
+        
+    def _center_content(self):
+        if self.content:
+            x = (self.width() - self.content.width()) // 2
+            y = (self.height() - self.content.height()) // 2
+            self.content.move(x, y)
 
 
 class QuickCaptureDialog(QDialog):
@@ -832,6 +872,8 @@ class UltimateTaskFlow(QMainWindow):
         self.container = QFrame()
         self.container.setObjectName("container")
         self.container.setStyleSheet(f"#container{{background:{DARK_BG};border-radius:16px;}}")
+        self.container.installEventFilter(self)
+        
         root_lay.addWidget(self.container)
 
         shadow = QGraphicsDropShadowEffect()
@@ -840,6 +882,11 @@ class UltimateTaskFlow(QMainWindow):
         shadow.setOffset(0, 6)
         self.container.setGraphicsEffect(shadow)
 
+        # Startup Animation Setup (Apply to root to avoid conflict with shadow)
+        self.startup_effect = QGraphicsOpacityEffect(root)
+        self.startup_effect.setOpacity(0.0)
+        root.setGraphicsEffect(self.startup_effect)
+
         self.main = QVBoxLayout(self.container)
         self.main.setContentsMargins(0, 0, 0, 0)
         self.main.setSpacing(0)
@@ -847,6 +894,9 @@ class UltimateTaskFlow(QMainWindow):
         self._build_header()
         self._build_stack()
         self._wire_shortcuts()
+        
+        # Overlay (created after stack to sit on top)
+        self.overlay = OverlayDialog(self.container)
 
         self._apply_ui_state()
         self._remember_expanded_geom()
@@ -870,6 +920,40 @@ class UltimateTaskFlow(QMainWindow):
         self.zen_timer.timeout.connect(self._update_zen_timer)
         self.zen_remaining = 25 * 60
         self.zen_running = False
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not getattr(self, "_startup_animated", False):
+            self._startup_animated = True
+            self.startup_anim = QPropertyAnimation(self.startup_effect, b"opacity", self)
+            self.startup_anim.setStartValue(0.0)
+            self.startup_anim.setEndValue(1.0)
+            self.startup_anim.setDuration(500)
+            self.startup_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self.startup_anim.finished.connect(lambda: self.centralWidget().setGraphicsEffect(None))
+            self.startup_anim.start()
+
+    def _animate_tab_transition(self, widget):
+        if not self.isVisible():
+            return
+
+        # Stop any running animations
+        if hasattr(self, "_tab_anim") and self._tab_anim.state() == QPropertyAnimation.State.Running:
+            self._tab_anim.stop()
+
+        # Ensure widget is in the correct layout position (0,0) to fix hitbox offset bugs
+        widget.move(0, 0)
+        
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        
+        self._tab_anim = QPropertyAnimation(effect, b"opacity", widget)
+        self._tab_anim.setStartValue(0.0)
+        self._tab_anim.setEndValue(1.0)
+        self._tab_anim.setDuration(180)
+        self._tab_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._tab_anim.finished.connect(lambda: widget.setGraphicsEffect(None))
+        self._tab_anim.start()
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
@@ -912,12 +996,16 @@ class UltimateTaskFlow(QMainWindow):
             self._archive_completed()
 
     def _show_whats_new(self):
-        dlg = WhatsNewDialog(VERSION, WHATS_NEW_HTML, self)
-        dlg.exec()
-        
-        if dlg.chk_dont_show.isChecked():
+        self.header_bar.setVisible(False)
+        self.stack.setCurrentWidget(self.page_whats_new)
+        self._animate_tab_transition(self.page_whats_new)
+
+    def _close_whats_new(self):
+        if self.chk_dont_show.isChecked():
             self.state["last_version"] = VERSION
             self._schedule_save()
+        self.header_bar.setVisible(True)
+        self._switch_tab(self.state.get("ui", {}).get("active_tab", "Tasks"))
 
     def _check_for_updates(self, silent=False):
         self._update_silent = silent
@@ -929,7 +1017,7 @@ class UltimateTaskFlow(QMainWindow):
         error = result.get("error")
         if error:
             if not getattr(self, "_update_silent", False):
-                QMessageBox.warning(self, "Update Check Failed", error)
+                self._show_overlay("Update Failed", error, [("OK", None, "secondary")])
             return
 
         latest_version_str = result.get("latest_version")
@@ -937,7 +1025,7 @@ class UltimateTaskFlow(QMainWindow):
 
         if not latest_version_str or not download_url:
             if not getattr(self, "_update_silent", False):
-                QMessageBox.warning(self, "Update Check Failed", "Invalid version information received from the server.")
+                self._show_overlay("Update Failed", "Invalid version info.", [("OK", None, "secondary")])
             return
 
         try:
@@ -945,21 +1033,21 @@ class UltimateTaskFlow(QMainWindow):
             current_v = tuple(map(int, VERSION.split('.')))
         except ValueError:
             if not getattr(self, "_update_silent", False):
-                QMessageBox.warning(self, "Update Check Failed", f"Invalid version format received: '{latest_version_str}'")
+                self._show_overlay("Update Failed", "Invalid version format.", [("OK", None, "secondary")])
             return
 
         if latest_v > current_v:
-            reply = QMessageBox.question(
-                self, 
-                "Update Available", 
-                f"A new version ({latest_version_str}) of TaskFlow is available.\n\nDo you want to download and install it now?", 
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            self._show_overlay(
+                "Update Available",
+                f"Version {latest_version_str} is available.\nDownload now?",
+                [
+                    ("Download", lambda: self._start_update_download(download_url), "primary"),
+                    ("Later", None, "secondary")
+                ]
             )
-            if reply == QMessageBox.StandardButton.Yes:
-                self._start_update_download(download_url)
         else:
             if not getattr(self, "_update_silent", False):
-                QMessageBox.information(self, "No Updates", f"You are using the latest version of TaskFlow (v{VERSION}).")
+                self._show_overlay("No Updates", f"You are on the latest version (v{VERSION}).", [("OK", None, "primary")])
 
     def _start_update_download(self, url):
         filename = url.split("/")[-1]
@@ -991,35 +1079,52 @@ class UltimateTaskFlow(QMainWindow):
                 subprocess.Popen([path], shell=False)
             self._force_quit()
         except Exception as e:
-            QMessageBox.critical(self, "Update Error", f"Failed to launch installer:\n{e}")
+            self._show_overlay("Update Error", f"Failed to launch installer:\n{e}", [("OK", None, "secondary")])
 
     def _on_download_error(self, msg):
         self.progress_dialog.close()
-        QMessageBox.warning(self, "Download Failed", msg)
+        self._show_overlay("Download Failed", msg, [("OK", None, "secondary")])
 
     def _open_settings(self):
-        dlg = SettingsDialog(self.state.get("config", {}), self)
-        if dlg.exec():
-            self.state["config"] = dlg.updated_config
-            self._schedule_save()
-            # Apply changes immediately where possible
-            self._reset_zen_timer()
+        # Populate fields
+        cfg = self.state.get("config", {})
+        self.spin_zen.setValue(cfg.get("zen_duration", 25))
+        self.chk_collapse.setChecked(cfg.get("auto_collapse", True))
+        self.chk_startup.setChecked(self._is_startup_enabled())
+        
+        self.header_bar.setVisible(False)
+        self.stack.setCurrentWidget(self.page_settings)
+        self._animate_tab_transition(self.page_settings)
+
+    def _close_settings(self):
+        self.state["config"]["zen_duration"] = self.spin_zen.value()
+        self.state["config"]["auto_collapse"] = self.chk_collapse.isChecked()
+        self._set_startup(self.chk_startup.isChecked())
+        self._schedule_save()
+        self._reset_zen_timer()
+        
+        self.header_bar.setVisible(True)
+        self._switch_tab(self.state.get("ui", {}).get("active_tab", "Tasks"))
 
     def _archive_completed(self):
         completed = [t for t in self.state["tasks"] if t.get("completed")]
         if not completed:
-            QMessageBox.information(self, "Archive", "No completed tasks to archive.")
+            self._show_overlay("Archive", "No completed tasks to archive.", [("OK", None, "primary")])
             return
             
-        reply = QMessageBox.question(
-            self, "Archive Tasks",
+        self._show_overlay(
+            "Archive Tasks",
             f"Permanently delete {len(completed)} completed tasks?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            [
+                ("Archive", self._do_archive_completed, "primary"),
+                ("Cancel", None, "secondary")
+            ]
         )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.state["tasks"] = [t for t in self.state["tasks"] if not t.get("completed")]
-            self._schedule_save()
-            self._refresh_tasks_ui()
+
+    def _do_archive_completed(self):
+        self.state["tasks"] = [t for t in self.state["tasks"] if not t.get("completed")]
+        self._schedule_save()
+        self._refresh_tasks_ui()
 
     def _on_quick_capture(self, text):
         text, section, emoji = self._parse_task_input(text)
@@ -1058,6 +1163,10 @@ class UltimateTaskFlow(QMainWindow):
 
     # ---------- Event handling ----------
     def eventFilter(self, obj, event):
+        if obj == self.container and event.type() == event.Type.Resize:
+            if hasattr(self, "overlay"):
+                self.overlay.resize(self.container.size())
+
         watched = [w for w in (getattr(self, "input", None), getattr(self, "note_editor", None)) if w is not None]
         if watched and obj in tuple(watched):
             if event.type() in (event.Type.KeyPress, event.Type.MouseButtonPress, event.Type.FocusIn):
@@ -1237,13 +1346,20 @@ class UltimateTaskFlow(QMainWindow):
         self.page_tasks = QWidget()
         self.page_notes = QWidget()
         self.page_zen = QWidget()
+        self.page_settings = QWidget()
+        self.page_whats_new = QWidget()
+
         self.stack.addWidget(self.page_tasks)
         self.stack.addWidget(self.page_notes)
         self.stack.addWidget(self.page_zen)
+        self.stack.addWidget(self.page_settings)
+        self.stack.addWidget(self.page_whats_new)
 
         self._build_tasks_page()
         self._build_notes_page()
         self._build_zen_page()
+        self._build_settings_page()
+        self._build_whats_new_page()
 
     def _build_tasks_page(self):
         lay = QVBoxLayout(self.page_tasks)
@@ -1361,11 +1477,108 @@ class UltimateTaskFlow(QMainWindow):
         
         lay.addWidget(self.zen_subtasks_scroll, 1)
 
+    def _build_settings_page(self):
+        lay = QVBoxLayout(self.page_settings)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(15)
+
+        # Header
+        top = QHBoxLayout()
+        btn_back = QPushButton("← Back")
+        btn_back.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_back.setStyleSheet(f"color:{TEXT_GRAY};background:transparent;border:none;font-weight:bold;font-size:14px;")
+        btn_back.clicked.connect(self._close_settings)
+        
+        lbl_title = QLabel("Settings")
+        lbl_title.setStyleSheet(f"color:{TEXT_WHITE};font-size:18px;font-weight:bold;")
+        
+        top.addWidget(btn_back)
+        top.addStretch()
+        top.addWidget(lbl_title)
+        top.addStretch()
+        # Dummy widget to balance layout
+        dummy = QWidget()
+        dummy.setFixedWidth(btn_back.sizeHint().width())
+        top.addWidget(dummy)
+        
+        lay.addLayout(top)
+
+        # Content
+        # Zen Duration
+        h1 = QHBoxLayout()
+        lbl = QLabel("Zen Timer (minutes):")
+        lbl.setStyleSheet(f"color:{TEXT_GRAY};")
+        self.spin_zen = QSpinBox()
+        self.spin_zen.setRange(1, 120)
+        self.spin_zen.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};padding:4px;color:{TEXT_WHITE};")
+        h1.addWidget(lbl)
+        h1.addWidget(self.spin_zen)
+        lay.addLayout(h1)
+        
+        # Auto Collapse
+        self.chk_collapse = QCheckBox("Auto-collapse when focus lost")
+        self.chk_collapse.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}")
+        lay.addWidget(self.chk_collapse)
+
+        # Start with Windows
+        self.chk_startup = QCheckBox("Start with Windows")
+        self.chk_startup.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}")
+        lay.addWidget(self.chk_startup)
+
+        # Check for Updates
+        self.btn_update = QPushButton("Check for Updates")
+        self.btn_update.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_update.setStyleSheet(f"background:{CARD_BG};color:{TEXT_WHITE};border:1px solid {HOVER_BG};border-radius:6px;padding:6px;")
+        self.btn_update.clicked.connect(self._check_for_updates)
+        lay.addWidget(self.btn_update)
+
+        lay.addStretch()
+
+        # Version Label
+        self.lbl_ver = QLabel(f"TaskFlow v{VERSION}")
+        self.lbl_ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_ver.setStyleSheet(f"color:{TEXT_GRAY};font-size:12px;text-decoration:underline;")
+        self.lbl_ver.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.lbl_ver.mousePressEvent = lambda e: self._show_whats_new()
+        lay.addWidget(self.lbl_ver)
+
+    def _build_whats_new_page(self):
+        lay = QVBoxLayout(self.page_whats_new)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(15)
+
+        lbl_title = QLabel(f"Welcome to TaskFlow v{VERSION}!")
+        lbl_title.setStyleSheet(f"color:{GOLD};font-size:18px;font-weight:bold;")
+        lay.addWidget(lbl_title)
+        
+        self.wn_content = QTextEdit()
+        self.wn_content.setReadOnly(True)
+        self.wn_content.setHtml(WHATS_NEW_HTML)
+        self.wn_content.setStyleSheet(f"border:none;background:{CARD_BG};border-radius:8px;padding:10px;font-size:14px;color:{TEXT_WHITE};")
+        lay.addWidget(self.wn_content)
+        
+        self.chk_dont_show = QCheckBox("Don't show again until next update")
+        self.chk_dont_show.setChecked(True)
+        self.chk_dont_show.setStyleSheet(
+            f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}"
+        )
+        lay.addWidget(self.chk_dont_show)
+        
+        btn = QPushButton("Let's Flow")
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn.clicked.connect(self._close_whats_new)
+        btn.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:6px;padding:8px;font-weight:bold;")
+        lay.addWidget(btn)
+
+    def _show_overlay(self, title, msg, buttons):
+        self.overlay.show_msg(title, msg, buttons)
+
     def enter_zen_mode(self, task_id: str):
         self._zen_task_id = task_id
         self._populate_zen_view(task_id)
         self.header_bar.setVisible(False)
         self.stack.setCurrentWidget(self.page_zen)
+        self._animate_tab_transition(self.page_zen)
 
     def exit_zen_mode(self):
         if self.zen_running:
@@ -1373,6 +1586,7 @@ class UltimateTaskFlow(QMainWindow):
         self._zen_task_id = None
         self.header_bar.setVisible(True)
         self.stack.setCurrentWidget(self.page_tasks)
+        self._animate_tab_transition(self.page_tasks)
 
     def _populate_zen_view(self, task_id: str):
         t = self._find_task(task_id)
@@ -1439,12 +1653,43 @@ class UltimateTaskFlow(QMainWindow):
             self.btn_timer_toggle.setText("▶ Start")
             self.showNormal()
             self.activateWindow()
-            QMessageBox.information(self, "Flow Complete", "Focus session finished!")
+            self._show_overlay("Flow Complete", "Focus session finished!", [("Awesome", None, "primary")])
 
     def _update_timer_display(self):
         m = self.zen_remaining // 60
         s = self.zen_remaining % 60
         self.lbl_timer.setText(f"{m:02}:{s:02}")
+
+    def _is_startup_enabled(self):
+        if not winreg: return False
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+            winreg.QueryValueEx(key, APP_NAME)
+            winreg.CloseKey(key)
+            return True
+        except:
+            return False
+
+    def _set_startup(self, enabled: bool):
+        if not winreg: return
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+            if enabled:
+                exe = sys.executable
+                if getattr(sys, "frozen", False):
+                    cmd = f'"{exe}"'
+                else:
+                    script = os.path.abspath(sys.argv[0])
+                    cmd = f'"{exe}" "{script}"'
+                winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, cmd)
+            else:
+                try:
+                    winreg.DeleteValue(key, APP_NAME)
+                except FileNotFoundError:
+                    pass
+            winreg.CloseKey(key)
+        except Exception as e:
+            print(f"Startup registry error: {e}")
 
     def _create_section_item(self, name: str):
         blk = SectionBlock(name)
@@ -1512,7 +1757,7 @@ class UltimateTaskFlow(QMainWindow):
 
     def _delete_section(self, name: str):
         if name == "Today":
-            QMessageBox.warning(self, "Error", "Cannot delete 'Today'.")
+            self._show_overlay("Error", "Cannot delete 'Today'.", [("OK", None, "secondary")])
             return
         
         # Move tasks to Today
@@ -1685,6 +1930,8 @@ class UltimateTaskFlow(QMainWindow):
 
     def _auto_collapse_if_needed(self):
         if self._is_busy():
+            return
+        if not self.state.get("config", {}).get("auto_collapse", True):
             return
         if not self.underMouse() and not self.isActiveWindow():
             if not self.state.get("ui", {}).get("collapsed", False):
@@ -2208,19 +2455,20 @@ class UltimateTaskFlow(QMainWindow):
     def _delete_note_group(self):
         g = self.note_group.currentText() or "General"
         if g == "General":
-            QMessageBox.information(self, "Can't delete", "The 'General' group can't be deleted.")
+            self._show_overlay("Can't Delete", "The 'General' group cannot be deleted.", [("OK", None, "secondary")])
             return
 
         notes_count = len(self.state["notes"]["groups"].get(g, []))
-        ok = QMessageBox.question(
-            self,
-            "Delete group",
+        self._show_overlay(
+            "Delete Group",
             f"Delete group '{g}' and its {notes_count} notes?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            [
+                ("Delete", lambda: self._do_delete_note_group(g), "primary"),
+                ("Cancel", None, "secondary")
+            ]
         )
-        if ok != QMessageBox.StandardButton.Yes:
-            return
 
+    def _do_delete_note_group(self, g):
         self.state["notes"]["groups"].pop(g, None)
         if g in self.state["notes"]["order"]:
             self.state["notes"]["order"].remove(g)
@@ -2312,11 +2560,13 @@ class UltimateTaskFlow(QMainWindow):
             self.btn_notes.setChecked(True)
             self.btn_tasks.setChecked(False)
             self.stack.setCurrentWidget(self.page_notes)
+            self._animate_tab_transition(self.page_notes)
             self._refresh_notes_ui()
         else:
             self.btn_tasks.setChecked(True)
             self.btn_notes.setChecked(False)
             self.stack.setCurrentWidget(self.page_tasks)
+            self._animate_tab_transition(self.page_tasks)
 
         if save:
             self.state.setdefault("ui", {})
