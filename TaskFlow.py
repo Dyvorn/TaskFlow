@@ -8,6 +8,8 @@ import traceback
 import re
 import subprocess
 import tempfile
+import random
+import math
 
 # Global exception handler to catch startup crashes (defined early)
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -41,11 +43,13 @@ except ImportError:
 from datetime import datetime, date
 
 from PyQt6.QtCore import (
-    Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve,
-    pyqtSignal, QThread, QRect, QPoint, QUrl, QParallelAnimationGroup
+    Qt, QTimer, QPropertyAnimation, QEasingCurve,
+    pyqtSignal, QThread, QRect, QPoint, QParallelAnimationGroup, pyqtProperty, QRectF, QPointF
+    
 )
 from PyQt6.QtGui import (
-    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap, QIcon
+    QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap, QIcon,
+    QPainter, QLinearGradient, QPainterPath, QPen
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -62,20 +66,20 @@ from PyQt6.QtCore import QMimeData
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "4.0"
-UPDATE_URL = "https://raw.githubusercontent.com/Dyvorn/TaskFlow/main/version.json"
+VERSION = "5.0"
+UPDATE_URL = "https://api.github.com/repos/Dyvorn/TaskFlow/releases/latest"
 
 WHATS_NEW_HTML = (
-    "<p>This is a major release packed with power-user features:</p>"
+    "<p>Welcome to TaskFlow 5.0! This update brings a smoother, more refined experience:</p>"
     "<ul>"
-    "<li><b>Global Quick Capture:</b> Press <code>Alt+Space</code> anywhere to add tasks instantly.</li>"
-    "<li><b>Zen Mode:</b> Focus on one task with a built-in Pomodoro timer.</li>"
-    "<li><b>Smart Search:</b> Press <code>Ctrl+F</code> to filter tasks and notes.</li>"
-    "<li><b>Notes Tab:</b> A dedicated space for your thoughts.</li>"
-    "<li><b>Settings:</b> Customize timer duration and auto-collapse.</li>"
-    "<li><b>Archive:</b> Clean up completed tasks easily.</li>"
+    "<li><b>Satisfying Interactions:</b> Enjoy a gold flash on completion and confetti when you finish a section!</li>"
+    "<li><b>Window Snapping:</b> The window now magnetically snaps to screen edges.</li>"
+    "<li><b>Smooth Animations:</b> Enjoy seamless fade-in transitions between tabs and on startup.</li>"
+    "<li><b>Modern Overlays:</b> Native popups have been replaced with beautiful in-app overlays.</li>"
+    "<li><b>Integrated Settings:</b> Settings are now built directly into the main window.</li>"
+    "<li><b>Start with Windows:</b> You can now toggle auto-start directly from Settings.</li>"
     "</ul>"
-    "<p>Enjoy your flow!</p>"
+    "<p>Stay in the flow!</p>"
 )
 
 if getattr(sys, "frozen", False):
@@ -97,8 +101,7 @@ BACKUP_FILE = os.path.join(BASE_DIR, "taskflow_data.backup.json")
 WIN_W = 440
 WIN_H = 940
 MARGIN = 20
-COLLAPSED_W = 88
-COLLAPSED_VISIBLE = 18
+COLLAPSED_WIDTH = 60
 
 # Styling
 DARK_BG = "#1c1c1e"
@@ -145,7 +148,7 @@ def load_state() -> dict:
         "notes": {"groups": {"General": []}, "order": ["General"]},
         "sections": SECTIONS.copy(),
         "ui": {"collapsed": False, "active_tab": "Tasks", "section_states": {}},
-        "config": {"zen_duration": 25, "auto_collapse": True},
+        "config": {"zen_duration": 25, "auto_collapse": True, "window_snapping": True},
     }
 
     def _read(p):
@@ -245,15 +248,23 @@ class UpdateCheckThread(QThread):
             self.finished.emit({"error": "The 'requests' library is not installed.\nPlease run: pip install requests"})
             return
 
-        if "your-server.com" in UPDATE_URL:
-            self.finished.emit({"error": "The update URL has not been configured in the source code."})
-            return
-
         try:
-            res = requests.get(UPDATE_URL, timeout=10)
+            headers = {"User-Agent": "TaskFlow-Desktop"}
+            res = requests.get(UPDATE_URL, headers=headers, timeout=10)
             res.raise_for_status()
             data = res.json()
-            self.finished.emit(data)
+            
+            # Parse GitHub API response
+            tag = data.get("tag_name", "").lstrip("vV")
+            assets = data.get("assets", [])
+            download_url = ""
+            for asset in assets:
+                if asset.get("name", "").lower().endswith(".exe"):
+                    download_url = asset.get("browser_download_url")
+                    break
+            
+            self.finished.emit({"latest_version": tag, "download_url": download_url})
+            
         except Exception as e:
             self.finished.emit({"error": f"Could not connect to the update server:\n{str(e)}"})
 
@@ -273,7 +284,8 @@ class UpdateDownloadThread(QThread):
             self.error.emit("The 'requests' library is not installed.")
             return
         try:
-            response = requests.get(self.url, stream=True, timeout=30)
+            headers = {"User-Agent": "TaskFlow-Desktop"}
+            response = requests.get(self.url, stream=True, timeout=30, headers=headers)
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
@@ -407,6 +419,195 @@ class OverlayDialog(QWidget):
             x = (self.width() - self.content.width()) // 2
             y = (self.height() - self.content.height()) // 2
             self.content.move(x, y)
+
+class SnapGlow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.sides = set()
+        self._opacity = 0.0
+        
+        self.anim = QPropertyAnimation(self, b"opacity_prop")
+        self.anim.setDuration(600)
+        self.anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+
+    def set_opacity(self, val):
+        self._opacity = val
+        self.update()
+
+    def get_opacity(self):
+        return self._opacity
+
+    opacity_prop = pyqtProperty(float, get_opacity, set_opacity)
+
+    def flash(self, sides):
+        self.sides = sides
+        self.anim.stop()
+        self.anim.setStartValue(1.0)
+        self.anim.setEndValue(0.0)
+        self.anim.start()
+
+    def paintEvent(self, event):
+        if self._opacity <= 0:
+            return
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setOpacity(self._opacity)
+        
+        # Clip to rounded corners of the container
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), 16, 16)
+        painter.setClipPath(path)
+        
+        rect = self.rect()
+        color = QColor(GOLD)
+        
+        def draw_gradient(x1, y1, x2, y2, r):
+            grad = QLinearGradient(x1, y1, x2, y2)
+            grad.setColorAt(0, color)
+            grad.setColorAt(1, Qt.GlobalColor.transparent)
+            painter.fillRect(r, grad)
+
+        if "left" in self.sides:
+            draw_gradient(rect.left(), 0, rect.left() + 40, 0, rect)
+            
+        if "right" in self.sides:
+            draw_gradient(rect.right(), 0, rect.right() - 40, 0, rect)
+            
+        if "top" in self.sides:
+            draw_gradient(0, rect.top(), 0, rect.top() + 40, rect)
+            
+        if "bottom" in self.sides:
+            draw_gradient(0, rect.bottom(), 0, rect.bottom() - 40, rect)
+
+
+class SmoothProgressBar(QProgressBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._anim = QPropertyAnimation(self, b"value")
+        self._anim.setDuration(400)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def setValueSmooth(self, val):
+        if self.value() == val: return
+        self._anim.stop()
+        self._anim.setStartValue(self.value())
+        self._anim.setEndValue(val)
+        self._anim.start()
+
+
+class AnimatedCheckbox(QWidget):
+    clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(24, 24)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._checked = False
+        self._scale = 1.0
+        
+        self._anim = QPropertyAnimation(self, b"scale_prop")
+        self._anim.setDuration(300)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutBack)
+
+    def get_scale(self): return self._scale
+    def set_scale(self, s): 
+        self._scale = s
+        self.update()
+    scale_prop = pyqtProperty(float, get_scale, set_scale)
+
+    def setChecked(self, checked):
+        self._checked = checked
+        self.update()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._anim.stop()
+            self._anim.setStartValue(0.8)
+            self._anim.setEndValue(1.0)
+            self._anim.start()
+            self.clicked.emit()
+
+    def paintEvent(self, e):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        center = rect.center()
+        
+        painter.translate(center)
+        painter.scale(self._scale, self._scale)
+        painter.translate(-center)
+        
+        radius = 10
+        if self._checked:
+            painter.setBrush(QColor(GOLD))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(center, radius, radius)
+            
+            painter.setPen(QPen(QColor(DARK_BG), 2))
+            font = painter.font()
+            font.setBold(True)
+            font.setPixelSize(14)
+            painter.setFont(font)
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "✓")
+        else:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(GOLD), 2))
+            painter.drawEllipse(center, radius, radius)
+
+
+class ConfettiOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.particles = []
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update)
+
+    def burst(self):
+        self.particles.clear()
+        cx = self.width() / 2
+        cy = self.height() / 2
+        for _ in range(60):
+            angle = random.uniform(0, 2 * math.pi)
+            speed = random.uniform(3, 9)
+            self.particles.append({
+                "x": cx, "y": cy,
+                "vx": math.cos(angle) * speed,
+                "vy": math.sin(angle) * speed - 4, # Upward bias
+                "color": QColor.fromHsv(random.randint(0, 360), 200, 255),
+                "size": random.randint(4, 8),
+                "decay": random.uniform(0.94, 0.98)
+            })
+        self.timer.start(16)
+
+    def _update(self):
+        if not self.particles:
+            self.timer.stop()
+            return
+        
+        for p in self.particles:
+            p["x"] += p["vx"]
+            p["y"] += p["vy"]
+            p["vy"] += 0.25 # Gravity
+            p["vx"] *= p["decay"] # Air resistance
+            
+        self.particles = [p for p in self.particles if p["y"] < self.height() + 10]
+        self.update()
+
+    def paintEvent(self, event):
+        if not self.particles:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        for p in self.particles:
+            painter.setBrush(p["color"])
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
 
 
 class QuickCaptureDialog(QDialog):
@@ -564,11 +765,16 @@ class TaskRow(QFrame):
         super().__init__(parent)
         self.task = task
         self.subtasks = subtasks
-        self.setStyleSheet("background:transparent;")
+        self.setStyleSheet("TaskRow{background:transparent;border-radius:8px;}")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.expanded = False
         self._drag_start_pos = None
         self._dragged = False
+        
+        self._flash_opacity = 0.0
+        self._flash_anim = QPropertyAnimation(self, b"flash_opacity")
+        self._flash_anim.setDuration(450)
+        self._flash_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
 
         self.main_lay = QVBoxLayout(self)
         self.main_lay.setContentsMargins(0, 0, 0, 0)
@@ -611,9 +817,8 @@ class TaskRow(QFrame):
         has_note = bool((task.get("note") or "").strip()) or bool(self.subtasks)
         self.lbl_note.setVisible(has_note)
 
-        self.chk = QLabel("✓")
-        self.chk.setFixedSize(22, 22)
-        self.chk.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.chk = AnimatedCheckbox()
+        self.chk.clicked.connect(lambda: self.toggled.emit(self.task["id"]))
 
         lay.addWidget(self.lbl_num)
         lay.addWidget(self.lbl_recur)
@@ -648,24 +853,30 @@ class TaskRow(QFrame):
 
         self._apply_state()
 
+    def get_flash_opacity(self): return self._flash_opacity
+    def set_flash_opacity(self, v): 
+        self._flash_opacity = v
+        self.update()
+    flash_opacity = pyqtProperty(float, get_flash_opacity, set_flash_opacity)
+
+    def flash(self):
+        self._flash_anim.stop()
+        self._flash_anim.setStartValue(0.25)
+        self._flash_anim.setEndValue(0.0)
+        self._flash_anim.start()
+
     def _apply_state(self):
         done = bool(self.task.get("completed"))
         if done:
             self.lbl_text.setStyleSheet(f"color:{TEXT_GRAY};text-decoration:line-through;")
-            self.chk.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:11px;font-weight:800;")
         else:
             self.lbl_text.setStyleSheet(f"color:{TEXT_WHITE};")
-            self.chk.setStyleSheet(f"border:2px solid {GOLD};border-radius:11px;color:transparent;")
+        self.chk.setChecked(done)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             self._drag_start_pos = e.pos()
             self._dragged = False
-            # Check if clicked on checkbox area
-            if self.chk.geometry().contains(self.top_frame.mapFrom(self, e.pos())):
-                self.toggled.emit(self.task["id"])
-                self._drag_start_pos = None
-                return
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
@@ -693,6 +904,24 @@ class TaskRow(QFrame):
                 self.expansion.setVisible(self.expanded)
                 self.resized.emit()
         super().mouseReleaseEvent(e)
+
+    def enterEvent(self, e):
+        self.setStyleSheet("TaskRow{background:rgba(255, 255, 255, 0.05);border-radius:8px;}")
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self.setStyleSheet("TaskRow{background:transparent;border-radius:8px;}")
+        super().leaveEvent(e)
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if self._flash_opacity > 0:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setBrush(QColor(GOLD))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setOpacity(self._flash_opacity)
+            painter.drawRoundedRect(self.rect(), 8, 8)
 
 
 class SectionBlock(QWidget):
@@ -733,7 +962,7 @@ class SectionBlock(QWidget):
         self.header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.header.customContextMenuRequested.connect(self._on_header_menu)
 
-        self.progress = QProgressBar()
+        self.progress = SmoothProgressBar()
         self.progress.setFixedHeight(3)
         self.progress.setTextVisible(False)
         self.progress.setStyleSheet(f"QProgressBar{{border:none;background:{HOVER_BG};border-radius:1px;}} QProgressBar::chunk{{background:{GOLD};border-radius:1px;}}")
@@ -781,7 +1010,7 @@ class SectionBlock(QWidget):
         else:
             self.progress.setVisible(True)
             self.progress.setMaximum(total)
-            self.progress.setValue(completed)
+            self.progress.setValueSmooth(completed)
 
     def _on_header_menu(self, pos):
         menu = QMenu(self)
@@ -833,6 +1062,7 @@ class UltimateTaskFlow(QMainWindow):
 
         self._dragging = False
         self._drag_offset = QPoint(0, 0)
+        self._last_snap_state = set()
         self._last_expanded_geom = None
 
         self._save_timer = QTimer(self)
@@ -901,6 +1131,8 @@ class UltimateTaskFlow(QMainWindow):
         
         # Overlay (created after stack to sit on top)
         self.overlay = OverlayDialog(self.container)
+        self.snap_glow = SnapGlow(self.container)
+        self.confetti = ConfettiOverlay(self.container)
 
         self._apply_ui_state()
         self._remember_expanded_geom()
@@ -1094,6 +1326,7 @@ class UltimateTaskFlow(QMainWindow):
         cfg = self.state.get("config", {})
         self.spin_zen.setValue(cfg.get("zen_duration", 25))
         self.chk_collapse.setChecked(cfg.get("auto_collapse", True))
+        self.chk_snapping.setChecked(cfg.get("window_snapping", True))
         self.chk_startup.setChecked(self._is_startup_enabled())
         
         self.header_bar.setVisible(False)
@@ -1103,6 +1336,7 @@ class UltimateTaskFlow(QMainWindow):
     def _close_settings(self):
         self.state["config"]["zen_duration"] = self.spin_zen.value()
         self.state["config"]["auto_collapse"] = self.chk_collapse.isChecked()
+        self.state["config"]["window_snapping"] = self.chk_snapping.isChecked()
         self._set_startup(self.chk_startup.isChecked())
         self._schedule_save()
         self._reset_zen_timer()
@@ -1170,6 +1404,10 @@ class UltimateTaskFlow(QMainWindow):
         if obj == self.container and event.type() == event.Type.Resize:
             if hasattr(self, "overlay"):
                 self.overlay.resize(self.container.size())
+            if hasattr(self, "snap_glow"):
+                self.snap_glow.resize(self.container.size())
+            if hasattr(self, "confetti"):
+                self.confetti.resize(self.container.size())
 
         watched = [w for w in (getattr(self, "input", None), getattr(self, "note_editor", None)) if w is not None]
         if watched and obj in tuple(watched):
@@ -1210,6 +1448,7 @@ class UltimateTaskFlow(QMainWindow):
             return
         self._dragging = True
         self._drag_offset = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        self._last_snap_state = set()
         self._mark_busy(2500)
 
     def _drag_move(self, e):
@@ -1218,7 +1457,42 @@ class UltimateTaskFlow(QMainWindow):
         if not (e.buttons() & Qt.MouseButton.LeftButton):
             self._dragging = False
             return
-        self.move(e.globalPosition().toPoint() - self._drag_offset)
+        
+        pos = e.globalPosition().toPoint() - self._drag_offset
+        
+        if self.state.get("config", {}).get("window_snapping", True):
+            scr = self.screen().availableGeometry()
+            snap_dist = 25
+
+            x, y = pos.x(), pos.y()
+            w, h = self.width(), self.height()
+
+            current_snaps = set()
+
+            # Snap to vertical edges
+            if abs(x - scr.left()) < snap_dist:
+                x = scr.left()
+                current_snaps.add("left")
+            elif abs(x + w - scr.right()) < snap_dist:
+                x = scr.right() - w
+                current_snaps.add("right")
+
+            # Snap to horizontal edges
+            if abs(y - scr.top()) < snap_dist:
+                y = scr.top()
+                current_snaps.add("top")
+            elif abs(y + h - scr.bottom()) < snap_dist:
+                y = scr.bottom() - h
+                current_snaps.add("bottom")
+
+            new_snaps = current_snaps - self._last_snap_state
+            if new_snaps:
+                self.snap_glow.flash(new_snaps)
+            self._last_snap_state = current_snaps
+
+            self.move(x, y)
+        else:
+            self.move(pos)
 
     def _drag_release(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -1325,7 +1599,7 @@ class UltimateTaskFlow(QMainWindow):
         self.btn_close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_close.setStyleSheet(
             f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;}}"
-            f"QPushButton:hover{{background:#3a2a2a;color:{TEXT_WHITE};}}"
+            f"QPushButton:hover{{background:#c42b1c;color:{TEXT_WHITE};}}"
         )
         self.btn_close.clicked.connect(self._quit)
 
@@ -1408,15 +1682,36 @@ class UltimateTaskFlow(QMainWindow):
         # Top bar with Exit button
         top = QHBoxLayout()
         top.addStretch()
-        self.btn_exit_zen = QPushButton("×")
-        self.btn_exit_zen.setFixedSize(30, 30)
-        self.btn_exit_zen.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_exit_zen.setStyleSheet(
+
+        self.zen_btn_collapse = QPushButton("<")
+        self.zen_btn_collapse.setFixedSize(30, 30)
+        self.zen_btn_collapse.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.zen_btn_collapse.setStyleSheet(
+            f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;}}"
+            f"QPushButton:hover{{background:{HOVER_BG};color:{TEXT_WHITE};}}"
+        )
+        self.zen_btn_collapse.clicked.connect(self.toggle_collapse)
+        top.addWidget(self.zen_btn_collapse)
+
+        self.zen_btn_minimize = QPushButton("−")
+        self.zen_btn_minimize.setFixedSize(30, 30)
+        self.zen_btn_minimize.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.zen_btn_minimize.setStyleSheet(
+            f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;}}"
+            f"QPushButton:hover{{background:{HOVER_BG};color:{TEXT_WHITE};}}"
+        )
+        self.zen_btn_minimize.clicked.connect(self.showMinimized)
+        top.addWidget(self.zen_btn_minimize)
+
+        self.zen_btn_close = QPushButton("×")
+        self.zen_btn_close.setFixedSize(30, 30)
+        self.zen_btn_close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.zen_btn_close.setStyleSheet(
             f"QPushButton{{background:{CARD_BG};color:{TEXT_GRAY};border:none;border-radius:15px;font-weight:900;font-size:16px;}}"
             f"QPushButton:hover{{background:{HOVER_BG};color:{TEXT_WHITE};}}"
         )
-        self.btn_exit_zen.clicked.connect(self.exit_zen_mode)
-        top.addWidget(self.btn_exit_zen)
+        self.zen_btn_close.clicked.connect(self.exit_zen_mode)
+        top.addWidget(self.zen_btn_close)
         lay.addLayout(top)
 
         # Center content
@@ -1524,6 +1819,11 @@ class UltimateTaskFlow(QMainWindow):
         self.chk_collapse.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}")
         lay.addWidget(self.chk_collapse)
 
+        # Window Snapping
+        self.chk_snapping = QCheckBox("Window Snapping")
+        self.chk_snapping.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}")
+        lay.addWidget(self.chk_snapping)
+
         # Start with Windows
         self.chk_startup = QCheckBox("Start with Windows")
         self.chk_startup.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;}} QCheckBox::indicator:checked{{background:{GOLD};border:none;}}")
@@ -1622,6 +1922,7 @@ class UltimateTaskFlow(QMainWindow):
         if self.zen_running:
             self.zen_timer.stop()
             self.zen_running = False
+            self._stop_zen_pulse()
             self.btn_timer_toggle.setText("▶ Start")
             self.btn_timer_toggle.setStyleSheet(
                 f"QPushButton{{background:{HOVER_BG};color:{TEXT_WHITE};border-radius:20px;font-weight:bold;}}"
@@ -1630,6 +1931,7 @@ class UltimateTaskFlow(QMainWindow):
         else:
             self.zen_timer.start(1000)
             self.zen_running = True
+            self._start_zen_pulse()
             self.btn_timer_toggle.setText("⏸ Pause")
             self.btn_timer_toggle.setStyleSheet(
                 f"QPushButton{{background:{GOLD};color:{DARK_BG};border-radius:20px;font-weight:bold;}}"
@@ -1639,6 +1941,7 @@ class UltimateTaskFlow(QMainWindow):
     def _reset_zen_timer(self):
         self.zen_timer.stop()
         self.zen_running = False
+        self._stop_zen_pulse()
         self.zen_remaining = 25 * 60
         self._update_timer_display()
         self.btn_timer_toggle.setText("▶ Start")
@@ -1654,6 +1957,7 @@ class UltimateTaskFlow(QMainWindow):
         else:
             self.zen_timer.stop()
             self.zen_running = False
+            self._stop_zen_pulse()
             self.btn_timer_toggle.setText("▶ Start")
             self.showNormal()
             self.activateWindow()
@@ -1663,6 +1967,25 @@ class UltimateTaskFlow(QMainWindow):
         m = self.zen_remaining // 60
         s = self.zen_remaining % 60
         self.lbl_timer.setText(f"{m:02}:{s:02}")
+
+    def _start_zen_pulse(self):
+        if not hasattr(self, "_zen_pulse_effect"):
+            self._zen_pulse_effect = QGraphicsOpacityEffect(self.lbl_timer)
+            self.lbl_timer.setGraphicsEffect(self._zen_pulse_effect)
+            
+            self._zen_pulse_anim = QPropertyAnimation(self._zen_pulse_effect, b"opacity")
+            self._zen_pulse_anim.setDuration(1000)
+            self._zen_pulse_anim.setStartValue(1.0)
+            self._zen_pulse_anim.setKeyValueAt(0.5, 0.6)
+            self._zen_pulse_anim.setEndValue(1.0)
+            self._zen_pulse_anim.setLoopCount(-1)
+            
+        self._zen_pulse_anim.start()
+
+    def _stop_zen_pulse(self):
+        if hasattr(self, "_zen_pulse_anim"):
+            self._zen_pulse_anim.stop()
+            self._zen_pulse_effect.setOpacity(1.0)
 
     def _is_startup_enabled(self):
         if not winreg: return False
@@ -1967,11 +2290,11 @@ class UltimateTaskFlow(QMainWindow):
         side = self._collapse_side()
 
         if side == "left":
-            x = scr.left() - (COLLAPSED_W - COLLAPSED_VISIBLE)
+            x = scr.left()
         else:
-            x = scr.right() - COLLAPSED_VISIBLE
+            x = scr.right() - COLLAPSED_WIDTH
 
-        return QRect(int(x), int(y), COLLAPSED_W, WIN_H)
+        return QRect(int(x), int(y), COLLAPSED_WIDTH, WIN_H)
 
     def _expanded_geometry(self) -> QRect:
         scr = self.screen().availableGeometry()
@@ -2083,6 +2406,16 @@ class UltimateTaskFlow(QMainWindow):
         item.setSizeHint(widget.sizeHint())
         lst.update_height()
 
+    def _get_task_row(self, task_id):
+        for blk in self.section_blocks.values():
+            lst = blk.list
+            for i in range(lst.count()):
+                item = lst.item(i)
+                w = lst.itemWidget(item)
+                if isinstance(w, TaskRow) and w.task["id"] == task_id:
+                    return w
+        return None
+
     def _find_task(self, task_id: str):
         for t in self.state["tasks"]:
             if t.get("id") == task_id:
@@ -2151,14 +2484,24 @@ class UltimateTaskFlow(QMainWindow):
         t["updated_at"] = _now_iso()
 
         if t["completed"]:
-            pass
-        elif t["completed"] and t.get("recur"):
-            freq = t.get("recur")
-            next_section = "Tomorrow" if freq == "Daily" else ("This Week" if freq == "Weekly" else "Someday")
-            self._create_task(text=t.get("text", ""), section=next_section, emoji=t.get("emoji", "📝"), recur=freq)
+            if t.get("recur"):
+                freq = t.get("recur")
+                next_section = "Tomorrow" if freq == "Daily" else ("This Week" if freq == "Weekly" else "Someday")
+                self._create_task(text=t.get("text", ""), section=next_section, emoji=t.get("emoji", "📝"), recur=freq)
+            
+            # Check for section completion (Confetti)
+            sec = t.get("section")
+            tasks = self._tasks_in_section(sec)
+            if tasks and all(tsk.get("completed") for tsk in tasks):
+                self.confetti.burst()
 
         self._schedule_save()
         self._refresh_tasks_ui()
+        
+        if t["completed"]:
+            row = self._get_task_row(task_id)
+            if row: row.flash()
+            
         if self._zen_task_id:
             self._populate_zen_view(self._zen_task_id)
 
@@ -2349,12 +2692,26 @@ class UltimateTaskFlow(QMainWindow):
     def _quick_add_task(self):
         raw = (self.input.text() if self.input else "").strip()
         if not raw:
+            self._shake_input()
             return
         self.input.clear()
         text, section, emoji = self._parse_task_input(raw)
         self._create_task(text=text, section=section, emoji=emoji)
         self._schedule_save()
         self._refresh_tasks_ui()
+
+    def _shake_input(self):
+        if not self.input: return
+        anim = QPropertyAnimation(self.input, b"pos")
+        anim.setDuration(300)
+        anim.setLoopCount(1)
+        start = self.input.pos()
+        anim.setKeyValueAt(0, start)
+        anim.setKeyValueAt(0.2, start + QPoint(-5, 0))
+        anim.setKeyValueAt(0.5, start + QPoint(5, 0))
+        anim.setKeyValueAt(0.8, start + QPoint(-2, 0))
+        anim.setKeyValueAt(1, start)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     # ---------- Notes ----------
     def _ensure_group(self, name: str):
@@ -2587,9 +2944,29 @@ class UltimateTaskFlow(QMainWindow):
         self.state["ui"]["collapsed"] = collapsed
 
         self.btn_collapse.setText(">" if collapsed else "<")
+        if hasattr(self, "zen_btn_collapse"):
+            self.zen_btn_collapse.setText(">" if collapsed else "<")
+        
+        # Toggle visibility of main content and header controls
         self.stack.setVisible(not collapsed)
-        self.btn_tasks.setVisible(not collapsed)
-        self.btn_notes.setVisible(not collapsed)
+        self.nav_group.setVisible(not collapsed)
+        self.btn_search.setVisible(not collapsed)
+        self.btn_settings.setVisible(not collapsed)
+        self.btn_minimize.setVisible(not collapsed)
+        self.btn_close.setVisible(not collapsed)
+        
+        if collapsed:
+            self.search_group.setVisible(False)
+            self.header_bar.layout().setContentsMargins(5, 0, 5, 0)
+        else:
+            self.header_bar.layout().setContentsMargins(14, 0, 12, 0)
+            # Restore search state if text exists, otherwise show nav
+            if self.search_input.text():
+                self.search_group.setVisible(True)
+                self.nav_group.setVisible(False)
+            else:
+                self.search_group.setVisible(False)
+                self.nav_group.setVisible(True)
 
         self._schedule_save()
 
@@ -2617,8 +2994,9 @@ class UltimateTaskFlow(QMainWindow):
         collapsed = self.state.get("ui", {}).get("collapsed", False)
         self.btn_collapse.setText(">" if collapsed else "<")
         self.stack.setVisible(not collapsed)
-        self.btn_tasks.setVisible(not collapsed)
-        self.btn_notes.setVisible(not collapsed)
+        self.nav_group.setVisible(not collapsed)
+        self.btn_settings.setVisible(not collapsed)
+        self.btn_close.setVisible(not collapsed)
 
     def _rollover_if_new_day(self):
         last = self.state.get("last_opened", _today_str())
@@ -2626,8 +3004,8 @@ class UltimateTaskFlow(QMainWindow):
         if last == now:
             return
         for t in self.state["tasks"]:
-            if t.get("section") == "Today" and not t.get("completed"):
-                t["section"] = "Tomorrow"
+            if t.get("section") == "Tomorrow" and not t.get("completed"):
+                t["section"] = "Today"
                 t["updated_at"] = _now_iso()
         self.state["last_opened"] = now
         save_state(self.state)

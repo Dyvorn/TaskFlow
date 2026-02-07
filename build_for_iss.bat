@@ -1,6 +1,6 @@
 @echo off
 echo ========================================================
-echo  TaskFlow v4.0 - Build
+echo  TaskFlow v5.0 - Build
 echo ========================================================
 echo.
 
@@ -20,11 +20,11 @@ echo.
 echo [4/4] Building Installer (Inno Setup)...
 set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if exist %ISCC% (
-    %ISCC% "setup.iss"
+    %ISCC% "setup.iss" /O"dist"
     echo.
     echo ========================================================
     echo  BUILD SUCCESSFUL!
-    echo  Installer: TaskFlow_Setup_v4.0.exe
+    echo  Installer: TaskFlow_Setup_v5.0.exe
     echo ========================================================
 ) else (
     echo.
