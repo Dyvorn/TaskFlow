@@ -1,4 +1,4 @@
-# TaskFlow v5.3
+# TaskFlow v6.0
 
 The ultimate "Flow State" desktop widget. Minimalist, keyboard-first, and distraction-free.
 

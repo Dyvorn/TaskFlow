@@ -71,15 +71,15 @@ def resource_path(relative_path):
 
 APP_NAME = "TaskFlow"
 APP_ID = "taskflow.ultimate.desktop"
-VERSION = "5.3"
+VERSION = "6.0"
 UPDATE_URL = "https://api.github.com/repos/Dyvorn/TaskFlow/releases/latest"
 
 WHATS_NEW_HTML = (
-    "<p>Welcome to TaskFlow 5.3!</p>"
+    "<p>Welcome to TaskFlow 6.0!</p>"
     "<ul>"
-    "<li><b>Update System Fixed:</b> Resolved issues with automatic updates.</li>"
-    "<li><b>Icon Fixes:</b> Application icon now appears correctly everywhere.</li>"
-    "<li><b>Refinements:</b> Stability improvements.</li>"
+    "<li><b>Major Update:</b> Welcome to the next generation of TaskFlow.</li>"
+    "<li><b>Performance:</b> Optimized startup and interaction speeds.</li>"
+    "<li><b>Refinements:</b> UI polish and under-the-hood improvements.</li>"
     "</ul>"
     "<p>Stay in the flow!</p>"
 )
@@ -265,9 +265,12 @@ class UpdateCheckThread(QThread):
             # Parse GitHub API response
             tag = data.get("tag_name", "")
             # FIX: Robust version extraction to prevent "Invalid version format"
-            # Extracts "6.0" from "v6.0", "v6.0-beta", etc.
-            match = re.search(r"(\d+(\.\d+)+)", tag)
+            # Extracts "6", "6.0", "6.0.1" from "v6", "v6.0-beta", etc.
+            match = re.search(r"(\d+(\.\d+)*)", tag)
             clean_version = match.group(1) if match else tag.strip().lstrip("vV")
+
+            # Check if it is a pre-release (not production ready)
+            is_prerelease = data.get("prerelease", False)
 
             assets = data.get("assets", [])
             download_url = ""
@@ -278,7 +281,11 @@ class UpdateCheckThread(QThread):
                     download_url = asset.get("browser_download_url")
                     break
             
-            self.finished.emit({"latest_version": clean_version, "download_url": download_url})
+            self.finished.emit({
+                "latest_version": clean_version, 
+                "download_url": download_url,
+                "is_prerelease": is_prerelease
+            })
             
         except Exception as e:
             self.finished.emit({"error": f"Could not connect to the update server:\n{str(e)}"})
@@ -1271,10 +1278,11 @@ class UltimateTaskFlow(QMainWindow):
 
         latest_version_str = result.get("latest_version")
         download_url = result.get("download_url")
+        is_prerelease = result.get("is_prerelease", False)
 
-        if not latest_version_str or not download_url:
+        if not latest_version_str:
             if not getattr(self, "_update_silent", False):
-                self._show_overlay("Update Failed", "Invalid version info.", [("OK", None, "secondary")])
+                self._show_overlay("Update Failed", "Invalid version info from server.", [("OK", None, "secondary")])
             return
 
         try:
@@ -1282,10 +1290,21 @@ class UltimateTaskFlow(QMainWindow):
             current_v = tuple(map(int, VERSION.split('.')))
         except ValueError:
             if not getattr(self, "_update_silent", False):
-                self._show_overlay("Update Failed", "Invalid version format.", [("OK", None, "secondary")])
+                self._show_overlay("Update Failed", f"Invalid version format: {latest_version_str}", [("OK", None, "secondary")])
             return
 
         if latest_v > current_v:
+            # Check if production ready
+            if is_prerelease:
+                if not getattr(self, "_update_silent", False):
+                    self._show_overlay("Update Available", f"A new pre-release (v{latest_version_str}) is available.\n(Not production ready)", [("OK", None, "secondary")])
+                return
+
+            if not download_url:
+                if not getattr(self, "_update_silent", False):
+                    self._show_overlay("Update Available", f"Version {latest_version_str} is available,\nbut no installer was found.", [("OK", None, "secondary")])
+                return
+
             self._show_overlay(
                 "Update Available",
                 f"Version {latest_version_str} is available.\nDownload now?",
@@ -1296,7 +1315,7 @@ class UltimateTaskFlow(QMainWindow):
             )
         else:
             if not getattr(self, "_update_silent", False):
-                self._show_overlay("No Updates", f"You are on the latest version (v{VERSION}).", [("OK", None, "primary")])
+                self._show_overlay("Up to Date", f"You're flowing with the newest version (v{VERSION}).", [("Awesome", None, "primary")])
 
     def _start_update_download(self, url):
         filename = url.split("/")[-1]
