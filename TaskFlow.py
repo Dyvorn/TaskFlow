@@ -301,6 +301,7 @@ def load_state() -> dict:
     # XP & Leveling System
     data["stats"].setdefault("xp", 0)
     data["stats"].setdefault("level", 1)
+    data["stats"].setdefault("moods", {})
 
     data["notes"].setdefault("groups", {"General": []})
     data["notes"].setdefault("order", list(data["notes"]["groups"].keys()) or ["General"])
@@ -1390,6 +1391,7 @@ class HabitManagerDialog(QDialog):
 class DailyBriefingWidget(QWidget):
     def __init__(self, state_ref, msg, parent=None):
         super().__init__(parent)
+        self.state_ref = state_ref
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0,0,0,0)
         lay.setSpacing(10)
@@ -1423,6 +1425,41 @@ class DailyBriefingWidget(QWidget):
                 
                 chk.toggled.connect(lambda c, habit=h: self._toggle_habit(habit, c))
                 lay.addWidget(chk)
+        
+        # Mood Tracker
+        line2 = QFrame()
+        line2.setFixedHeight(1)
+        line2.setStyleSheet(f"background:{HOVER_BG};")
+        lay.addWidget(line2)
+
+        m_lbl = QLabel("How are you feeling?")
+        m_lbl.setStyleSheet(f"color:{GOLD};font-size:14px;font-weight:bold;")
+        m_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(m_lbl)
+        
+        mood_lay = QHBoxLayout()
+        mood_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mood_lay.setSpacing(10)
+        
+        self.mood_btns = []
+        moods = ["😢", "😕", "😐", "🙂", "🤩"]
+        today = _today_str()
+        current_mood = self.state_ref.get("stats", {}).get("moods", {}).get(today)
+
+        for m in moods:
+            btn = QPushButton(m)
+            btn.setFixedSize(32, 32)
+            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            if current_mood == m:
+                btn.setStyleSheet(f"background:{GOLD};border-radius:16px;font-size:18px;border:none;")
+            else:
+                btn.setStyleSheet(f"QPushButton{{background:{HOVER_BG};border-radius:16px;font-size:18px;border:none;}} QPushButton:hover{{background:{GOLD};}}")
+            
+            btn.clicked.connect(lambda _, val=m: self._log_mood(val))
+            self.mood_btns.append(btn)
+            mood_lay.addWidget(btn)
+            
+        lay.addLayout(mood_lay)
                 
     def _toggle_habit(self, habit, checked):
         today = _today_str()
@@ -1434,6 +1471,59 @@ class DailyBriefingWidget(QWidget):
         else:
             if today in habit["history"]:
                 habit["history"].remove(today)
+
+    def _log_mood(self, mood):
+        today = _today_str()
+        if "moods" not in self.state_ref["stats"]:
+            self.state_ref["stats"]["moods"] = {}
+        self.state_ref["stats"]["moods"][today] = mood
+        
+        for btn in self.mood_btns:
+            if btn.text() == mood:
+                btn.setStyleSheet(f"background:{GOLD};border-radius:16px;font-size:18px;border:none;")
+            else:
+                btn.setStyleSheet(f"QPushButton{{background:{HOVER_BG};border-radius:16px;font-size:18px;border:none;}} QPushButton:hover{{background:{GOLD};}}")
+
+class WeeklyReviewWidget(QWidget):
+    def __init__(self, completed_count, focus_time_str, streak, quote, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0,0,0,0)
+        lay.setSpacing(15)
+        
+        # Stats Row
+        stats_lay = QHBoxLayout()
+        
+        def add_stat(label, value):
+            v_lay = QVBoxLayout()
+            v_lbl = QLabel(str(value))
+            v_lbl.setStyleSheet(f"color:{GOLD};font-size:24px;font-weight:bold;")
+            v_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            l_lbl = QLabel(label)
+            l_lbl.setStyleSheet(f"color:{TEXT_GRAY};font-size:12px;")
+            l_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            
+            v_lay.addWidget(v_lbl)
+            v_lay.addWidget(l_lbl)
+            stats_lay.addLayout(v_lay)
+            
+        add_stat("Tasks", completed_count)
+        add_stat("Focus", focus_time_str)
+        add_stat("Streak", f"{streak}🔥")
+        
+        lay.addLayout(stats_lay)
+        
+        line = QFrame()
+        line.setFixedHeight(1)
+        line.setStyleSheet(f"background:{HOVER_BG};")
+        lay.addWidget(line)
+        
+        lbl_quote = QLabel(f"<i>{quote}</i>")
+        lbl_quote.setWordWrap(True)
+        lbl_quote.setStyleSheet(f"color:{TEXT_WHITE};font-size:13px;")
+        lbl_quote.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(lbl_quote)
 
 class TaskRow(QFrame):
     toggled = pyqtSignal(str)
@@ -2525,6 +2615,153 @@ class ZenChartWidget(QWidget):
             return True
         return super().event(event)
 
+class IslandRevealer(QWidget):
+    def __init__(self, icon, content, parent=None):
+        super().__init__(parent)
+        self.content = content
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+        
+        self.icon = QLabel(icon)
+        self.icon.setFixedSize(30, 36)
+        self.icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.icon.setStyleSheet(f"color:{TEXT_GRAY};font-size:16px;")
+        
+        self.wrapper = QWidget()
+        self.wrapper.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.wrapper_layout = QHBoxLayout(self.wrapper)
+        self.wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        self.wrapper_layout.setSpacing(0)
+        self.wrapper_layout.addWidget(self.content)
+        self.wrapper.setFixedWidth(0)
+        
+        self.layout.addWidget(self.icon)
+        self.layout.addWidget(self.wrapper)
+        
+        self.anim_group = QParallelAnimationGroup(self)
+        
+        self.anim_icon = QPropertyAnimation(self, b"icon_width")
+        self.anim_icon.setDuration(200)
+        self.anim_icon.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        self.anim_wrapper = QPropertyAnimation(self, b"width_prop")
+        self.anim_wrapper.setDuration(250)
+        self.anim_wrapper.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        self.anim_group.addAnimation(self.anim_icon)
+        self.anim_group.addAnimation(self.anim_wrapper)
+
+    def get_wrapper_width(self): return self.wrapper.width()
+    def set_wrapper_width(self, w): self.wrapper.setFixedWidth(w)
+    width_prop = pyqtProperty(int, get_wrapper_width, set_wrapper_width)
+
+    def get_icon_width(self): return self.icon.width()
+    def set_icon_width(self, w): self.icon.setFixedWidth(w)
+    icon_width = pyqtProperty(int, get_icon_width, set_icon_width)
+
+    def enterEvent(self, e):
+        self.content.adjustSize()
+        target = self.content.sizeHint().width()
+        
+        self.anim_group.stop()
+        
+        # Icon shrinks to 0
+        self.anim_icon.setStartValue(self.icon.width())
+        self.anim_icon.setEndValue(0)
+        
+        # Wrapper expands
+        self.anim_wrapper.setStartValue(self.wrapper.width())
+        self.anim_wrapper.setEndValue(target)
+        
+        self.anim_group.start()
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self.anim_group.stop()
+        
+        # Icon expands back to 30
+        self.anim_icon.setStartValue(self.icon.width())
+        self.anim_icon.setEndValue(30)
+        
+        # Wrapper shrinks to 0
+        self.anim_wrapper.setStartValue(self.wrapper.width())
+        self.anim_wrapper.setEndValue(0)
+        
+        self.anim_group.start()
+        super().leaveEvent(e)
+
+class MoodGraphWidget(QWidget):
+    def __init__(self, state_ref, parent=None):
+        super().__init__(parent)
+        self.state_ref = state_ref
+        self.setMouseTracking(True)
+        self.setMinimumHeight(60)
+        self.hover_date = None
+        self.hover_mood = None
+        self.hover_pos = None
+        self.mood_map = {
+            "😢": QColor("#5a8de4"), # Blue
+            "😕": QColor("#87ceeb"), # Sky Blue
+            "😐": QColor(TEXT_GRAY), # Gray
+            "🙂": QColor("#90ee90"), # Light Green
+            "🤩": QColor(GOLD),      # Gold
+        }
+
+    def paintEvent(self, e):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        moods = self.state_ref.get("stats", {}).get("moods", {})
+        
+        today = date.today()
+        w = self.width()
+        num_days = 30
+        cell_width = w / num_days
+        
+        self.hover_date = None
+        self.hover_mood = None
+
+        for i in range(num_days):
+            curr_date = today - timedelta(days=(num_days - 1 - i))
+            d_str = str(curr_date)
+            mood = moods.get(d_str)
+            
+            x = i * cell_width
+            rect = QRectF(x, 0, cell_width, self.height())
+            
+            color = self.mood_map.get(mood, QColor(HOVER_BG))
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            
+            if mood:
+                painter.drawRect(rect.adjusted(1, 15, -1, -15))
+            else:
+                painter.drawEllipse(rect.center(), 2, 2)
+
+            if self.hover_pos and rect.contains(self.hover_pos):
+                self.hover_date = curr_date
+                self.hover_mood = mood
+                painter.setPen(QPen(QColor(TEXT_WHITE), 2))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(rect.adjusted(0,0,-1,-1))
+
+    def mouseMoveEvent(self, e):
+        self.hover_pos = e.pos()
+        self.update()
+        super().mouseMoveEvent(e)
+        
+    def event(self, event):
+        if event.type() == QEvent.Type.ToolTip:
+            if self.hover_date:
+                mood_str = self.hover_mood if self.hover_mood else "No entry"
+                QToolTip.showText(event.globalPos(), f"{self.hover_date.strftime('%b %d')}: {mood_str}", self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(event)
 
 class UltimateTaskFlow(QMainWindow):
     request_quick_capture = pyqtSignal()
@@ -3179,8 +3416,8 @@ class UltimateTaskFlow(QMainWindow):
         self.header_bar.customContextMenuRequested.connect(self._open_header_menu)
 
         lay = QHBoxLayout(self.header_bar)
-        lay.setContentsMargins(10, 0, 10, 0)
-        lay.setSpacing(10)
+        lay.setContentsMargins(5, 0, 5, 0)
+        lay.setSpacing(5)
 
         # Common style for all islands to support hover effects
         island_style = (
@@ -3376,12 +3613,17 @@ class UltimateTaskFlow(QMainWindow):
         win_lay.addWidget(self.btn_minimize)
         win_lay.addWidget(self.btn_close)
 
-        lay.addWidget(self.nav_group)
+        # Wrap islands in revealers
+        self.nav_revealer = IslandRevealer("🧭", self.nav_group)
+        self.tools_revealer = IslandRevealer("🛠", self.tools_island)
+        self.win_revealer = IslandRevealer("⚙", self.win_island)
+
+        lay.addWidget(self.nav_revealer)
         lay.addWidget(self.search_group)
         lay.addWidget(self.streak_island)
         lay.addStretch()
-        lay.addWidget(self.tools_island)
-        lay.addWidget(self.win_island)
+        lay.addWidget(self.tools_revealer)
+        lay.addWidget(self.win_revealer)
 
         self.main.addWidget(self.header_bar)
 
@@ -3901,6 +4143,13 @@ class UltimateTaskFlow(QMainWindow):
         lay.addWidget(lbl_zen)
         self.zen_chart = ZenChartWidget(self.state)
         lay.addWidget(self.zen_chart)
+
+        # Mood Chart
+        lbl_mood = QLabel("Mood (Last 30 Days)")
+        lbl_mood.setStyleSheet(f"color:{GOLD};font-size:14px;font-weight:bold;margin-top:10px;")
+        lay.addWidget(lbl_mood)
+        self.mood_chart = MoodGraphWidget(self.state)
+        lay.addWidget(self.mood_chart)
 
         # Graph
         scroll = QScrollArea()
@@ -4574,6 +4823,7 @@ class UltimateTaskFlow(QMainWindow):
         )
         self.stats_graph.update()
         self.zen_chart.update()
+        self.mood_chart.update()
 
     def _show_overlay(self, title, msg, buttons, content_widget=None):
         self.overlay.show_msg(title, msg, buttons, content_widget)
@@ -5098,12 +5348,12 @@ class UltimateTaskFlow(QMainWindow):
         if is_searching:
             # Close search
             self.search_group.setVisible(False)
-            self.nav_group.setVisible(True)
+            self.nav_revealer.setVisible(True)
             self.search_input.clear() # Clears filter
             self.btn_search.setText("🔍")
         else:
             # Open search
-            self.nav_group.setVisible(False)
+            self.nav_revealer.setVisible(False)
             self.search_group.setVisible(True)
             self.search_input.setFocus()
             self.btn_search.setText("×")
@@ -6413,11 +6663,11 @@ class UltimateTaskFlow(QMainWindow):
         
         # Toggle visibility of main content and header controls
         self.stack.setVisible(not collapsed)
-        
-        self.nav_group.setVisible(not collapsed)
+        self.nav_revealer.setVisible(not collapsed)
         self.streak_island.setVisible(not collapsed)
-        self.tools_island.setVisible(not collapsed)
-        
+        self.tools_revealer.setVisible(not collapsed)
+        # win_revealer stays visible to allow expansion
+
         self.btn_minimize.setVisible(not collapsed)
         self.btn_close.setVisible(not collapsed)
         
@@ -6429,10 +6679,10 @@ class UltimateTaskFlow(QMainWindow):
             # Restore search state if text exists, otherwise show nav
             if self.search_input.text():
                 self.search_group.setVisible(True)
-                self.nav_group.setVisible(False)
+                self.nav_revealer.setVisible(False)
             else:
                 self.search_group.setVisible(False)
-                self.nav_group.setVisible(True)
+                self.nav_revealer.setVisible(True)
         
         if collapsed:
             target_geom = self._collapsed_geometry()
@@ -6467,7 +6717,7 @@ class UltimateTaskFlow(QMainWindow):
         collapsed = self.state.get("ui", {}).get("collapsed", False)
         self.btn_collapse.setText(">" if collapsed else "<")
         self.stack.setVisible(not collapsed)
-        self.nav_group.setVisible(not collapsed)
+        self.nav_revealer.setVisible(not collapsed)
         self.btn_settings.setVisible(not collapsed)
         self.btn_close.setVisible(not collapsed)
 
@@ -6597,9 +6847,8 @@ class UltimateTaskFlow(QMainWindow):
         streak = self.state.get("stats", {}).get("current_streak", 0)
         quote = random.choice(MOTIVATIONAL_QUOTES)
         
-        msg = (f"<b>Tasks Completed:</b> {completed_count}<br><b>Focus Time:</b> {time_str}<br><b>Current Streak:</b> {streak} days<br><br><i>{quote}</i>")
-        
-        self._show_overlay("Weekly Review 📅", msg, [("Awesome", None, "primary")])
+        widget = WeeklyReviewWidget(completed_count, time_str, streak, quote)
+        self._show_overlay("Weekly Review 📅", "", [("Awesome", None, "primary")], content_widget=widget)
         self.state["last_weekly_review"] = _today_str()
         self._schedule_save()
 
