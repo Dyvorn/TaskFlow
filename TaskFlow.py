@@ -154,7 +154,6 @@ DARK_BG = "#B3121212" # Refined opacity for better glass effect
 CARD_BG = "#991E1E1E"
 HOVER_BG = "#33FFFFFF"
 TEXT_WHITE = "#e0e0e0"
-TEXT_GRAY = "#a0a0a0"
 TEXT_GRAY = "#cccccc" # Improved contrast for accessibility
 GOLD = "#ffd700"
 PROJECT_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEEAD", "#D4A5A5", "#9B59B6", "#3498DB"]
@@ -533,7 +532,6 @@ class OverlayDialog(QWidget):
         
         # Content Container (Centered)
         self.content = QFrame(self)
-        self.content.setFixedSize(320, 190)
         self.content.setFixedWidth(360)
         # Height is dynamic based on content
         self.content.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};border-radius:16px;")
@@ -561,7 +559,6 @@ class OverlayDialog(QWidget):
         self.lbl_msg.setWordWrap(True)
         self.lbl_msg.setStyleSheet(f"color:{TEXT_WHITE};font-size:14px;background:transparent;border:none;")
         self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(self.lbl_msg, 1)
         self.body_layout.addWidget(self.lbl_msg)
         
         self.custom_widget = None
@@ -570,10 +567,8 @@ class OverlayDialog(QWidget):
         self.btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addLayout(self.btn_layout)
 
-    def show_msg(self, title, msg, buttons):
     def show_msg(self, title, msg, buttons, content_widget=None):
         self.lbl_title.setText(title)
-        self.lbl_msg.setText(msg)
         
         # Handle Body
         if self.custom_widget:
@@ -4580,8 +4575,6 @@ class UltimateTaskFlow(QMainWindow):
         self.stats_graph.update()
         self.zen_chart.update()
 
-    def _show_overlay(self, title, msg, buttons):
-        self.overlay.show_msg(title, msg, buttons)
     def _show_overlay(self, title, msg, buttons, content_widget=None):
         self.overlay.show_msg(title, msg, buttons, content_widget)
 
@@ -6625,7 +6618,6 @@ class UltimateTaskFlow(QMainWindow):
             msg = f"You have {count} {task_word} planned for today.\nBe proud that you showed up.\n\n<i>{quote}</i>"
             title = "Ready to Flow?"
             
-        self._show_overlay(title, msg, [("Let's Go", None, "primary")])
         widget = DailyBriefingWidget(self.state, msg)
         self._show_overlay(title, "", [("Let's Go", None, "primary")], content_widget=widget)
 
