@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "c:\Users\Lennard Finn Penzler\Documents\VSC_Projects\todo_app\TaskFlow\TaskFlow.py", line 5245, in _quick_add_task
-    self._refresh_tasks_ui()
-    ~~~~~~~~~~~~~~~~~~~~~~^^
-  File "c:\Users\Lennard Finn Penzler\Documents\VSC_Projects\todo_app\TaskFlow\TaskFlow.py", line 4643, in _refresh_tasks_ui
-    for blk in self.section_blocks.values():
-               ^^^^^^^^^^^^^^^^^^^
-AttributeError: 'UltimateTaskFlow' object has no attribute 'section_blocks'

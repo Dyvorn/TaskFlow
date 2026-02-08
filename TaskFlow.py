@@ -11,6 +11,7 @@ import random
 import math
 import socket
 import ctypes
+import calendar
 
 # Global exception handler to catch startup crashes (defined early)
 def global_exception_handler(exc_type, exc_value, exc_tb):
@@ -20,7 +21,9 @@ def global_exception_handler(exc_type, exc_value, exc_tb):
     error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
     print(f"CRITICAL ERROR:\n{error_msg}", file=sys.stderr)
     try:
-        ctypes.windll.user32.MessageBoxW(0, f"Startup Error:\n{error_msg}", "TaskFlow Crash", 0x10)
+        # Only attempt on Windows
+        if os.name == 'nt':
+            ctypes.windll.user32.MessageBoxW(0, f"Startup Error:\n{error_msg}", "TaskFlow Crash", 0x10)
     except:
         pass
 sys.excepthook = global_exception_handler
@@ -50,11 +53,11 @@ from datetime import datetime, date, timedelta, time
 from PyQt6.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve,
     pyqtSignal, QThread, QRect, QPoint, QParallelAnimationGroup, pyqtProperty, QRectF, QPointF, QUrl,
-    pyqtSlot, QSize
+    pyqtSlot, QSize, QEvent, QMimeData, QDir, 
 )
 from PyQt6.QtGui import (
     QFont, QCursor, QKeySequence, QShortcut, QColor, QDrag, QPixmap, QIcon, QDesktopServices,
-    QPainter, QLinearGradient, QPainterPath, QPen
+    QPainter, QLinearGradient, QPainterPath, QPen, QRegion
 )
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -82,12 +85,30 @@ UPDATE_URL = "https://api.github.com/repos/Dyvorn/TaskFlow/releases/latest"
 
 WHATS_NEW_HTML = (
     "<p>Welcome to TaskFlow 6.0!</p>"
+    "<h2 style='color:#ffd700'>Welcome to TaskFlow 6.0</h2>"
+    "<p>This is a complete overhaul focused on speed, stability, and intelligent features to keep you in a state of flow.</p>"
+    "<h3>🚀 Major New Features</h3>"
     "<ul>"
     "<li><b>Major Update:</b> Welcome to the next generation of TaskFlow.</li>"
     "<li><b>Performance:</b> Optimized startup and interaction speeds.</li>"
     "<li><b>Refinements:</b> UI polish and under-the-hood improvements.</li>"
+    "<li><b>Global Quick Capture:</b> Press <b>Alt+Space</b> from any application to instantly capture a task.</li>"
+    "<li><b>Smart Parsing:</b> The input field now understands you. Try typing things like:"
+    "<ul><li><i>'Design meeting on Friday at 4pm'</i></li><li><i>'Submit report tomorrow !important'</i></li><li><i>'Plan vacation +Personal'</i></li></ul>"
+    "</li>"
+    "<li><b>Zen Mode 2.0:</b> A beautiful, distraction-free timer to focus on a single task. Now with subtask support and sleep prevention.</li>"
+    "<li><b>Local Cloud Sync:</b> Seamlessly sync tasks, notes, and projects between your devices on the same network.</li>"
+    "<li><b>Project System:</b> Group related tasks and notes into color-coded projects for better organization.</li>"
+    "<li><b>Calendar & Timeline:</b> A new tab with a daily timeline view. Drag-and-drop tasks to schedule them visually.</li>"
     "</ul>"
     "<p>Stay in the flow!</p>"
+    "<h3>✨ Core Improvements</h3>"
+    "<ul>"
+    "<li><b>Performance:</b> The UI is faster and more responsive than ever.</li>"
+    "<li><b>Data Safety:</b> Automatic backups are created during sync operations, and a new Backup Manager is in Settings.</li>"
+    "<li><b>Intuitive UX:</b> Drag tasks onto tabs, paste text to create tasks, and enjoy a more polished, predictable workflow.</li>"
+    "</ul>"
+    "<p><i>Thank you for using TaskFlow. Stay focused, stay flowing.</i></p>"
 )
 
 if getattr(sys, "frozen", False):
@@ -122,9 +143,9 @@ BACKUP_FILE = os.path.join(DATA_DIR, "taskflow_data.backup.json")
 
 SYNC_PORT = 54546
 # Window geometry (includes shadow margin)
-WIN_W = 440
-WIN_H = 940
-MARGIN = 20
+WIN_W = 360
+WIN_H = 650
+MARGIN = 10
 COLLAPSED_WIDTH = 60
 PILL_HEIGHT = 60
 
@@ -134,6 +155,7 @@ CARD_BG = "#991E1E1E"
 HOVER_BG = "#33FFFFFF"
 TEXT_WHITE = "#e0e0e0"
 TEXT_GRAY = "#a0a0a0"
+TEXT_GRAY = "#cccccc" # Improved contrast for accessibility
 GOLD = "#ffd700"
 PROJECT_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEEAD", "#D4A5A5", "#9B59B6", "#3498DB"]
 
@@ -143,6 +165,19 @@ SAVE_DEBOUNCE_MS = 320
 SECTIONS = ["Today", "Tomorrow", "This Week", "Someday"]
 RECUR_OPTIONS = ["None", "Daily", "Weekly", "Monthly"]
 
+MOTIVATIONAL_QUOTES = [
+    "Small steps lead to big changes.",
+    "Progress over perfection.",
+    "You are doing enough.",
+    "One thing at a time.",
+    "Be proud of the effort you put in.",
+    "Rest is also part of the work.",
+    "You got this!",
+    "Focus on the present moment.",
+    "Your well-being comes first.",
+    "Every checkmark is a victory.",
+    "The secret of getting ahead is getting started."
+]
 
 def _now_iso():
     return datetime.now().isoformat(timespec="seconds")
@@ -229,11 +264,12 @@ def load_state() -> dict:
     if data is None and os.path.exists(BACKUP_FILE):
         try:
             data = _read(BACKUP_FILE)
-            # STABILITY FIX: If we successfully recovered from backup, 
-            # restore the main file immediately. This prevents the next save 
+            # STABILITY FIX: If we successfully recovered from backup,
+            # restore the main file immediately. This prevents the next save
             # from backing up the corrupt/missing main file over our good backup.
             if data:
-                try: shutil.copy2(BACKUP_FILE, DATA_FILE)
+                try:
+                    shutil.copy2(BACKUP_FILE, DATA_FILE)
                 except Exception: pass
         except Exception:
             data = None
@@ -256,10 +292,16 @@ def load_state() -> dict:
     data.setdefault("projects", [])
     data.setdefault("sync_history", [])
     data.setdefault("zen_stats", default["zen_stats"])
+    data.setdefault("last_weekly_review", None)
+    data.setdefault("habits", [])
     
     # Migration for v6.0 streak system
     if "current_streak" not in data["stats"]:
         data["stats"].update({"current_streak": 0, "last_activity_date": None})
+
+    # XP & Leveling System
+    data["stats"].setdefault("xp", 0)
+    data["stats"].setdefault("level", 1)
 
     data["notes"].setdefault("groups", {"General": []})
     data["notes"].setdefault("order", list(data["notes"]["groups"].keys()) or ["General"])
@@ -414,10 +456,12 @@ class UpdateCheckThread(QThread):
             
             # Parse GitHub API response
             tag = data.get("tag_name", "")
-            # FIX: Robust version extraction to prevent "Invalid version format"
-            # Extracts "6", "6.0", "6.0.1" from "v6", "v6.0-beta", etc.
-            match = re.search(r"(\d+(\.\d+)*)", tag)
-            clean_version = match.group(1) if match else tag.strip().lstrip("vV")
+            # FIX: Robust version extraction to handle "v6.0-beta", etc.
+            match = re.search(r"(\d+(\.\d+)*)", tag) # Extracts "6", "6.0", "6.0.1"
+            if match:
+                clean_version = match.group(1)
+            else:
+                clean_version = tag.strip().lstrip("vV")
 
             # Check if it is a pre-release (not production ready)
             is_prerelease = data.get("prerelease", False)
@@ -490,6 +534,8 @@ class OverlayDialog(QWidget):
         # Content Container (Centered)
         self.content = QFrame(self)
         self.content.setFixedSize(320, 190)
+        self.content.setFixedWidth(360)
+        # Height is dynamic based on content
         self.content.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};border-radius:16px;")
         
         # Shadow for content
@@ -508,19 +554,40 @@ class OverlayDialog(QWidget):
         self.lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(self.lbl_title)
         
+        self.body_layout = QVBoxLayout()
+        lay.addLayout(self.body_layout)
+
         self.lbl_msg = QLabel("Message")
         self.lbl_msg.setWordWrap(True)
         self.lbl_msg.setStyleSheet(f"color:{TEXT_WHITE};font-size:14px;background:transparent;border:none;")
         self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(self.lbl_msg, 1)
+        self.body_layout.addWidget(self.lbl_msg)
+        
+        self.custom_widget = None
         
         self.btn_layout = QHBoxLayout()
         self.btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addLayout(self.btn_layout)
 
     def show_msg(self, title, msg, buttons):
+    def show_msg(self, title, msg, buttons, content_widget=None):
         self.lbl_title.setText(title)
         self.lbl_msg.setText(msg)
+        
+        # Handle Body
+        if self.custom_widget:
+            self.custom_widget.deleteLater()
+            self.custom_widget = None
+            
+        if content_widget:
+            self.lbl_msg.setVisible(False)
+            self.custom_widget = content_widget
+            self.body_layout.addWidget(content_widget)
+            content_widget.show()
+        else:
+            self.lbl_msg.setVisible(True)
+            self.lbl_msg.setText(msg)
         
         # Clear old buttons
         while self.btn_layout.count():
@@ -541,6 +608,7 @@ class OverlayDialog(QWidget):
             self.btn_layout.addWidget(btn)
             
         # Ensure overlay covers the container before calculating positions
+        self.content.adjustSize()
         if self.parentWidget():
             self.resize(self.parentWidget().size())
 
@@ -1081,8 +1149,29 @@ class DayTimelineWidget(QWidget):
         if e.mimeData().hasFormat("application/taskflow-task"): e.accept()
 
     def dropEvent(self, e):
-        # Handled by parent to get date context or we can emit signal
-        super().dropEvent(e)
+        if e.mimeData().hasFormat("application/taskflow-task"):
+            task_id = e.mimeData().text()
+            # Calculate time from drop position
+            y = e.position().y()
+            total_mins = (y / self.hour_height) * 60
+            snapped_mins = round(total_mins / 15) * 15
+            snapped_mins = max(0, min(1439, snapped_mins))
+            
+            h = int(snapped_mins // 60)
+            m = int(snapped_mins % 60)
+            time_str = f"{h:02}:{m:02}"
+            
+            t = next((x for x in self.state_ref["tasks"] if x["id"] == task_id), None)
+            if t:
+                t["due_time"] = time_str
+                t["due_date"] = self.current_date_str
+                t["section"] = "Scheduled"
+                t["updated_at"] = _now_iso()
+                self.taskChanged.emit(task_id)
+                
+            e.accept()
+        else:
+            super().dropEvent(e)
 
 class TaskListWidget(QListWidget):
     taskMoved = pyqtSignal(str, str, int)
@@ -1091,6 +1180,7 @@ class TaskListWidget(QListWidget):
     def __init__(self, section_name: str, parent=None):
         super().__init__(parent)
         self.section_name = section_name
+        self.real_height = 25
         self.setAcceptDrops(True)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setDragDropMode(QListWidget.DragDropMode.DropOnly)
@@ -1110,7 +1200,8 @@ class TaskListWidget(QListWidget):
         for i in range(self.count()):
             if not self.item(i).isHidden():
                 h += self.sizeHintForRow(i)
-        self.setFixedHeight(max(h, 25))
+        self.real_height = max(h, 25)
+        self.setFixedHeight(self.real_height)
         self.heightChanged.emit()
 
     def dragEnterEvent(self, e):
@@ -1152,6 +1243,7 @@ class TaskListWidget(QListWidget):
 
 class SubtaskWidget(QFrame):
     toggled = pyqtSignal(str)
+    editRequested = pyqtSignal(str)
 
     def __init__(self, st: dict, parent=None):
         super().__init__(parent)
@@ -1183,13 +1275,180 @@ class SubtaskWidget(QFrame):
         else:
             super().mousePressEvent(e)
 
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.editRequested.emit(self.st["id"])
+            e.accept()
+        else:
+            super().mouseDoubleClickEvent(e)
+
+class ProjectListItem(QWidget):
+    def __init__(self, project, tasks, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(6)
+        
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        lbl_dot = QLabel("●")
+        lbl_dot.setStyleSheet(f"color:{project['color']};font-size:14px;")
+        lbl_name = QLabel(project['name'])
+        lbl_name.setStyleSheet(f"color:{TEXT_WHITE};font-size:15px;font-weight:bold;")
+        
+        top.addWidget(lbl_dot)
+        top.addWidget(lbl_name)
+        top.addStretch()
+        
+        # Stats
+        p_tasks = [t for t in tasks if t.get("project_id") == project["id"] and not t.get("completed")]
+        all_p_tasks = [t for t in tasks if t.get("project_id") == project["id"]]
+        total = len(all_p_tasks)
+        completed = len([t for t in all_p_tasks if t.get("completed")])
+        
+        if total > 0:
+            lbl_stat = QLabel(f"{completed}/{total}")
+            lbl_stat.setStyleSheet(f"color:{TEXT_GRAY};font-size:11px;")
+            top.addWidget(lbl_stat)
+            lay.addLayout(top)
+            
+            prog = QProgressBar()
+            prog.setFixedHeight(4)
+            prog.setTextVisible(False)
+            prog.setRange(0, total)
+            prog.setValue(completed)
+            prog.setStyleSheet(f"QProgressBar{{border:none;background:{HOVER_BG};border-radius:2px;}} QProgressBar::chunk{{background:{project['color']};border-radius:2px;}}")
+            lay.addWidget(prog)
+        else:
+            lay.addLayout(top)
+
+class HabitManagerDialog(QDialog):
+    def __init__(self, state_ref, parent=None):
+        super().__init__(parent)
+        self.state_ref = state_ref
+        self.setWindowTitle("Manage Habits")
+        self.setFixedSize(400, 500)
+        self.setStyleSheet(f"background:{CARD_BG};color:{TEXT_WHITE};")
+        
+        lay = QVBoxLayout(self)
+        
+        lbl = QLabel("Your Habits")
+        lbl.setStyleSheet(f"color:{GOLD};font-size:16px;font-weight:bold;")
+        lay.addWidget(lbl)
+        
+        self.list = QListWidget()
+        self.list.setStyleSheet(f"background:{DARK_BG};border:1px solid {HOVER_BG};border-radius:8px;padding:5px;")
+        lay.addWidget(self.list)
+        
+        h_lay = QHBoxLayout()
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("New habit...")
+        self.input.setStyleSheet(f"background:{DARK_BG};color:{TEXT_WHITE};border:1px solid {HOVER_BG};border-radius:6px;padding:6px;")
+        
+        btn_add = QPushButton("+")
+        btn_add.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_add.clicked.connect(self._add)
+        btn_add.setStyleSheet(f"background:{GOLD};color:{DARK_BG};border-radius:6px;padding:6px;font-weight:bold;")
+        btn_add.setToolTip("Add Habit")
+        
+        h_lay.addWidget(self.input)
+        h_lay.addWidget(btn_add)
+        lay.addLayout(h_lay)
+        
+        btn_del = QPushButton("Delete Selected")
+        btn_del.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_del.clicked.connect(self._delete)
+        btn_del.setStyleSheet(f"background:{HOVER_BG};color:{TEXT_WHITE};border-radius:6px;padding:8px;")
+        lay.addWidget(btn_del)
+        
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(self.accept)
+        btn_close.setStyleSheet(f"background:{HOVER_BG};color:{TEXT_WHITE};border-radius:6px;padding:8px;")
+        lay.addWidget(btn_close)
+        
+        self._refresh()
+
+    def _refresh(self):
+        self.list.clear()
+        for h in self.state_ref.get("habits", []):
+            item = QListWidgetItem(h["name"])
+            item.setData(Qt.ItemDataRole.UserRole, h["id"])
+            self.list.addItem(item)
+
+    def _add(self):
+        text = self.input.text().strip()
+        if text:
+            self.state_ref.setdefault("habits", []).append({
+                "id": str(uuid.uuid4()),
+                "name": text,
+                "history": []
+            })
+            self.input.clear()
+            self._refresh()
+
+    def _delete(self):
+        row = self.list.currentRow()
+        if row >= 0:
+            del self.state_ref["habits"][row]
+            self._refresh()
+
+class DailyBriefingWidget(QWidget):
+    def __init__(self, state_ref, msg, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0,0,0,0)
+        lay.setSpacing(10)
+        
+        lbl = QLabel(msg)
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"color:{TEXT_WHITE};font-size:14px;background:transparent;border:none;")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(lbl)
+        
+        habits = state_ref.get("habits", [])
+        if habits:
+            line = QFrame()
+            line.setFixedHeight(1)
+            line.setStyleSheet(f"background:{HOVER_BG};")
+            lay.addWidget(line)
+
+            h_lbl = QLabel("Habit Tracker")
+            h_lbl.setStyleSheet(f"color:{GOLD};font-size:14px;font-weight:bold;")
+            h_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lay.addWidget(h_lbl)
+            
+            today = _today_str()
+            
+            for h in habits:
+                chk = QCheckBox(h["name"])
+                chk.setStyleSheet(f"QCheckBox{{color:{TEXT_GRAY};}} QCheckBox::indicator{{border:1px solid {TEXT_GRAY};width:14px;height:14px;border-radius:3px;}} QCheckBox::indicator:checked{{background:{GOLD};border:1px solid {GOLD};}}")
+                chk.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                if today in h.get("history", []):
+                    chk.setChecked(True)
+                
+                chk.toggled.connect(lambda c, habit=h: self._toggle_habit(habit, c))
+                lay.addWidget(chk)
+                
+    def _toggle_habit(self, habit, checked):
+        today = _today_str()
+        if "history" not in habit: habit["history"] = []
+        
+        if checked:
+            if today not in habit["history"]:
+                habit["history"].append(today)
+        else:
+            if today in habit["history"]:
+                habit["history"].remove(today)
 
 class TaskRow(QFrame):
     toggled = pyqtSignal(str)
     subtaskToggled = pyqtSignal(str)
+    subtaskEdited = pyqtSignal(str, str) # parent_id, subtask_id
     resized = pyqtSignal()
     addStepRequested = pyqtSignal(str)
     focusRequested = pyqtSignal(str)
+    menuRequested = pyqtSignal(QPoint)
+    projectClicked = pyqtSignal(str)
 
     def __init__(self, task: dict, subtasks: list, number_text: str, project_info: dict = None, parent=None):
         super().__init__(parent)
@@ -1232,15 +1491,36 @@ class TaskRow(QFrame):
 
         # Time Label
         time_str = task.get("due_time", "")
-        self.lbl_time = QLabel(time_str if time_str else "")
-        self.lbl_time.setStyleSheet(f"color:{GOLD};font-size:11px;font-weight:bold;margin-right:4px;")
+        display_time = time_str
+        time_color = GOLD
+        if task.get("due_date"):
+             try:
+                 d = datetime.strptime(task["due_date"], "%Y-%m-%d").date()
+                 today = date.today()
+                 delta = (d - today).days
+                 
+                 if delta < 0: date_str, time_color = "Overdue", "#ff4d4d"
+                 elif delta == 0: date_str, time_color = "Today", "#ff9f43"
+                 elif delta == 1: date_str = "Tomorrow"
+                 elif delta < 7: date_str = d.strftime("%A")
+                 else: date_str = d.strftime("%b %d")
+                 
+                 display_time = f"{date_str} {time_str}".strip()
+             except: pass
+        self.lbl_time = QLabel(display_time if display_time else "")
+        self.lbl_time.setStyleSheet(f"color:{time_color};font-size:11px;font-weight:bold;margin-right:4px;")
         self.lbl_time.setVisible(bool(time_str))
 
         # Project Dot
-        self.lbl_proj = QLabel("●")
-        self.lbl_proj.setStyleSheet(f"color:{project_info['color'] if project_info else 'transparent'};font-size:10px;margin-right:4px;")
-        self.lbl_proj.setToolTip(f"Project: {project_info['name']}") if project_info else None
-        self.lbl_proj.setVisible(bool(project_info))
+        self.btn_proj = QPushButton("●")
+        self.btn_proj.setFixedSize(16, 16)
+        self.btn_proj.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        color = project_info['color'] if project_info else 'transparent'
+        self.btn_proj.setStyleSheet(f"color:{color};background:transparent;border:none;font-size:10px;margin-right:4px;")
+        self.btn_proj.setToolTip(f"Go to Project: {project_info['name']}") if project_info else None
+        self.btn_proj.setVisible(bool(project_info))
+        if project_info:
+            self.btn_proj.clicked.connect(lambda: self.projectClicked.emit(project_info['id']))
 
         self.lbl_text = QLabel(task.get("text", ""))
         self.lbl_text.setWordWrap(True)
@@ -1254,6 +1534,7 @@ class TaskRow(QFrame):
             f"QPushButton{{color:{TEXT_GRAY};background:transparent;border:none;font-size:14px;}}"
             f"QPushButton:hover{{color:{GOLD};}}"
         )
+        self.btn_link.setToolTip("Open Link/File")
         self.btn_link.clicked.connect(self._open_link)
         self.btn_link.setVisible(bool(self.url))
 
@@ -1264,6 +1545,7 @@ class TaskRow(QFrame):
             f"QPushButton{{color:{TEXT_GRAY};background:transparent;border:none;font-size:14px;}}"
             f"QPushButton:hover{{color:{GOLD};}}"
         )
+        self.btn_focus.setToolTip("Focus (Zen Mode)")
         self.btn_focus.clicked.connect(lambda: self.focusRequested.emit(self.task["id"]))
 
         self.lbl_note = QLabel("•")
@@ -1272,6 +1554,18 @@ class TaskRow(QFrame):
         has_note = bool((task.get("note") or "").strip()) or bool(self.subtasks)
         self.lbl_note.setVisible(has_note)
 
+        # More Button (Visible on Hover)
+        self.btn_more = QPushButton("⋮")
+        self.btn_more.setFixedSize(24, 24)
+        self.btn_more.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_more.setStyleSheet(
+            f"QPushButton{{color:{TEXT_GRAY};background:transparent;border:none;font-size:16px;font-weight:bold;}}"
+            f"QPushButton:hover{{color:{TEXT_WHITE};background:{HOVER_BG};border-radius:12px;}}"
+        )
+        self.btn_more.setToolTip("More Options")
+        self.btn_more.clicked.connect(self._on_more_click)
+        self.btn_more.setVisible(False)
+
         self.chk = AnimatedCheckbox()
         self.chk.clicked.connect(lambda: self.toggled.emit(self.task["id"]))
 
@@ -1279,11 +1573,12 @@ class TaskRow(QFrame):
         lay.addWidget(self.lbl_recur)
         lay.addWidget(self.lbl_emoji)
         lay.addWidget(self.lbl_time)
-        lay.addWidget(self.lbl_proj)
+        lay.addWidget(self.btn_proj)
         lay.addWidget(self.lbl_text, 1)
         lay.addWidget(self.btn_link)
         lay.addWidget(self.btn_focus)
         lay.addWidget(self.lbl_note)
+        lay.addWidget(self.btn_more)
         lay.addWidget(self.chk)
 
         # Expansion area
@@ -1304,6 +1599,7 @@ class TaskRow(QFrame):
         for st in self.subtasks:
             sw = SubtaskWidget(st)
             sw.toggled.connect(self.subtaskToggled.emit)
+            sw.editRequested.connect(lambda sid: self.subtaskEdited.emit(self.task["id"], sid))
             self.exp_lay.addWidget(sw)
 
         # Add Step Button
@@ -1319,7 +1615,14 @@ class TaskRow(QFrame):
         self.main_lay.addWidget(self.top_frame)
         self.main_lay.addWidget(self.expansion)
 
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+
         self._apply_state()
+
+    def get_opacity(self): return self.opacity_effect.opacity()
+    def set_opacity(self, o): self.opacity_effect.setOpacity(o)
+    opacity_prop = pyqtProperty(float, get_opacity, set_opacity)
 
     def _detect_link(self, task):
         # Check text and note for URLs or file paths
@@ -1339,6 +1642,9 @@ class TaskRow(QFrame):
                 QDesktopServices.openUrl(QUrl.fromLocalFile(self.url))
             else:
                 QDesktopServices.openUrl(QUrl(self.url))
+
+    def _on_more_click(self):
+        self.menuRequested.emit(self.btn_more.mapToGlobal(QPoint(0, 24)))
 
     def get_flash_opacity(self): return self._flash_opacity
     def set_flash_opacity(self, v): 
@@ -1385,7 +1691,19 @@ class TaskRow(QFrame):
         mime.setText(self.task["id"])
         mime.setData("application/taskflow-task", self.task["id"].encode())
         drag.setMimeData(mime)
-        drag.setPixmap(self.grab())
+        
+        # Create a nice drag pixmap with background
+        pix = QPixmap(self.size())
+        pix.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pix)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(CARD_BG))
+        painter.setPen(QPen(QColor(GOLD), 1))
+        painter.drawRoundedRect(pix.rect().adjusted(0,0,-1,-1), 8, 8)
+        painter.end()
+        self.render(pix, QPoint(), QRegion(), QWidget.RenderFlag.DrawChildren)
+        
+        drag.setPixmap(pix)
         drag.setHotSpot(e.pos())
         drag.exec(Qt.DropAction.MoveAction)
 
@@ -1399,10 +1717,12 @@ class TaskRow(QFrame):
 
     def enterEvent(self, e):
         self.setStyleSheet(f"TaskRow{{background:{HOVER_BG};border-radius:8px;margin-bottom:2px;}}")
+        self.btn_more.setVisible(True)
         super().enterEvent(e)
 
     def leaveEvent(self, e):
         self.setStyleSheet("TaskRow{background:transparent;border-radius:8px;margin-bottom:2px;}")
+        self.btn_more.setVisible(False)
         super().leaveEvent(e)
 
     def paintEvent(self, e):
@@ -1469,9 +1789,42 @@ class SectionBlock(QWidget):
 
     def toggle_collapse(self):
         self.collapsed = not self.collapsed
-        self.list.setVisible(not self.collapsed)
         self.btn_arrow.setText("▶" if self.collapsed else "▼")
-        self.requestResize.emit()
+        
+        # Animation logic
+        if not hasattr(self, "_anim"):
+            self._anim = QPropertyAnimation(self.list, b"maximumHeight")
+            self._anim.setDuration(250)
+            self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self._anim.valueChanged.connect(lambda: self.requestResize.emit())
+
+        self._anim.stop()
+        
+        if not self.collapsed:
+            self.list.setVisible(True)
+            self.list.update_height() # Ensure real_height is set
+            start = 0
+            end = self.list.real_height
+        else:
+            start = self.list.height()
+            end = 0
+
+        self.list.setMinimumHeight(0)
+        self.list.setMaximumHeight(start)
+        
+        self._anim.setStartValue(start)
+        self._anim.setEndValue(end)
+        
+        def on_finished():
+            if self.collapsed: self.list.setVisible(False)
+            else: self.list.setFixedHeight(self.list.real_height)
+            self.requestResize.emit()
+            
+        try: self._anim.finished.disconnect()
+        except TypeError: pass
+        self._anim.finished.connect(on_finished)
+        self._anim.start()
+        
         self.collapsedChanged.emit(self.collapsed)
 
     def _on_header_click(self, e):
@@ -2191,6 +2544,7 @@ class UltimateTaskFlow(QMainWindow):
         self._zen_task_id = None
         self.input = None
         self.note_editor = None
+        self.section_blocks = {}
 
         self._dragging = False
         self._drag_possible = False
@@ -2287,6 +2641,11 @@ class UltimateTaskFlow(QMainWindow):
         # Show What's New if version changed
         if self.state.get("last_version") != VERSION:
             QTimer.singleShot(1000, self._show_whats_new)
+
+        if getattr(self, "_pending_weekly_review", False):
+            QTimer.singleShot(1500, self._show_weekly_review)
+        elif getattr(self, "_pending_briefing", False):
+            QTimer.singleShot(1500, self._show_daily_briefing)
 
         # Check for updates silently on startup (delayed slightly to let UI load)
         QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
@@ -2385,26 +2744,34 @@ class UltimateTaskFlow(QMainWindow):
             self.startup_anim.finished.connect(lambda: self.centralWidget().setGraphicsEffect(None))
             self.startup_anim.start()
 
-    def _animate_tab_transition(self, widget):
+    def _animate_tab_transition(self, widget, direction):
         if not self.isVisible():
             return
 
         # Stop any running animations
         if hasattr(self, "_tab_anim") and self._tab_anim.state() == QPropertyAnimation.State.Running:
             self._tab_anim.stop()
-
-        # Ensure widget is in the correct layout position (0,0) to fix hitbox offset bugs
-        widget.move(0, 0)
         
         effect = QGraphicsOpacityEffect(widget)
         widget.setGraphicsEffect(effect)
         
-        self._tab_anim = QPropertyAnimation(effect, b"opacity", widget)
-        self._tab_anim.setStartValue(0.0)
-        self._tab_anim.setEndValue(1.0)
-        self._tab_anim.setDuration(180)
-        self._tab_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._tab_anim.finished.connect(lambda: widget.setGraphicsEffect(None))
+        self._tab_anim = QParallelAnimationGroup(self)
+        
+        pos_anim = QPropertyAnimation(widget, b"pos")
+        pos_anim.setStartValue(QPoint(direction * 40, 0))
+        pos_anim.setEndValue(QPoint(0, 0))
+        pos_anim.setDuration(250)
+        pos_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        fade_anim = QPropertyAnimation(effect, b"opacity")
+        fade_anim.setStartValue(0.0)
+        fade_anim.setEndValue(1.0)
+        fade_anim.setDuration(220)
+        fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        self._tab_anim.addAnimation(pos_anim)
+        self._tab_anim.addAnimation(fade_anim)
+        self._tab_anim.finished.connect(lambda: widget.setGraphicsEffect(None) if widget else None)
         self._tab_anim.start()
 
     def _setup_tray(self):
@@ -2559,11 +2926,20 @@ class UltimateTaskFlow(QMainWindow):
                     dt_time = datetime.strptime(d_time, "%H:%M").time()
                     # Notify 15 minutes before
                     diff = datetime.combine(date.min, dt_time) - datetime.combine(date.min, current_time)
-                    if timedelta(minutes=0) < diff <= timedelta(minutes=15):
-                        self._show_overlay("Reminder", f"Upcoming task: {t.get('text')}\nDue at {d_time}", [("Got it", None, "primary")])
+                    
+                    # Check window: 15 mins before, or up to 60 mins after (if missed due to sleep)
+                    if timedelta(minutes=-60) <= diff <= timedelta(minutes=15):
+                        msg = f"Upcoming task: {t.get('text')}\nDue at {d_time}"
+                        if diff < timedelta(minutes=0):
+                            msg = f"Overdue task: {t.get('text')}\nWas due at {d_time}"
+                        self._show_overlay("Reminder", msg, [("Got it", None, "primary")])
                         t["reminder_sent"] = True
                         self._schedule_save()
                 except: pass
+        
+        # Check for day rollover (if app left open overnight)
+        if self.state.get("last_opened") != today_iso:
+            self._rollover_if_new_day(refresh_ui=True)
 
     def _on_download_finished(self, path):
         self.progress_dialog.close()
@@ -2594,7 +2970,7 @@ class UltimateTaskFlow(QMainWindow):
         
         self.header_bar.setVisible(False)
         self.stack.setCurrentWidget(self.page_settings)
-        self._animate_tab_transition(self.page_settings)
+        self._animate_tab_transition(self.page_settings, 1)
 
     def _close_settings(self):
         self.state["config"]["zen_duration"] = self.spin_zen.value()
@@ -2637,8 +3013,8 @@ class UltimateTaskFlow(QMainWindow):
         self._refresh_tasks_ui()
 
     def _on_quick_capture(self, text):
-        text, section, emoji = self._parse_task_input(text)
-        self._create_task(text, section, emoji)
+        text, section, emoji, project_id, due_date, due_time, note = self._parse_task_input(text)
+        self._create_task(text, section, emoji, project_id=project_id, due_date=due_date, due_time=due_time, note=note)
         self._schedule_save()
         self._refresh_tasks_ui()
 
@@ -2894,10 +3270,21 @@ class UltimateTaskFlow(QMainWindow):
         streak_lay = QHBoxLayout(self.streak_island)
         streak_lay.setContentsMargins(12, 0, 12, 0)
 
+        # Level Indicator
+        self.lbl_level = QLabel("Lvl 1")
+        self.lbl_level.setStyleSheet(f"color:{TEXT_WHITE};font-weight:bold;font-size:12px;")
+        self.xp_bar = QProgressBar()
+        self.xp_bar.setFixedSize(60, 6)
+        self.xp_bar.setTextVisible(False)
+        self.xp_bar.setStyleSheet(f"QProgressBar{{border:none;background:{HOVER_BG};border-radius:3px;}} QProgressBar::chunk{{background:{GOLD};border-radius:3px;}}")
+        
         # Streak Indicator
         self.lbl_streak = QLabel("🔥 0")
         self.lbl_streak.setStyleSheet(f"color:{GOLD};font-weight:bold;font-size:14px;border:none;background:transparent;")
         self.lbl_streak.setToolTip("Daily Streak: Complete a task or Zen session to extend!")
+        
+        streak_lay.addWidget(self.lbl_level)
+        streak_lay.addWidget(self.xp_bar)
         streak_lay.addWidget(self.lbl_streak)
 
         # --- Island 3: Tools (Search + Settings) ---
@@ -3039,6 +3426,12 @@ class UltimateTaskFlow(QMainWindow):
         lay.setContentsMargins(14, 0, 14, 12)
         lay.setSpacing(10)
 
+        # Input Container to hold input + feedback
+        input_container = QWidget()
+        input_lay = QVBoxLayout(input_container)
+        input_lay.setContentsMargins(0, 0, 0, 0)
+        input_lay.setSpacing(2)
+
         self.input = QLineEdit()
         self.input.setPlaceholderText("✨ Add task…")
         self.input.setStyleSheet(
@@ -3047,8 +3440,41 @@ class UltimateTaskFlow(QMainWindow):
         )
         self.input.setClearButtonEnabled(True)
         self.input.returnPressed.connect(self._quick_add_task)
+        self.input.textChanged.connect(self._update_input_feedback)
         self.input.installEventFilter(self)
-        lay.addWidget(self.input)
+        input_lay.addWidget(self.input)
+
+        self.input_feedback = QLabel("")
+        self.input_feedback.setStyleSheet(f"color:{GOLD};font-size:11px;font-weight:bold;margin-left:4px;")
+        self.input_feedback.setFixedHeight(0) # Hidden by default
+        input_lay.addWidget(self.input_feedback)
+
+        lay.addWidget(input_container)
+
+        self.board_list = BoardListWidget()
+        self.board_list.setStyleSheet(
+            "QListWidget{border:none;background:transparent;}"
+        )
+        self.board_list.model().rowsMoved.connect(self._on_section_reordered)
+        lay.addWidget(self.board_list, 1)
+        
+        self.board_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.board_list.customContextMenuRequested.connect(self._open_board_menu)
+
+        # Scheduled Section Container (New Box)
+        self.scheduled_container = QFrame()
+        self.scheduled_container.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};border-radius:12px;")
+        self.scheduled_layout = QVBoxLayout(self.scheduled_container)
+        self.scheduled_layout.setContentsMargins(10, 10, 10, 10)
+        lay.insertWidget(1, self.scheduled_container) # Insert after input
+
+        self.empty_state_lbl = QLabel("No tasks yet.\nType above to add one! 🚀")
+        self.empty_state_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_state_lbl.setStyleSheet(f"color:{TEXT_GRAY};font-size:16px;margin-top:40px;")
+        self.empty_state_lbl.setVisible(False)
+        lay.addWidget(self.empty_state_lbl)
+
+        self._refresh_tasks_ui()
 
     def keyPressEvent(self, e):
         if e.matches(QKeySequence.StandardKey.Paste):
@@ -3070,26 +3496,6 @@ class UltimateTaskFlow(QMainWindow):
             self._schedule_save()
             self._refresh_tasks_ui()
             self._show_overlay("Pasted", "Task created from clipboard.", [("OK", None, "primary")])
-
-        self.board_list = BoardListWidget()
-        self.board_list.setStyleSheet(
-            "QListWidget{border:none;background:transparent;}"
-        )
-        self.board_list.model().rowsMoved.connect(self._on_section_reordered)
-        lay.addWidget(self.board_list, 1)
-        
-        self.board_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.board_list.customContextMenuRequested.connect(self._open_board_menu)
-
-        # Scheduled Section Container (New Box)
-        self.scheduled_container = QFrame()
-        self.scheduled_container.setStyleSheet(f"background:{CARD_BG};border:1px solid {HOVER_BG};border-radius:12px;")
-        self.scheduled_layout = QVBoxLayout(self.scheduled_container)
-        self.scheduled_layout.setContentsMargins(10, 10, 10, 10)
-        lay.insertWidget(1, self.scheduled_container) # Insert after input
-
-        self.section_blocks = {}
-        self._refresh_tasks_ui()
 
     def _build_calendar_page(self):
         lay = QVBoxLayout(self.page_calendar)
@@ -3192,10 +3598,7 @@ class UltimateTaskFlow(QMainWindow):
         t = self._find_task(task_id)
         if t:
             t["due_date"] = sel_date
-            # If it had a time, maybe clear it? Or keep it?
-            # If dropped in list, it implies "no specific time" or "backlog"
-            # But user might just want to move it to this day.
-            # We'll keep time if set, but timeline widget handles timed tasks.
+            t["due_time"] = None # Clear time when moving to list (unschedule time)
             t["section"] = "Scheduled"
             t["updated_at"] = _now_iso()
             self._schedule_save()
@@ -3203,6 +3606,9 @@ class UltimateTaskFlow(QMainWindow):
             self._refresh_tasks_ui()
 
     def _refresh_calendar_tasks(self):
+        # Preserve scroll position
+        scroll_pos = self.calendar_list.verticalScrollBar().value()
+
         sel_date = self._current_view_date.isoformat()
         
         # Update Header
@@ -3234,6 +3640,9 @@ class UltimateTaskFlow(QMainWindow):
             item.setSizeHint(row.sizeHint())
             self.calendar_list.addItem(item)
             self.calendar_list.setItemWidget(item, row)
+            
+        # Restore scroll position
+        self.calendar_list.verticalScrollBar().setValue(scroll_pos)
 
     def _build_projects_page(self):
         lay = QVBoxLayout(self.page_projects)
@@ -3293,6 +3702,16 @@ class UltimateTaskFlow(QMainWindow):
         h_lay.addWidget(btn_del)
         d_lay.addLayout(h_lay)
 
+        # Quick Add in Project
+        self.p_input = QLineEdit()
+        self.p_input.setPlaceholderText("Add task to this project...")
+        self.p_input.setStyleSheet(
+            f"background:{DARK_BG};color:{TEXT_WHITE};border:1px solid {HOVER_BG};border-radius:8px;padding:8px;"
+        )
+        self.p_input.returnPressed.connect(self._add_project_task)
+        d_lay.addWidget(self.p_input)
+        d_lay.addSpacing(10)
+
         # Content
         self.p_detail_scroll = QScrollArea()
         self.p_detail_scroll.setWidgetResizable(True)
@@ -3309,44 +3728,145 @@ class UltimateTaskFlow(QMainWindow):
 
     def _refresh_projects_list(self):
         self.project_list_widget.clear()
+        tasks = self.state.get("tasks", [])
         for p in self.state.get("projects", []):
-            item = QListWidgetItem(f"●  {p['name']}")
-            item.setForeground(QColor(p['color']))
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, p['id'])
-            item.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-            item.setSizeHint(QSize(0, 40))
+            
+            widget = ProjectListItem(p, tasks)
+            item.setSizeHint(widget.sizeHint())
+            
             self.project_list_widget.addItem(item)
+            self.project_list_widget.setItemWidget(item, widget)
 
     def _open_project_detail(self, item):
         pid = item.data(Qt.ItemDataRole.UserRole)
+        self._show_project_detail(pid)
+
+    def _show_project_detail(self, pid):
         p = next((x for x in self.state["projects"] if x["id"] == pid), None)
         if not p: return
-        
         self._current_project_id = pid
         self.lbl_p_name.setText(p["name"])
-        self.lbl_p_name.setStyleSheet(f"color:{p['color']};font-size:18px;font-weight:bold;")
+        self.lbl_p_name.setStyleSheet(f"color:{p['color']};font-size:20px;font-weight:bold;")
         
         # Clear detail layout
         while self.p_detail_layout.count():
             child = self.p_detail_layout.takeAt(0)
             if child.widget(): child.widget().deleteLater()
 
-        # Tasks
+        # --- Tasks Section ---
         tasks = [t for t in self.state["tasks"] if t.get("project_id") == pid and not t.get("completed")]
+        # Sort by order
+        tasks.sort(key=lambda x: x.get("order", 0))
+        
+        lbl_t = QLabel(f"Tasks ({len(tasks)})")
+        lbl_t.setStyleSheet(f"color:{TEXT_GRAY};font-weight:bold;margin-top:10px;margin-bottom:5px;")
+        self.p_detail_layout.addWidget(lbl_t)
+        
         if tasks:
-            lbl = QLabel(f"Tasks ({len(tasks)})")
-            lbl.setStyleSheet(f"color:{TEXT_GRAY};font-weight:bold;margin-top:10px;")
-            self.p_detail_layout.addWidget(lbl)
-            for t in tasks:
-                # Simple row
-                row = QFrame()
-                rl = QHBoxLayout(row)
-                rl.setContentsMargins(0,0,0,0)
-                rl.addWidget(QLabel(f"• {t['text']}"))
+            for i, t in enumerate(tasks):
+                # Use TaskRow for full functionality
+                # Pass None for project_info to hide the dot (redundant in project view)
+                subtasks = [st for st in self.state["tasks"] if st.get("parent_id") == t["id"]]
+                row = TaskRow(t, subtasks, f"{i+1}.", project_info=None)
+                
+                row.toggled.connect(lambda tid=t["id"]: self._toggle_task_from_project(tid))
+                row.subtaskToggled.connect(self._toggle_task)
+                row.subtaskEdited.connect(self._edit_subtask)
+                row.focusRequested.connect(self.enter_zen_mode)
+                row.addStepRequested.connect(self._add_step)
+                row.menuRequested.connect(lambda pos, tid=t["id"]: self._open_task_context_menu(tid, pos))
+                
                 self.p_detail_layout.addWidget(row)
+        else:
+            lbl_empty = QLabel("No active tasks.")
+            lbl_empty.setStyleSheet(f"color:{TEXT_GRAY};font-style:italic;margin-left:10px;")
+            self.p_detail_layout.addWidget(lbl_empty)
+
+        # --- Notes Section ---
+        notes = []
+        for g in self.state["notes"]["groups"].values():
+            for n in g:
+                if n.get("project_id") == pid:
+                    notes.append(n)
+        
+        self.p_detail_layout.addSpacing(20)
+        lbl_n = QLabel(f"Notes ({len(notes)})")
+        lbl_n.setStyleSheet(f"color:{TEXT_GRAY};font-weight:bold;margin-top:10px;margin-bottom:5px;")
+        self.p_detail_layout.addWidget(lbl_n)
+
+        if notes:
+            for n in notes:
+                # Clickable Note Row
+                btn = QPushButton()
+                btn.setStyleSheet(
+                    f"text-align:left;background:{DARK_BG};color:{TEXT_WHITE};border-radius:6px;padding:10px;border:1px solid transparent;"
+                )
+                # Add hover effect via stylesheet
+                btn.setStyleSheet(btn.styleSheet() + f"QPushButton:hover{{border:1px solid {GOLD};}}")
+                
+                btn.setText(f"📄 {n.get('title', 'Untitled')}")
+                btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                btn.clicked.connect(lambda _, nid=n["id"]: self._go_to_note(nid))
+                
+                self.p_detail_layout.addWidget(btn)
+        else:
+            lbl_empty = QLabel("No notes.")
+            lbl_empty.setStyleSheet(f"color:{TEXT_GRAY};font-style:italic;margin-left:10px;")
+            self.p_detail_layout.addWidget(lbl_empty)
+            
+        # Add Note Button
+        btn_add_note = QPushButton("+ New Note")
+        btn_add_note.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_add_note.setStyleSheet(f"background:transparent;color:{GOLD};border:1px dashed {GOLD};border-radius:6px;padding:6px;margin-top:5px;")
+        btn_add_note.clicked.connect(self._add_project_note)
+        self.p_detail_layout.addWidget(btn_add_note)
 
         self.p_detail_layout.addStretch()
         self.projects_stack.setCurrentWidget(self.p_page_detail)
+
+    def _toggle_task_from_project(self, tid):
+        self._toggle_task(tid)
+        # Refresh project view to remove completed task or update state
+        self._show_project_detail(self._current_project_id)
+
+    def _go_to_note(self, nid):
+        self._switch_tab("Notes")
+        # Find group
+        target_group = "General"
+        for g, notes in self.state["notes"]["groups"].items():
+            for n in notes:
+                if n["id"] == nid:
+                    target_group = g
+                    break
+        
+        if hasattr(self, "note_group"):
+            self.note_group.setCurrentText(target_group)
+        self._refresh_notes_ui(select_note_id=nid, group=target_group)
+
+    def _add_project_note(self):
+        g = "General"
+        self._ensure_group(g)
+        note = {
+            "id": str(uuid.uuid4()),
+            "title": "New Project Note",
+            "content": "",
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+            "project_id": self._current_project_id
+        }
+        self.state["notes"]["groups"][g].insert(0, note)
+        self._schedule_save()
+        self._go_to_note(note["id"])
+
+    def _add_project_task(self):
+        text = self.p_input.text().strip()
+        if not text: return
+        self.p_input.clear()
+        self._create_task(text, "Today", "📝", project_id=self._current_project_id)
+        self._schedule_save()
+        self._show_project_detail(self._current_project_id)
 
     def _build_stats_page(self):
         lay = QVBoxLayout(self.page_stats)
@@ -3494,6 +4014,18 @@ class UltimateTaskFlow(QMainWindow):
         self.zen_content.addWidget(self.lbl_timer)
         self.zen_content.addLayout(timer_controls)
         
+        # Timer Presets
+        presets_lay = QHBoxLayout()
+        presets_lay.setSpacing(10)
+        
+        for label, mins in [("Focus (25m)", 25), ("Short Break (5m)", 5), ("Long Break (15m)", 15)]:
+            btn = QPushButton(label)
+            btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            btn.setStyleSheet(f"background:{HOVER_BG};color:{TEXT_GRAY};border-radius:8px;padding:4px 8px;font-size:11px;")
+            btn.clicked.connect(lambda _, m=mins: self._set_zen_duration(m))
+            presets_lay.addWidget(btn)
+        self.zen_content.addLayout(presets_lay)
+
         lay.addLayout(self.zen_content)
         
         # Subtasks area
@@ -3628,6 +4160,13 @@ class UltimateTaskFlow(QMainWindow):
         self.btn_recurring.clicked.connect(self._open_recurring_manager)
         lay.addWidget(self.btn_recurring)
 
+        # Habit Manager
+        self.btn_habits = QPushButton("Manage Habits")
+        self.btn_habits.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_habits.setStyleSheet(f"background:{CARD_BG};color:{TEXT_WHITE};border:1px solid {HOVER_BG};border-radius:6px;padding:6px;")
+        self.btn_habits.clicked.connect(self._open_habit_manager)
+        lay.addWidget(self.btn_habits)
+
         # Backup Manager
         self.btn_backups = QPushButton("Manage Backups")
         self.btn_backups.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -3729,6 +4268,10 @@ class UltimateTaskFlow(QMainWindow):
         dlg = RecurringTasksDialog(self.state, self)
         dlg.exec()
 
+    def _open_habit_manager(self):
+        dlg = HabitManagerDialog(self.state, self)
+        dlg.exec()
+
     def _open_sync_devices(self):
         dlg = DeviceSelectionDialog(self)
         res = dlg.exec()
@@ -3777,7 +4320,12 @@ class UltimateTaskFlow(QMainWindow):
             "sender": socket.gethostname()
         }
         
-        self._sync_senders = [] # Keep references to prevent GC
+        # Cleanup finished threads to prevent memory leak
+        if hasattr(self, "_sync_senders"):
+            self._sync_senders = [s for s in self._sync_senders if s.isRunning()]
+        else:
+            self._sync_senders = []
+
         for d in devices:
             sender = SyncSender(d["ip"], sync_data)
             self._sync_senders.append(sender)
@@ -4034,6 +4582,8 @@ class UltimateTaskFlow(QMainWindow):
 
     def _show_overlay(self, title, msg, buttons):
         self.overlay.show_msg(title, msg, buttons)
+    def _show_overlay(self, title, msg, buttons, content_widget=None):
+        self.overlay.show_msg(title, msg, buttons, content_widget)
 
     def enter_zen_mode(self, task_id: str):
         self._zen_task_id = task_id
@@ -4061,7 +4611,11 @@ class UltimateTaskFlow(QMainWindow):
 
     def _populate_zen_view(self, task_id: str):
         t = self._find_task(task_id)
-        if not t: return
+        if not t:
+            # Task might have been deleted or completed/archived externally
+            self._zen_task_id = None
+            self.exit_zen_mode()
+            return
         
         self.zen_emoji.setText(t.get("emoji", "📝"))
         self.zen_text.setText(t.get("text", ""))
@@ -4126,6 +4680,7 @@ class UltimateTaskFlow(QMainWindow):
         else:
             self.zen_timer.start(1000)
             self.zen_running = True
+            self._prevent_sleep()
             self._start_zen_pulse()
             self.btn_timer_toggle.setText("⏸ Pause")
             self.btn_timer_toggle.setStyleSheet(
@@ -4136,9 +4691,15 @@ class UltimateTaskFlow(QMainWindow):
             self.zen_end_time = datetime.now() + timedelta(seconds=self.zen_remaining)
             self.zen_timer.start(100) # Faster tick for smoothness
 
+    def _set_zen_duration(self, mins):
+        if self.zen_running: return
+        self.zen_remaining = mins * 60
+        self._update_timer_display()
+
     def _reset_zen_timer(self):
         self.zen_timer.stop()
         self.zen_running = False
+        self._allow_sleep()
         self._stop_zen_pulse()
         cfg_mins = self.state.get("config", {}).get("zen_duration", 25)
         self.zen_remaining = cfg_mins * 60
@@ -4164,14 +4725,23 @@ class UltimateTaskFlow(QMainWindow):
                 self._update_timer_display()
                 self.zen_timer.stop()
                 self.zen_running = False
+                self._allow_sleep()
                 self._stop_zen_pulse()
                 self.btn_timer_toggle.setText("▶ Start")
                 self.showNormal()
                 self.activateWindow()
                 
+                # Play sound
+                if self.state.get("config", {}).get("sound_enabled", True) and winsound:
+                    try: winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
+                    except: pass
+
                 # Rewards & Stats
                 duration = self.state.get("config", {}).get("zen_duration", 25)
                 self._update_streak()
+                
+                # XP for Zen
+                self._add_xp(int(duration))
                 
                 self.state["zen_stats"]["total_minutes"] += duration
                 self.state["zen_stats"]["sessions"].append({
@@ -4184,6 +4754,7 @@ class UltimateTaskFlow(QMainWindow):
                 self._show_overlay("Flow Complete", "Focus session finished!", [("Awesome", None, "primary")])
         except KeyboardInterrupt:
             self.zen_timer.stop()
+            self._allow_sleep()
         except Exception:
             pass
 
@@ -4195,16 +4766,19 @@ class UltimateTaskFlow(QMainWindow):
     def _start_zen_pulse(self):
         # Ensure clean state
         self._stop_zen_pulse()
-        
-        self._zen_pulse_effect = QGraphicsOpacityEffect(self.lbl_timer)
+        # Glow effect
+        self._zen_pulse_effect = QGraphicsDropShadowEffect(self.lbl_timer)
+        self._zen_pulse_effect.setBlurRadius(0)
+        self._zen_pulse_effect.setColor(QColor(GOLD))
+        self._zen_pulse_effect.setOffset(0, 0)
         self.lbl_timer.setGraphicsEffect(self._zen_pulse_effect)
         
-        self._zen_pulse_anim = QPropertyAnimation(self._zen_pulse_effect, b"opacity")
-        self._zen_pulse_anim.setDuration(1000)
-        self._zen_pulse_anim.setStartValue(1.0)
-        self._zen_pulse_anim.setKeyValueAt(0.5, 0.6)
-        self._zen_pulse_anim.setEndValue(1.0)
+        self._zen_pulse_anim = QPropertyAnimation(self._zen_pulse_effect, b"blurRadius")
+        self._zen_pulse_anim.setDuration(1500)
+        self._zen_pulse_anim.setStartValue(0)
+        self._zen_pulse_anim.setEndValue(30)
         self._zen_pulse_anim.setLoopCount(-1)
+        self._zen_pulse_anim.setEasingCurve(QEasingCurve.Type.SineCurve)
         self._zen_pulse_anim.start()
 
     def _stop_zen_pulse(self):
@@ -4221,6 +4795,20 @@ class UltimateTaskFlow(QMainWindow):
                 # Object already deleted by C++
                 pass
             del self._zen_pulse_effect
+
+    def _prevent_sleep(self):
+        if os.name == 'nt':
+            try:
+                # ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001 | 0x00000002)
+            except: pass
+
+    def _allow_sleep(self):
+        if os.name == 'nt':
+            try:
+                # ES_CONTINUOUS
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+            except: pass
 
     def _is_startup_enabled(self):
         if not winreg: return False
@@ -4251,6 +4839,9 @@ class UltimateTaskFlow(QMainWindow):
                     pass
             winreg.CloseKey(key)
         except Exception as e:
+            self._show_overlay("Settings Error", f"Could not change startup setting:\n{e}", [("OK", None, "secondary")])
+            # Revert checkbox to reflect reality
+            self.chk_startup.setChecked(self._is_startup_enabled())
             print(f"Startup registry error: {e}")
 
     def _create_section_item(self, name: str):
@@ -4289,6 +4880,7 @@ class UltimateTaskFlow(QMainWindow):
         )
         act_sort = menu.addAction("Sort All by Priority")
         act_archive = menu.addAction("Archive Completed Tasks")
+        act_clear_all = menu.addAction("Clear All Completed")
         menu.addSeparator()
         act_collapse = menu.addAction("Collapse All")
         act_expand = menu.addAction("Expand All")
@@ -4301,6 +4893,10 @@ class UltimateTaskFlow(QMainWindow):
             self._sort_all_sections()
         elif chosen == act_archive:
             self._archive_completed()
+        elif chosen == act_clear_all:
+            for sec in self.state["sections"]:
+                self._clear_completed_in_section(sec)
+            self._clear_completed_in_section("Scheduled")
         elif chosen == act_collapse:
             for blk in self.section_blocks.values():
                 if not blk.collapsed: blk.toggle_collapse()
@@ -4398,6 +4994,8 @@ class UltimateTaskFlow(QMainWindow):
                 new_order.append(w.name)
         
         if new_order:
+            if "Scheduled" not in new_order:
+                new_order.append("Scheduled")
             self.state["sections"] = new_order
             self._schedule_save()
 
@@ -4534,7 +5132,11 @@ class UltimateTaskFlow(QMainWindow):
         # Filter Notes
         for i in range(self.note_list.count()):
             item = self.note_list.item(i)
-            match = text in item.text().lower()
+            nid = item.data(Qt.ItemDataRole.UserRole)
+            n = self._find_note(nid)
+            content = n.get("content", "") if n else ""
+            
+            match = text in item.text().lower() or text in content.lower()
             item.setHidden(not match)
 
     # ---------- Auto-collapse ----------
@@ -4634,6 +5236,14 @@ class UltimateTaskFlow(QMainWindow):
         return ts
 
     def _refresh_tasks_ui(self):
+        if getattr(self, "section_blocks", None) is None or getattr(self, "scheduled_container", None) is None:
+            return
+
+        if getattr(self, "board_list", None):
+            board_scroll_pos = self.board_list.verticalScrollBar().value()
+        else:
+            board_scroll_pos = 0
+
         # Refinement: preserve selection + scroll + expansion positions per section.
         preserve = {}
         saved_states = self.state.get("ui", {}).get("section_states", {})
@@ -4650,6 +5260,7 @@ class UltimateTaskFlow(QMainWindow):
         # Pre-fetch project info
         proj_map = {p["id"]: p for p in self.state.get("projects", [])}
 
+        current_board_index = 0
         for sec in self.state["sections"]:
             if sec in self.section_blocks:
                 blk = self.section_blocks[sec]
@@ -4690,22 +5301,43 @@ class UltimateTaskFlow(QMainWindow):
         scheduled_tasks = self._tasks_in_section("Scheduled")
         self.scheduled_container.setVisible(len(scheduled_tasks) > 0)
 
+        # Empty State Logic
+        has_tasks = len(self.state["tasks"]) > 0
+        if hasattr(self, "empty_state_lbl"):
+            self.empty_state_lbl.setVisible(not has_tasks)
+            self.board_list.setVisible(has_tasks)
+
         for sec in self.state["sections"]:
             if sec == "Scheduled": continue # Handled separately
             
+            # Ensure block exists
             if sec not in self.section_blocks:
                 item, blk = self._create_section_item(sec)
-                self.board_list.addItem(item)
+                self.board_list.insertItem(current_board_index, item)
                 self.board_list.setItemWidget(item, blk)
             else:
-                                blk = self.section_blocks[sec]
-                # Ensure it's in the list (might have been removed if logic changed, but here we append)
-                # Actually, if order changed, we might need to re-add.
-                # For now, assume append order matches.
+                blk = self.section_blocks[sec]
+                # Ensure it is at the correct index in board_list
+                found_at = -1  
+                for i in range(self.board_list.count()):
+                    it = self.board_list.item(i)
+                    if self.board_list.itemWidget(it) == blk:
+                        found_at = i
+                        break
+                
+                if found_at != -1 and found_at != current_board_index:
+                    # Move to correct position
+                    it = self.board_list.takeItem(found_at)
+                    self.board_list.insertItem(current_board_index, it)
+                    self.board_list.setItemWidget(it, blk)
+                elif found_at == -1:
+                    # Should exist but not in list? Re-add
+                    item, _ = self._create_section_item(sec) # Re-create item wrapper
+                    self.section_blocks[sec] = blk # Keep block ref
+                    self.board_list.insertItem(current_board_index, item)
+                    self.board_list.setItemWidget(item, blk)
             
             self._update_section_block(sec, expanded_tasks, proj_map)
-            
-            # Restore collapse state
             saved = preserve.get(sec, {})
             if saved.get("collapsed", False):
                 blk.collapsed = True
@@ -4713,8 +5345,34 @@ class UltimateTaskFlow(QMainWindow):
                 blk.btn_arrow.setText("▶")
                 # item.setSizeHint(blk.sizeHint()) # Need item ref
 
+            # Restore selection
+            if saved.get("selected"):
+                for i in range(blk.list.count()):
+                    it = blk.list.item(i)
+                    if it.data(Qt.ItemDataRole.UserRole) == saved["selected"]:
+                        blk.list.setCurrentItem(it)
+                        break
+            
+            current_board_index += 1
+
         # Cleanup removed sections
-        # (omitted for brevity, assuming sections don't vanish often)
+        active_sections = set(self.state["sections"])
+        active_sections.add("Scheduled")
+        
+        to_remove = [name for name in self.section_blocks if name not in active_sections]
+        
+        for name in to_remove:
+            blk = self.section_blocks.pop(name)
+            # Find and remove from board_list
+            for i in range(self.board_list.count()):
+                it = self.board_list.item(i)
+                if self.board_list.itemWidget(it) == blk:
+                    self.board_list.takeItem(i)
+                    break
+            blk.deleteLater()
+
+        if getattr(self, "board_list", None):
+            self.board_list.verticalScrollBar().setValue(board_scroll_pos)
 
     def _update_section_block(self, sec, expanded_tasks, proj_map):
         blk = self.section_blocks[sec]
@@ -4723,6 +5381,9 @@ class UltimateTaskFlow(QMainWindow):
         # Update progress
         completed = len([t for t in tasks if t.get("completed")])
         blk.update_progress(len(tasks), completed)
+
+        # Save scroll position to prevent jumping
+        scroll_pos = blk.list.verticalScrollBar().value()
 
         lst = blk.list
         lst.blockSignals(True)
@@ -4750,9 +5411,15 @@ class UltimateTaskFlow(QMainWindow):
                 row = TaskRow(t, subs, num, project_info=p_info)
                 row.toggled.connect(self._toggle_task)
                 row.subtaskToggled.connect(self._toggle_task)
+                row.subtaskEdited.connect(self._edit_subtask)
                 row.resized.connect(lambda: self._on_task_resize(lst, t_item, row))
                 row.focusRequested.connect(self.enter_zen_mode)
                 row.addStepRequested.connect(self._add_step)
+                row.menuRequested.connect(lambda pos, s=sec: self._open_task_menu(s, pos))
+                row.projectClicked.connect(lambda pid: (
+                    self._switch_tab("Projects"),
+                    self._show_project_detail(pid)
+                ))
                 
                 if t["id"] in expanded_tasks:
                     row.setExpanded(True)
@@ -4773,6 +5440,8 @@ class UltimateTaskFlow(QMainWindow):
         finally:
             lst.blockSignals(False)
             lst.setUpdatesEnabled(True)
+            # Restore scroll position
+            blk.list.verticalScrollBar().setValue(scroll_pos)
 
     def _on_task_resize(self, lst, item, widget):
         item.setSizeHint(widget.sizeHint())
@@ -4799,6 +5468,15 @@ class UltimateTaskFlow(QMainWindow):
         section = "Today"
         emoji = "📝"
         project_id = None
+        due_date = None
+        due_time = None
+        note = ""
+
+        # Quick Note detection (e.g. "Task > Note content")
+        if ">" in text:
+            parts = text.split(">", 1)
+            text = parts[0].strip()
+            note = parts[1].strip()
 
         # Priority detection
         if re.search(r'\b(important|urgent)\b', text, re.IGNORECASE):
@@ -4825,22 +5503,113 @@ class UltimateTaskFlow(QMainWindow):
             text = re.sub(r'\b(later|someday)\b', '', text, flags=re.IGNORECASE)
 
         # Project detection (+ProjectName)
-        # Match longest project names first to handle spaces correctly
-        sorted_projects = sorted(self.state.get("projects", []), key=lambda p: len(p["name"]), reverse=True)
-        for p in sorted_projects:
-            # Check for +Name (case insensitive)
-            pattern = re.compile(r'\+' + re.escape(p["name"]), re.IGNORECASE)
-            if pattern.search(text):
-                project_id = p["id"]
-                text = pattern.sub("", text)
+        if "+" in text:
+            sorted_projects = sorted(self.state.get("projects", []), key=lambda p: len(p["name"]), reverse=True)
+            for p in sorted_projects:
+                # Check for +Name (case insensitive)
+                pattern = re.compile(r'\+' + re.escape(p["name"]), re.IGNORECASE)
+                if pattern.search(text):
+                    project_id = p["id"]
+                    text = pattern.sub("", text)
+                    break
+
+        # "Next week" detection (Schedules for next Monday)
+        if re.search(r'\bnext week\b', text, re.IGNORECASE):
+            today = date.today()
+            days_ahead = (0 - today.weekday() + 7) % 7
+            if days_ahead == 0: days_ahead = 7
+            due_date = (today + timedelta(days=days_ahead)).isoformat()
+            section = "Scheduled"
+            text = re.sub(r'\bnext week\b', '', text, flags=re.IGNORECASE)
+
+        # Weekday detection (e.g. "on Friday")
+        weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        short_weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        
+        lower_text = text.lower()
+        for i, day in enumerate(weekdays):
+            # Check for full name or short name, optionally preceded by "on "
+            pattern = r'\b(?:on\s+)?(' + day + r'|' + short_weekdays[i] + r')\b'
+            match = re.search(pattern, lower_text)
+            if match:
+                today = date.today()
+                days_ahead = (i - today.weekday() + 7) % 7
+                if days_ahead == 0: days_ahead = 7
+                due_date = (today + timedelta(days=days_ahead)).isoformat()
+                section = "Scheduled"
+                
+                # Remove from text (case insensitive)
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+                break
+
+        # Time detection (e.g. "at 5pm", "17:00")
+        # Match 12h (5pm, 5:30pm) or 24h (17:00)
+        time_pattern = r'\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b'
+        time_match = re.search(time_pattern, text, re.IGNORECASE)
+        if time_match:
+            h_str, m_str, ampm = time_match.groups()
+            try:
+                h = int(h_str)
+                m = int(m_str) if m_str else 0
+                
+                if ampm:
+                    ampm = ampm.lower()
+                    if ampm == "pm" and h < 12: h += 12
+                    if ampm == "am" and h == 12: h = 0
+                
+                if 0 <= h <= 23 and 0 <= m <= 59:
+                    due_time = f"{h:02}:{m:02}"
+                    if not due_date:
+                        due_date = _today_str() # Default to today if time set but no date
+                    section = "Scheduled"
+                    text = re.sub(time_pattern, '', text, flags=re.IGNORECASE)
+            except: pass
+
+        # Time of day keywords
+        time_keywords = {
+            "morning": "09:00",
+            "afternoon": "14:00",
+            "evening": "18:00",
+            "tonight": "20:00",
+            "noon": "12:00"
+        }
+        for kw, time_val in time_keywords.items():
+            pattern = r'\b(?:in the |at )?' + kw + r'\b'
+            if re.search(pattern, text, re.IGNORECASE):
+                due_time = time_val
+                if not due_date: due_date = _today_str()
+                section = "Scheduled"
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE)
                 break
 
         # Cleanup whitespace
         text = re.sub(r'\s+', ' ', text).strip()
         
-        return text, section, emoji, project_id
+        return text, section, emoji, project_id, due_date, due_time, note
 
-    def _create_task(self, text: str, section: str, emoji: str, recur: str = "", parent_id=None, project_id=None, note: str = ""):
+    def _update_input_feedback(self, text):
+        if not text:
+            self.input_feedback.setFixedHeight(0)
+            return
+            
+        _, section, emoji, project_id, due_date, due_time, note = self._parse_task_input(text)
+        parts = []
+        if section != "Today": parts.append(f"📅 {section}")
+        if due_date: parts.append(f"📅 {due_date}")
+        if due_time: parts.append(f"⏰ {due_time}")
+        if emoji != "📝": parts.append(f"{emoji} Priority")
+        if project_id:
+            p = next((x for x in self.state["projects"] if x["id"] == project_id), None)
+            if p: parts.append(f"📂 {p['name']}")
+        if note: parts.append("📝 Note")
+            
+        if parts:
+            self.input_feedback.setText("  ".join(parts))
+            self.input_feedback.setFixedHeight(20)
+        else:
+            self.input_feedback.setFixedHeight(0)
+
+    def _create_task(self, text: str, section: str, emoji: str, recur: str = "", parent_id=None, project_id=None, note: str = "", due_date: str = None, due_time: str = None):
         text = (text or "").strip()
         if not text:
             return
@@ -4849,11 +5618,13 @@ class UltimateTaskFlow(QMainWindow):
         existing = self._tasks_in_section(section)
         max_order = max([t.get("order", 0) for t in existing], default=0)
 
-        due_date = _today_str() if section == "Scheduled" else None
+        if due_date is None:
+            due_date = _today_str() if section == "Scheduled" else None
 
+        task_id = str(uuid.uuid4())
         self.state["tasks"].append({
-            "id": str(uuid.uuid4()),
-            "text": text[:120],
+            "id": task_id,
+            "text": text[:500],
             "emoji": emoji or "📝",
             "completed": False,
             "section": section,
@@ -4865,38 +5636,87 @@ class UltimateTaskFlow(QMainWindow):
             "created_at": _now_iso(),
             "updated_at": _now_iso(),
             "due_date": due_date,
+            "due_time": due_time,
             "project_id": project_id,
         })
+        return task_id
 
     def _toggle_task(self, task_id: str):
-        # Refinement: avoid toggling while user is typing.
         if self._focus_is_text_entry():
             return
         t = self._find_task(task_id)
         if not t:
             return
-        t["completed"] = not bool(t.get("completed"))
+
+        is_completing = not bool(t.get("completed"))
+
+        # Update state immediately
+        t["completed"] = is_completing
         t["updated_at"] = _now_iso()
 
-        if t["completed"]:
-            if t.get("recur"):
-                freq = t.get("recur")
-                next_section = "Tomorrow" if freq == "Daily" else ("This Week" if freq == "Weekly" else "Someday")
-                self._create_task(text=t.get("text", ""), section=next_section, emoji=t.get("emoji", "📝"), recur=freq, project_id=t.get("project_id"))
-            
-            # Check for section completion (Confetti)
-            sec = t.get("section")
-            tasks = self._tasks_in_section(sec)
-            if tasks and all(tsk.get("completed") for tsk in tasks):
-                self.confetti.burst()
+        if is_completing:
+            row = self._get_task_row(task_id)
+            if row:
+                # Animate out, then run post-completion logic
+                self._animate_task_out_and_finalize(row, task_id)
+            else:
+                # Not visible, just run post-completion logic
+                self._post_completion_logic(task_id)
+        else:
+            # Un-completing, just save and refresh
+            self._schedule_save()
+            self._refresh_tasks_ui()
+            self._refresh_calendar_tasks()
 
-        # Play sound
-        if t["completed"] and self.state.get("config", {}).get("sound_enabled", True) and winsound:
-            try: winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
-            except: pass
+    def _animate_task_out_and_finalize(self, row, task_id):
+        group = QParallelAnimationGroup(self)
+        
+        op_anim = QPropertyAnimation(row, b"opacity_prop")
+        op_anim.setEndValue(0.0)
+        op_anim.setDuration(200)
+        op_anim.setEasingCurve(QEasingCurve.Type.InQuad)
+        
+        size_anim = QPropertyAnimation(row, b"maximumHeight")
+        size_anim.setStartValue(row.height())
+        size_anim.setEndValue(0)
+        size_anim.setDuration(250)
+        size_anim.setEasingCurve(QEasingCurve.Type.InCubic)
 
-        # Check for "Proud" moment (finished < half estimated time)
-        if t["completed"] and t.get("estimated_duration") and t.get("started_at"):
+        group.addAnimation(op_anim)
+        group.addAnimation(size_anim)
+        group.finished.connect(lambda: self._post_completion_logic(task_id))
+        group.finished.connect(row.hide)
+        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _post_completion_logic(self, task_id):
+        t = self._find_task(task_id)
+        if not t or not t.get("completed"): return
+
+        if t.get("recur"):
+            freq = t.get("recur")
+            next_date = None
+            if t.get("due_date"):
+                try:
+                    curr = date.fromisoformat(t["due_date"])
+                    if freq == "Daily": next_date = (curr + timedelta(days=1)).isoformat()
+                    elif freq == "Weekly": next_date = (curr + timedelta(weeks=1)).isoformat()
+                    elif freq == "Monthly":
+                        y, m = curr.year, curr.month
+                        m += 1
+                        if m > 12: m, y = 1, y + 1
+                        d = min(curr.day, calendar.monthrange(y, m)[1])
+                        next_date = date(y, m, d).isoformat()
+                except: pass
+            next_section = "Tomorrow" if freq == "Daily" else ("This Week" if freq == "Weekly" else "Someday")
+            if next_date: next_section = "Scheduled"
+            self._create_task(text=t.get("text", ""), section=next_section, emoji=t.get("emoji", "📝"), recur=freq, project_id=t.get("project_id"), due_date=next_date)
+        
+        xp = 10
+        if "🔥" in t.get("emoji", ""): xp += 10
+        elif "⭐" in t.get("emoji", ""): xp += 5
+        self._add_xp(xp)
+
+        if t.get("estimated_duration") and t.get("started_at"):
             try:
                 start = datetime.fromisoformat(t["started_at"])
                 end = datetime.now()
@@ -4906,18 +5726,17 @@ class UltimateTaskFlow(QMainWindow):
                     self._show_overlay("Incredible Flow!", f"You crushed it!\nEstimated: {est}m\nActual: {int(duration_mins)}m", [("I am Speed", None, "primary")])
                     self.confetti.burst()
             except: pass
-
-        if t["completed"]: self._update_streak()
+        
+        self._update_streak()
         self._schedule_save()
         self._refresh_tasks_ui()
         self._refresh_calendar_tasks()
-        
-        if t["completed"]:
-            row = self._get_task_row(task_id)
-            if row: row.flash()
-            
+
         if self._zen_task_id:
             self._populate_zen_view(self._zen_task_id)
+        
+        # Confetti is now triggered after the refresh to feel more responsive
+        self.confetti.burst()
 
     def _on_task_moved(self, task_id: str, new_section: str, new_index: int):
         t = self._find_task(task_id)
@@ -5037,15 +5856,16 @@ class UltimateTaskFlow(QMainWindow):
             lst = self.calendar_list
         else:
             lst = self.section_blocks[section].list
-            
         item = lst.itemAt(pos)
         if not item:
             return
-
         tid = item.data(Qt.ItemDataRole.UserRole)
+        self._open_task_context_menu(tid, lst.mapToGlobal(pos))
+
+    def _open_task_context_menu(self, tid, global_pos):
+        if not tid: return
         t = self._find_task(tid)
-        if not t:
-            return
+        if not t: return
 
         menu = QMenu(self)
         menu.setStyleSheet(
@@ -5070,7 +5890,7 @@ class UltimateTaskFlow(QMainWindow):
         menu.addSeparator()
         act_delete = menu.addAction("Delete")
 
-        chosen = menu.exec(lst.mapToGlobal(pos))
+        chosen = menu.exec(global_pos)
         if chosen == act_delete:
             self._delete_selected_task()
         elif chosen == act_note:
@@ -5194,6 +6014,21 @@ class UltimateTaskFlow(QMainWindow):
             self._schedule_save()
             self._refresh_tasks_ui()
 
+    def _edit_subtask(self, parent_id: str, subtask_id: str):
+        parent = self._find_task(parent_id)
+        if not parent: return
+        
+        # Find subtask (it's a separate task in state)
+        st = self._find_task(subtask_id)
+        if not st: return
+        
+        text, ok = QInputDialog.getText(self, "Edit Step", "Step:", text=st.get("text", ""))
+        if ok and text.strip():
+            st["text"] = text.strip()
+            st["updated_at"] = _now_iso()
+            self._schedule_save()
+            self._refresh_tasks_ui()
+
     def _create_project(self):
         name, ok = QInputDialog.getText(self, "New Project", "Project Name:")
         if ok and name.strip():
@@ -5211,10 +6046,22 @@ class UltimateTaskFlow(QMainWindow):
         if not hasattr(self, "_current_project_id") or not self._current_project_id: return
         
         pid = self._current_project_id
+        p = next((x for x in self.state["projects"] if x["id"] == pid), None)
+        if not p: return
+
+        confirm = QMessageBox.question(self, "Delete Project", f"Delete project '{p['name']}'?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if confirm != QMessageBox.StandardButton.Yes: return
+
         # Remove from tasks
         for t in self.state["tasks"]:
             if t.get("project_id") == pid:
                 t["project_id"] = None
+        
+        # Remove from notes
+        for g in self.state["notes"]["groups"].values():
+            for n in g:
+                if n.get("project_id") == pid:
+                    n["project_id"] = None
         
         self.state["projects"] = [p for p in self.state["projects"] if p["id"] != pid]
         self._schedule_save()
@@ -5239,10 +6086,15 @@ class UltimateTaskFlow(QMainWindow):
             self._shake_input()
             return
         self.input.clear()
-        text, section, emoji, project_id = self._parse_task_input(raw)
-        self._create_task(text=text, section=section, emoji=emoji, project_id=project_id)
+        self.input_feedback.setFixedHeight(0)
+        text, section, emoji, project_id, due_date, due_time, note = self._parse_task_input(raw)
+        tid = self._create_task(text=text, section=section, emoji=emoji, project_id=project_id, due_date=due_date, due_time=due_time, note=note)
         self._schedule_save()
         self._refresh_tasks_ui()
+        
+        # Flash the new task
+        row = self._get_task_row(tid)
+        if row: row.flash()
 
     def _on_task_dropped_on_notes(self, task_id):
         self._switch_tab("Notes")
@@ -5271,11 +6123,12 @@ class UltimateTaskFlow(QMainWindow):
 
     def _shake_input(self):
         if not self.input: return
-        anim = QPropertyAnimation(self.input, b"pos")
-        anim.setDuration(300)
+        anim = QPropertyAnimation(self.input, b"geometry")
+        anim.setDuration(500)
         anim.setLoopCount(1)
-        start = self.input.pos()
-        anim.setKeyValueAt(0, start)
+        anim.setEasingCurve(QEasingCurve.Type.OutElastic)
+        start = self.input.geometry()
+        anim.setKeyValueAt(0, start.adjusted(-3,0,3,0))
         anim.setKeyValueAt(0.2, start + QPoint(-5, 0))
         anim.setKeyValueAt(0.5, start + QPoint(5, 0))
         anim.setKeyValueAt(0.8, start + QPoint(-2, 0))
@@ -5506,39 +6359,49 @@ class UltimateTaskFlow(QMainWindow):
             self.header_bar.setVisible(True)
             # Stop pulse to prevent graphics artifacts while hidden
             self._stop_zen_pulse()
-        
+
         if self.stack.currentWidget() == self.page_stats:
             self.header_bar.setVisible(True)
 
+        old_widget = self.stack.currentWidget()
+        new_widget = None
+
         if name == "Notes":
+            new_widget = self.page_notes
             self.btn_notes.setChecked(True)
             self.btn_tasks.setChecked(False)
             self.btn_projects.setChecked(False)
-            self.stack.setCurrentWidget(self.page_notes)
             self.btn_calendar.setChecked(False)
-            self._animate_tab_transition(self.page_notes)
             self._refresh_notes_ui()
         elif name == "Tasks":
+            new_widget = self.page_tasks
             self.btn_tasks.setChecked(True)
             self.btn_notes.setChecked(False)
             self.btn_projects.setChecked(False)
             self.btn_calendar.setChecked(False)
-            self.stack.setCurrentWidget(self.page_tasks)
-            self._animate_tab_transition(self.page_tasks)
         elif name == "Projects":
+            new_widget = self.page_projects
             self.btn_projects.setChecked(True)
             self.btn_tasks.setChecked(False)
             self.btn_notes.setChecked(False)
             self.btn_calendar.setChecked(False)
-            self.stack.setCurrentWidget(self.page_projects)
-            self._animate_tab_transition(self.page_projects)
         elif name == "Calendar":
+            new_widget = self.page_calendar
             self.btn_calendar.setChecked(True)
             self.btn_tasks.setChecked(False)
             self.btn_notes.setChecked(False)
-            self.stack.setCurrentWidget(self.page_calendar)
-            self._animate_tab_transition(self.page_calendar)
             self._refresh_calendar_tasks()
+
+        if new_widget and old_widget != new_widget:
+            tab_names = ["Tasks", "Notes", "Projects", "Calendar"]
+            try:
+                old_idx = tab_names.index(self.state.get("ui", {}).get("active_tab", "Tasks"))
+                new_idx = tab_names.index(name)
+                direction = 1 if new_idx > old_idx else -1
+            except (ValueError, KeyError):
+                direction = 1
+            self.stack.setCurrentWidget(new_widget)
+            self._animate_tab_transition(new_widget, direction)
 
         if save:
             self.state.setdefault("ui", {})
@@ -5548,11 +6411,8 @@ class UltimateTaskFlow(QMainWindow):
     def toggle_collapse(self):
         collapsed = not bool(self.state.get("ui", {}).get("collapsed", False))
 
-        if collapsed:
-            self._remember_expanded_geom()
-
-        self.state.setdefault("ui", {})
-        self.state["ui"]["collapsed"] = collapsed
+        if collapsed: self._remember_expanded_geom()
+        else: self.clearMask()
 
         self.btn_collapse.setText(">" if collapsed else "<")
         if hasattr(self, "zen_btn_collapse"):
@@ -5580,13 +6440,19 @@ class UltimateTaskFlow(QMainWindow):
             else:
                 self.search_group.setVisible(False)
                 self.nav_group.setVisible(True)
-
-        self._schedule_save()
-
+        
         if collapsed:
-            self._snap(self._collapsed_geometry(), animated=True)
+            target_geom = self._collapsed_geometry()
+            mask_path = QPainterPath()
+            mask_path.addRoundedRect(QRectF(0, 0, target_geom.width(), target_geom.height()), target_geom.height() / 2, target_geom.height() / 2)
+            self.setMask(QRegion(mask_path.toFillPolygon().toPolygon()))
         else:
-            self._snap(self._expanded_geometry(), animated=True)
+            target_geom = self._expanded_geometry()
+
+        self.state.setdefault("ui", {})
+        self.state["ui"]["collapsed"] = collapsed
+        self._schedule_save()
+        self._snap(target_geom, animated=True)
 
     def _focus_add(self):
         if self.state.get("ui", {}).get("collapsed", False):
@@ -5618,17 +6484,56 @@ class UltimateTaskFlow(QMainWindow):
         self.btn_notes.setVisible(not compact)
         self.btn_calendar.setVisible(not compact)
 
-    def _rollover_if_new_day(self):
+    def _rollover_if_new_day(self, refresh_ui=False):
         last = self.state.get("last_opened", _today_str())
-        now = _today_str()
-        if last == now:
+        now_str = _today_str()
+        is_new_day = (last != now_str)
+        
+        # Check if we need a weekly review (Sunday & not done today)
+        needs_review = (date.today().weekday() == 6 and self.state.get("last_weekly_review") != now_str)
+        
+        if not is_new_day and not refresh_ui and not needs_review:
             return
+        
+        now_date = date.today()
+        changed = False
         for t in self.state["tasks"]:
-            if t.get("section") == "Tomorrow" and not t.get("completed"):
+            if t.get("completed"):
+                continue
+            
+            # Move "Tomorrow" tasks
+            if t.get("section") == "Tomorrow":
                 t["section"] = "Today"
                 t["updated_at"] = _now_iso()
-        self.state["last_opened"] = now
-        save_state(self.state)
+                changed = True
+                
+            # Move past due tasks to Today
+            due = t.get("due_date")
+            if due:
+                try:
+                    if date.fromisoformat(due) < now_date:
+                        t["section"] = "Today"
+                        t["updated_at"] = _now_iso()
+                        changed = True
+                except: pass
+
+        self.state["last_opened"] = now_str
+        if changed:
+            save_state(self.state)
+            if refresh_ui:
+                self._refresh_tasks_ui()
+                self._refresh_calendar_tasks()
+        
+        if needs_review:
+            if hasattr(self, "overlay"):
+                self._show_weekly_review()
+            else:
+                self._pending_weekly_review = True
+        elif is_new_day:
+            if hasattr(self, "overlay"):
+                self._show_daily_briefing()
+            else:
+                self._pending_briefing = True
 
     def _update_streak(self):
         stats = self.state.setdefault("stats", {})
@@ -5666,6 +6571,63 @@ class UltimateTaskFlow(QMainWindow):
                     streak = 0
             
             self.lbl_streak.setText(f"🔥 {streak}")
+            
+            # Update Level UI
+            lvl = stats.get("level", 1)
+            xp = stats.get("xp", 0)
+            self.lbl_level.setText(f"Lvl {lvl}")
+            self.xp_bar.setMaximum(lvl * 100)
+            self.xp_bar.setValue(xp)
+
+    def _show_weekly_review(self):
+        # Calculate stats
+        now = datetime.now()
+        week_ago = now - timedelta(days=7)
+        week_ago_iso = week_ago.isoformat()
+        
+        # Tasks
+        completed_count = 0
+        for t in self.state["tasks"]:
+            if t.get("completed") and t.get("updated_at") >= week_ago_iso:
+                completed_count += 1
+                
+        # Zen
+        zen_mins = 0
+        for s in self.state.get("zen_stats", {}).get("sessions", []):
+            if s.get("date") >= week_ago_iso:
+                zen_mins += s.get("duration", 0)
+        
+        hours = zen_mins // 60
+        mins = zen_mins % 60
+        time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+        
+        streak = self.state.get("stats", {}).get("current_streak", 0)
+        quote = random.choice(MOTIVATIONAL_QUOTES)
+        
+        msg = (f"<b>Tasks Completed:</b> {completed_count}<br><b>Focus Time:</b> {time_str}<br><b>Current Streak:</b> {streak} days<br><br><i>{quote}</i>")
+        
+        self._show_overlay("Weekly Review 📅", msg, [("Awesome", None, "primary")])
+        self.state["last_weekly_review"] = _today_str()
+        self._schedule_save()
+
+    def _show_daily_briefing(self):
+        today_tasks = self._tasks_in_section("Today")
+        incomplete = [t for t in today_tasks if not t.get("completed")]
+        count = len(incomplete)
+        
+        quote = random.choice(MOTIVATIONAL_QUOTES)
+        
+        if count == 0:
+            msg = f"Your agenda is clear for today.\n\n<i>{quote}</i>"
+            title = "Good Morning!"
+        else:
+            task_word = "task" if count == 1 else "tasks"
+            msg = f"You have {count} {task_word} planned for today.\nBe proud that you showed up.\n\n<i>{quote}</i>"
+            title = "Ready to Flow?"
+            
+        self._show_overlay(title, msg, [("Let's Go", None, "primary")])
+        widget = DailyBriefingWidget(self.state, msg)
+        self._show_overlay(title, "", [("Let's Go", None, "primary")], content_widget=widget)
 
 if __name__ == "__main__":
     try:
