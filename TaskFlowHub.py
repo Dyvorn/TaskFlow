@@ -10,10 +10,11 @@ import sys
 import os
 import json
 import uuid
+import threading
+import webbrowser
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional
-
-from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtCore import Qt, QTimer, QSize, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -31,7 +32,14 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QSpacerItem,
     QSizePolicy,
+    QGraphicsOpacityEffect,
+    QMessageBox,
 )
+
+try:
+    import requests
+except ImportError:
+    requests = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -49,6 +57,11 @@ HOVER_BG = "#262636"
 TEXT_WHITE = "#f2f2f2"
 TEXT_GRAY = "#b0b0b8"
 GOLD = "#ffd700"
+PRESSED_BG = "#303045"
+
+GITHUB_OWNER = "Dyvorn"
+GITHUB_REPO = "TaskFlow"
+GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
 SECTIONS = ["Today", "Tomorrow", "This Week", "Someday", "Scheduled"]
 
@@ -202,6 +215,10 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         fixed_habits.append(h)
     state["habits"] = fixed_habits
 
+    # Normalize habit checks
+    if "habitChecks" not in state or not isinstance(state["habitChecks"], dict):
+        state["habitChecks"] = {}
+
     # Normalize moods
     fixed_moods: List[Dict[str, Any]] = []
     for m in state.get("moods", []):
@@ -269,6 +286,148 @@ def count_today_tasks(state: Dict[str, Any]) -> Dict[str, int]:
     done = [t for t in today_tasks if t.get("completed")]
     return {"total": len(today_tasks), "completed": len(done)}
 
+def add_task(
+    state: Dict[str, Any],
+    text: str,
+    section: str = "Today",
+    project_id: Optional[str] = None,
+    important: bool = False,
+) -> Dict[str, Any]:
+    if section not in SECTIONS:
+        section = "Today"
+    task = {
+        "id": str(uuid.uuid4()),
+        "text": text,
+        "completed": False,
+        "section": section,
+        "order": 0,
+        "projectId": project_id,
+        "createdAt": now_iso(),
+        "updatedAt": now_iso(),
+        "dueDate": None,
+        "dueTime": None,
+        "important": important,
+        "steps": [],
+    }
+    state.setdefault("tasks", []).append(task)
+    return task
+
+
+def tasks_in_section(state: Dict[str, Any], section: str) -> List[Dict[str, Any]]:
+    tasks = [
+        t for t in state.get("tasks", [])
+        if t.get("section") == section
+    ]
+
+    def sort_key(t: Dict[str, Any]) -> Any:
+        return (
+            0 if t.get("important") else 1,
+            0 if not t.get("completed") else 1,
+            t.get("createdAt", ""),
+        )
+
+    return sorted(tasks, key=sort_key)
+
+
+def toggle_task_completed(state: Dict[str, Any], task_id: str) -> Optional[Dict[str, Any]]:
+    for t in state.get("tasks", []):
+        if t.get("id") == task_id:
+            t["completed"] = not t.get("completed")
+            t["updatedAt"] = now_iso()
+
+            if t["completed"]:
+                today = today_str()
+                stats = state.setdefault("stats", {})
+                stats.setdefault("tasksCompletedToday", 0)
+                stats.setdefault("lastActivityDate", None)
+                stats.setdefault("currentStreak", 0)
+
+                if stats["lastActivityDate"] != today:
+                    last = stats["lastActivityDate"]
+                    if last:
+                        try:
+                            prev = date.fromisoformat(last)
+                            diff = (date.fromisoformat(today) - prev).days
+                            if diff == 1:
+                                stats["currentStreak"] += 1
+                            else:
+                                stats["currentStreak"] = 1
+                        except ValueError:
+                            stats["currentStreak"] = 1
+                    else:
+                        stats["currentStreak"] = 1
+                    stats["tasksCompletedToday"] = 1
+                else:
+                    stats["tasksCompletedToday"] += 1
+
+                stats["lastActivityDate"] = today
+            return t
+    return None
+
+
+def delete_task(state: Dict[str, Any], task_id: str) -> None:
+    tasks = state.get("tasks", [])
+    state["tasks"] = [t for t in tasks if t.get("id") != task_id]
+
+
+def get_project_by_id(state: Dict[str, Any], project_id: str) -> Optional[Dict[str, Any]]:
+    for p in state.get("projects", []):
+        if p.get("id") == project_id:
+            return p
+    return None
+
+
+def add_project(state: Dict[str, Any], name: str) -> Dict[str, Any]:
+    proj = {
+        "id": str(uuid.uuid4()),
+        "name": name or "Untitled",
+        "color": GOLD,
+        "createdAt": now_iso(),
+    }
+    state.setdefault("projects", []).append(proj)
+    return proj
+
+
+def tasks_for_project(state: Dict[str, Any], project_id: str) -> List[Dict[str, Any]]:
+    return [
+        t for t in state.get("tasks", [])
+        if t.get("projectId") == project_id
+    ]
+
+
+def get_today_habit_checks(state: Dict[str, Any]) -> Dict[str, bool]:
+    """Return dict habit_id -> checked(bool) for today."""
+    today = today_str()
+    checks = state.setdefault("habitChecks", {})  # new dict: date -> {habit_id: bool}
+    return checks.setdefault(today, {})
+
+
+def set_habit_checked(state: Dict[str, Any], habit_id: str, checked: bool) -> None:
+    today = today_str()
+    checks = state.setdefault("habitChecks", {})
+    day = checks.setdefault(today, {})
+    day[habit_id] = checked
+
+
+def parse_version_tuple(v: str) -> tuple:
+    """Convert version string like '6.0' or 'v6.0.1' to tuple of ints."""
+    v = v.strip()
+    if v.lower().startswith("v"):
+        v = v[1:]
+    parts = v.split(".")
+    nums = []
+    for p in parts:
+        try:
+            nums.append(int(p))
+        except ValueError:
+            nums.append(0)
+    # Ensure at least 2 components
+    while len(nums) < 2:
+        nums.append(0)
+    return tuple(nums)
+
+def is_newer_version(latest: str, current: str) -> bool:
+    return parse_version_tuple(latest) > parse_version_tuple(current)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SECTION 5: HUB WINDOW - BASE & HOME TAB
@@ -291,6 +450,9 @@ class HubWindow(QMainWindow):
 
         self._build_ui()
         self._refresh_home()
+
+        # Check for updates silently in the background
+        self._check_updates_async()
 
     # ────────────────────────────────────────────────────────────────────
     # UI construction
@@ -324,6 +486,9 @@ class HubWindow(QMainWindow):
             }}
             QPushButton:hover {{
                 background-color: {HOVER_BG};
+            }}
+            QPushButton:pressed {{
+                background-color: {PRESSED_BG};
             }}
             QListWidget {{
                 background-color: {CARD_BG};
@@ -371,6 +536,10 @@ class HubWindow(QMainWindow):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setMinimumHeight(32)
             nav_layout.addWidget(btn)
+
+        self.btn_check_updates = QPushButton("🔄 Check updates")
+        self.btn_check_updates.setCursor(Qt.CursorShape.PointingHandCursor)
+        nav_layout.addWidget(self.btn_check_updates)
 
         nav_layout.addStretch(1)
 
@@ -438,20 +607,97 @@ class HubWindow(QMainWindow):
         self.quote_label.setStyleSheet(f"color: {TEXT_GRAY}; font-style: italic;")
         home_layout.addWidget(self.quote_label)
 
+                # Today page
+        self.page_today = TaskListWidget(self.state, "Today", self._schedule_save)
+        self.page_today.layout.setContentsMargins(12, 12, 12, 12)
+
+        # This Week page
+        self.page_week = TaskListWidget(self.state, "This Week", self._schedule_save)
+        self.page_week.layout.setContentsMargins(12, 12, 12, 12)
+
+        # Someday page
+        self.page_someday = TaskListWidget(self.state, "Someday", self._schedule_save)
+        self.page_someday.layout.setContentsMargins(12, 12, 12, 12)
+
+        # Projects page
+        self.page_projects = QWidget()
+        proj_layout = QVBoxLayout(self.page_projects)
+        proj_layout.setContentsMargins(12, 12, 12, 12)
+        proj_layout.setSpacing(10)
+
+        proj_title = QLabel("Projects")
+        f_proj = proj_title.font()
+        f_proj.setPointSize(14)
+        f_proj.setBold(True)
+        proj_title.setFont(f_proj)
+        proj_layout.addWidget(proj_title)
+
+        header_proj = QHBoxLayout()
+        self.btn_add_project = QPushButton("New project")
+        self.btn_add_project.setFixedHeight(28)
+        header_proj.addStretch(1)
+        header_proj.addWidget(self.btn_add_project)
+        proj_layout.addLayout(header_proj)
+
+        content_proj = QHBoxLayout()
+        proj_layout.addLayout(content_proj, 1)
+
+        # left: project list
+        self.project_list = QListWidget()
+        self.project_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.project_list.setMinimumWidth(220)
+        content_proj.addWidget(self.project_list, 0)
+
+        # right: project detail (tasks summary)
+        self.project_detail = QTextEdit()
+        self.project_detail.setReadOnly(True)
+        self.project_detail.setPlaceholderText("Select a project to see its tasks.")
+        content_proj.addWidget(self.project_detail, 1)
+
+        # Stats & Habits page
+        self.page_stats = QWidget()
+        stats_layout = QVBoxLayout(self.page_stats)
+        stats_layout.setContentsMargins(12, 12, 12, 12)
+        stats_layout.setSpacing(10)
+
+        stats_title = QLabel("Stats & Habits")
+        f_stats = stats_title.font()
+        f_stats.setPointSize(14)
+        f_stats.setBold(True)
+        stats_title.setFont(f_stats)
+        stats_layout.addWidget(stats_title)
+
+        # Streak + tasks
+        self.stats_summary_label = QLabel("")
+        self.stats_summary_label.setWordWrap(True)
+        stats_layout.addWidget(self.stats_summary_label)
+
+        line_stats = QFrame()
+        line_stats.setFrameShape(QFrame.Shape.HLine)
+        line_stats.setStyleSheet(f"color: {HOVER_BG};")
+        stats_layout.addWidget(line_stats)
+
+        # Habits list
+        habits_title = QLabel("Today’s habits")
+        habits_title.setStyleSheet(f"color: {TEXT_WHITE}; font-weight: bold;")
+        stats_layout.addWidget(habits_title)
+
+        self.habits_list = QListWidget()
+        stats_layout.addWidget(self.habits_list, 1)
+
+        self.habit_message = QLabel("")
+        self.habit_message.setWordWrap(True)
+        self.habit_message.setStyleSheet(f"color: {TEXT_GRAY}; font-style: italic;")
+        stats_layout.addWidget(self.habit_message)
+
+        # Add all pages to stacked widget
         self.stack.addWidget(self.page_home)
-
-        # Placeholder pages for future blocks
-        self.page_today = self._make_placeholder_page("Today view coming soon.")
-        self.page_week = self._make_placeholder_page("This Week view coming soon.")
-        self.page_someday = self._make_placeholder_page("Someday view coming soon.")
-        self.page_projects = self._make_placeholder_page("Projects view coming soon.")
-        self.page_stats = self._make_placeholder_page("Stats & habits coming soon.")
-
         self.stack.addWidget(self.page_today)
         self.stack.addWidget(self.page_week)
         self.stack.addWidget(self.page_someday)
         self.stack.addWidget(self.page_projects)
         self.stack.addWidget(self.page_stats)
+
 
         # Connect navigation
         self.btn_home.clicked.connect(lambda: self._switch_page(self.page_home))
@@ -463,6 +709,12 @@ class HubWindow(QMainWindow):
         self.btn_quit.clicked.connect(self.close)
 
         self.mood_save_btn.clicked.connect(self._on_save_mood)
+
+        # Projects signals
+        self.btn_add_project.clicked.connect(self._on_add_project)
+        self.project_list.itemSelectionChanged.connect(self._on_project_selected)
+        self.btn_check_updates.clicked.connect(self._check_updates_async)
+
 
     def _make_placeholder_page(self, text: str) -> QWidget:
         page = QWidget()
@@ -477,11 +729,37 @@ class HubWindow(QMainWindow):
     # ────────────────────────────────────────────────────────────────────
     # Navigation & updates
     # ────────────────────────────────────────────────────────────────────
+    
+    def _animate_page_in(self, page: QWidget):
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity")
+        anim.setDuration(200)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _switch_page(self, page: QWidget) -> None:
+        if self.stack.currentWidget() is page:
+            return
+
         self.stack.setCurrentWidget(page)
+        self._animate_page_in(page)
+
         if page is self.page_home:
             self._refresh_home()
+        elif page is self.page_today:
+            self.page_today.refresh()
+        elif page is self.page_week:
+            self.page_week.refresh()
+        elif page is self.page_someday:
+            self.page_someday.refresh()
+        elif page is self.page_projects:
+            self._refresh_projects()
+        elif page is self.page_stats:
+            self._refresh_stats_and_habits()
+
 
     def _refresh_home(self) -> None:
         # Mood
@@ -516,7 +794,15 @@ class HubWindow(QMainWindow):
             else:
                 summary_text = f"You completed all {total} tasks you planned for today. That’s amazing."
 
-        self.summary_label.setText(summary_text)
+        extra = ""
+        if total > 0 and done == 0:
+            extra = "You don’t have to finish everything. One tiny step is still progress."
+        elif 0 < done < total:
+            extra = "You’re in motion. You’re allowed to stop when your energy runs low."
+        elif total > 0 and done == total:
+            extra = "You cleared today’s plan. Anything else is pure bonus."
+
+        self.summary_label.setText(summary_text + ("\n" + extra if extra else ""))
 
         # Quote (simple deterministic choice)
         idx = hash(today_str()) % len(MOTIVATIONAL_QUOTES)
@@ -535,6 +821,196 @@ class HubWindow(QMainWindow):
             return "Enjoy the good days. You don’t need to be perfect to deserve them."
         return "There are good days and bad days. You still deserve kindness on all of them."
 
+    # ────────────────────────────────────────────────────────────────────
+    # Projects page
+    # ────────────────────────────────────────────────────────────────────
+
+    def _refresh_projects(self) -> None:
+        self.project_list.clear()
+        for p in self.state.get("projects", []):
+            item = QListWidgetItem(p.get("name", "Untitled"))
+            item.setData(Qt.ItemDataRole.UserRole, p.get("id"))
+            self.project_list.addItem(item)
+        self.project_detail.clear()
+        self.project_detail.setPlainText("Select a project to see its tasks.")
+
+    def _on_add_project(self) -> None:
+        name = f"Project {len(self.state.get('projects', [])) + 1}"
+        add_project(self.state, name)
+        self._schedule_save()
+        self._refresh_projects()
+
+    def _on_project_selected(self) -> None:
+        items = self.project_list.selectedItems()
+        if not items:
+            self.project_detail.clear()
+            self.project_detail.setPlainText("Select a project to see its tasks.")
+            return
+        item = items[0]
+        pid = item.data(Qt.ItemDataRole.UserRole)
+        proj = get_project_by_id(self.state, pid)
+        if not proj:
+            self.project_detail.clear()
+            self.project_detail.setPlainText("Project not found.")
+            return
+
+        tasks = tasks_for_project(self.state, pid)
+        if not tasks:
+            text = f"{proj.get('name', 'Untitled')}\n\nNo tasks yet in this project."
+        else:
+            lines = [f"{proj.get('name', 'Untitled')}", ""]
+            for t in tasks:
+                mark = "✔" if t.get("completed") else "•"
+                lines.append(f"{mark} {t.get('text', '')}")
+            text = "\n".join(lines)
+        self.project_detail.setPlainText(text)
+
+    # ────────────────────────────────────────────────────────────────────
+    # Stats & habits page
+    # ────────────────────────────────────────────────────────────────────
+
+    def _refresh_stats_and_habits(self) -> None:
+        stats = self.state.get("stats", {})
+        streak = stats.get("currentStreak", 0)
+        done_today = stats.get("tasksCompletedToday", 0)
+
+        if streak <= 0:
+            streak_msg = "You don't have an active streak yet. That’s okay; you can start any day."
+        elif streak == 1:
+            streak_msg = "You have a 1‑day streak. That first step already counts."
+        else:
+            streak_msg = f"You have a {streak}‑day streak. That's a lot of small wins."
+
+        if done_today == 0:
+            tasks_msg = "You haven't completed any tasks today yet. Even one tiny thing is enough."
+        else:
+            tasks_msg = f"You completed {done_today} task(s) today. Your effort matters."
+
+        mood = get_today_mood(self.state)
+        encouragement = ""
+        if mood:
+            val = mood.get("value", "")
+            if val in ("Low energy", "Stressed"):
+                if done_today > 0:
+                    encouragement = "You did something on a hard day. That really counts."
+                else:
+                    encouragement = "On heavy days, just breathing and existing is already work."
+            elif val in ("Motivated", "Great"):
+                encouragement = "Nice energy today. Use it gently, not to exhaust yourself."
+        else:
+            encouragement = "However you feel today is valid. You’re allowed to go at your pace."
+
+        self.stats_summary_label.setText(streak_msg + "\n" + tasks_msg + "\n" + encouragement)
+
+        # Habits list
+        self.habits_list.clear()
+        checks = get_today_habit_checks(self.state)
+        for h in self.state.get("habits", []):
+            if not h.get("active", True):
+                continue
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, h.get("id"))
+
+            row = QWidget()
+            hl = QHBoxLayout(row)
+            hl.setContentsMargins(6, 2, 6, 2)
+            hl.setSpacing(6)
+
+            btn = QPushButton("✔" if checks.get(h["id"], False) else "")
+            btn.setCheckable(True)
+            btn.setChecked(checks.get(h["id"], False))
+            btn.setFixedSize(QSize(22, 22))
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    border-radius: 11px;
+                    border: 1px solid {HOVER_BG};
+                    color: {GOLD};
+                    font-weight: bold;
+                }}
+                QPushButton:checked {{
+                    background-color: {GOLD};
+                    color: {DARK_BG};
+                }}
+            """)
+
+            lbl = QLabel(h.get("name", "Habit"))
+            lbl.setStyleSheet(f"color: {TEXT_WHITE};")
+
+            hl.addWidget(btn)
+            hl.addWidget(lbl, 1)
+
+            self.habits_list.addItem(item)
+            self.habits_list.setItemWidget(item, row)
+
+            btn.clicked.connect(
+                lambda checked, hid=h["id"]: self._on_toggle_habit(hid, checked)
+            )
+
+    def _on_toggle_habit(self, habit_id: str, checked: bool) -> None:
+        set_habit_checked(self.state, habit_id, checked)
+        if checked:
+            self.habit_message.setText("Nice, that’s one small win for today.")
+        else:
+            self.habit_message.setText("You can always come back to this habit. Nothing is ruined.")
+        self._schedule_save()
+
+    # ────────────────────────────────────────────────────────────────────
+    # Updates
+    # ────────────────────────────────────────────────────────────────────
+
+    def _check_updates_async(self) -> None:
+        """Run on a background thread; fetch latest GitHub release."""
+        if requests is None:
+            return  # no HTTP support available
+
+        def worker():
+            latest_version = None
+            download_url = None
+            error = None
+            try:
+                headers = {"Accept": "application/vnd.github+json"}
+                resp = requests.get(GITHUB_API_LATEST, headers=headers, timeout=10)
+                resp.raise_for_status()
+                data = resp.json()
+                tag = data.get("tag_name") or ""
+                latest_version = tag
+
+                # Find setup.exe asset
+                assets = data.get("assets", [])
+                for asset in assets:
+                    name = asset.get("name", "").lower()
+                    if "setup" in name and name.endswith(".exe"):
+                        download_url = asset.get("browser_download_url")
+                        break
+            except Exception as e:
+                error = str(e)
+
+            # Back to main thread
+            QTimer.singleShot(0, lambda: self._on_update_check_result(latest_version, download_url, error))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_check_result(self, latest_version: Optional[str], download_url: Optional[str], error: Optional[str]) -> None:
+        """Handle update check result on UI thread."""
+        if error or not latest_version or not is_newer_version(latest_version, APP_VERSION):
+            return
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Update available")
+        msg.setText(f"A newer version of TaskFlow Hub is available: {latest_version}.\n\nYour version: {APP_VERSION}.")
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        if download_url:
+            msg.setInformativeText("Do you want to open the download page in your browser?")
+            ret = msg.exec()
+            if ret == QMessageBox.StandardButton.Ok:
+                self._open_update_url(download_url)
+
+    def _open_update_url(self, url: str) -> None:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
     # ────────────────────────────────────────────────────────────────────
     # Events & saving
     # ────────────────────────────────────────────────────────────────────
@@ -555,7 +1031,129 @@ class HubWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self._do_save()
         super().closeEvent(event)
+class TaskListWidget(QWidget):
+    """Simple vertical task list for a given section."""
 
+    def __init__(self, state: Dict[str, Any], section: str, save_callback, parent=None):
+        super().__init__(parent)
+        self.state = state
+        self.section = section
+        self._save_callback = save_callback
+
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(6)
+
+        # Header row
+        header = QHBoxLayout()
+        lbl = QLabel(section)
+        f = lbl.font()
+        f.setBold(True)
+        lbl.setFont(f)
+        header.addWidget(lbl)
+
+        header.addStretch(1)
+
+        self.add_btn = QPushButton("Add")
+        self.add_btn.setFixedHeight(26)
+        header.addWidget(self.add_btn)
+
+        self.layout.addLayout(header)
+
+        self.tasks_list = QListWidget()
+        self.tasks_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.layout.addWidget(self.tasks_list, 1)
+
+        self.add_btn.clicked.connect(self._on_add_task)
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.tasks_list.clear()
+        for t in tasks_in_section(self.state, self.section):
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
+
+            row = QWidget()
+            hl = QHBoxLayout(row)
+            hl.setContentsMargins(6, 2, 6, 2)
+            hl.setSpacing(6)
+
+            chk = QPushButton("✔" if t.get("completed") else "")
+            chk.setFixedSize(QSize(22, 22))
+            chk.setCheckable(True)
+            chk.setChecked(t.get("completed"))
+            chk.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    border-radius: 11px;
+                    border: 1px solid {HOVER_BG};
+                    color: {GOLD};
+                    font-weight: bold;
+                }}
+                QPushButton:checked {{
+                    background-color: {GOLD};
+                    color: {DARK_BG};
+                }}
+            """)
+
+            lbl = QLabel(t.get("text", ""))
+            lbl.setWordWrap(True)
+            if t.get("completed"):
+                lbl.setStyleSheet(f"color: {TEXT_GRAY}; text-decoration: line-through;")
+            else:
+                lbl.setStyleSheet(f"color: {TEXT_WHITE};")
+
+            del_btn = QPushButton("×")
+            del_btn.setFixedSize(QSize(24, 24))
+            del_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    border: none;
+                    color: {TEXT_GRAY};
+                    font-weight: bold;
+                    font-size: 14px;
+                }}
+                QPushButton:hover {{
+                    color: {GOLD};
+                }}
+            """)
+
+            hl.addWidget(chk)
+            hl.addWidget(lbl, 1)
+            hl.addWidget(del_btn)
+
+            self.tasks_list.addItem(item)
+            self.tasks_list.setItemWidget(item, row)
+
+            chk.clicked.connect(lambda checked, tid=t.get("id"): self._on_toggle_task(tid))
+            del_btn.clicked.connect(lambda checked=False, tid=t.get("id"): self._on_delete_task(tid))
+
+    def _on_add_task(self) -> None:
+        add_task(self.state, text=f"New task in {self.section}", section=self.section)
+        self._save_callback()
+        self.refresh()
+
+    def _on_toggle_task(self, task_id: str) -> None:
+        task = toggle_task_completed(self.state, task_id)
+        self._save_callback()
+
+        if task and task.get("completed"):
+            # Find widget and animate with a flash
+            for i in range(self.tasks_list.count()):
+                item = self.tasks_list.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) == task_id:
+                    widget = self.tasks_list.itemWidget(item)
+                    if widget:
+                        widget.setStyleSheet(f"background-color: rgba(255, 215, 0, 40); border-radius: 6px;")
+                        QTimer.singleShot(200, self.refresh)
+                    return  # Exit after finding and starting animation
+        else:
+            self.refresh()
+
+    def _on_delete_task(self, task_id: str) -> None:
+        delete_task(self.state, task_id)
+        self._save_callback()
+        self.refresh()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SECTION 6: ENTRY POINT
@@ -566,7 +1164,7 @@ def main() -> None:
     paths = get_data_paths()
     state = load_state(paths)
     window = HubWindow(state, paths)
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 
