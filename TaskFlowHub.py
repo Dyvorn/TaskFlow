@@ -35,6 +35,8 @@ from PyQt6.QtWidgets import (
     QGraphicsOpacityEffect,
     QMessageBox,
 )
+from PyQt6.QtWidgets import QInputDialog
+from PyQt6.QtWidgets import QMenu
 
 try:
     import requests
@@ -154,6 +156,10 @@ def default_state() -> Dict[str, Any]:
             "xp": 0,
             "level": 1,
             "tasksCompletedToday": 0,
+            "plannedTasksToday": 0,
+            "targetTasksToday": 0,
+            "moodAtStart": None,
+            "lastPlanningDate": None,
         },
     }
 
@@ -169,6 +175,10 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     state["stats"].setdefault("xp", 0)
     state["stats"].setdefault("level", 1)
     state["stats"].setdefault("tasksCompletedToday", 0)
+    state["stats"].setdefault("plannedTasksToday", 0)
+    state["stats"].setdefault("targetTasksToday", 0)
+    state["stats"].setdefault("moodAtStart", None)
+    state["stats"].setdefault("lastPlanningDate", None)
 
     # Normalize tasks
     fixed_tasks: List[Dict[str, Any]] = []
@@ -321,6 +331,7 @@ def tasks_in_section(state: Dict[str, Any], section: str) -> List[Dict[str, Any]
 
     def sort_key(t: Dict[str, Any]) -> Any:
         return (
+            t.get("order", 0),
             0 if t.get("important") else 1,
             0 if not t.get("completed") else 1,
             t.get("createdAt", ""),
@@ -409,6 +420,30 @@ def set_habit_checked(state: Dict[str, Any], habit_id: str, checked: bool) -> No
     day[habit_id] = checked
 
 
+def rollover_tasks(state: dict) -> None:
+    """Move tasks from Today to Tomorrow, and Tomorrow to Today, on a new day."""
+    today = today_str()
+    last_opened = state.get("lastOpened")
+
+    if not last_opened or last_opened == today:
+        return
+
+    try:
+        last_date = date.fromisoformat(last_opened)
+        today_date = date.fromisoformat(today)
+        if (today_date - last_date).days < 1:
+            return
+    except (ValueError, TypeError):
+        return
+
+    for task in state.get("tasks", []):
+        if not task.get("completed"):
+            if task.get("section") == "Today":
+                task["section"] = "Tomorrow"
+            elif task.get("section") == "Tomorrow":
+                task["section"] = "Today"
+    state["lastOpened"] = today_str()
+
 def parse_version_tuple(v: str) -> tuple:
     """Convert version string like '6.0' or 'v6.0.1' to tuple of ints."""
     v = v.strip()
@@ -453,6 +488,7 @@ class HubWindow(QMainWindow):
 
         # Check for updates silently in the background
         self._check_updates_async()
+        self._run_daily_planning()
 
     # ────────────────────────────────────────────────────────────────────
     # UI construction
@@ -609,15 +645,15 @@ class HubWindow(QMainWindow):
 
                 # Today page
         self.page_today = TaskListWidget(self.state, "Today", self._schedule_save)
-        self.page_today.layout.setContentsMargins(12, 12, 12, 12)
+        # Margins are now handled inside the TaskListWidget itself for better encapsulation.
 
         # This Week page
         self.page_week = TaskListWidget(self.state, "This Week", self._schedule_save)
-        self.page_week.layout.setContentsMargins(12, 12, 12, 12)
+        # Margins are now handled inside the TaskListWidget itself for better encapsulation.
 
         # Someday page
         self.page_someday = TaskListWidget(self.state, "Someday", self._schedule_save)
-        self.page_someday.layout.setContentsMargins(12, 12, 12, 12)
+        # Margins are now handled inside the TaskListWidget itself for better encapsulation.
 
         # Projects page
         self.page_projects = QWidget()
@@ -730,9 +766,9 @@ class HubWindow(QMainWindow):
     # Navigation & updates
     # ────────────────────────────────────────────────────────────────────
     
-    def _animate_page_in(self, page: QWidget):
-        effect = QGraphicsOpacityEffect(page)
-        page.setGraphicsEffect(effect)
+    def _animate_page_in(self):
+        effect = QGraphicsOpacityEffect(self.stack)
+        self.stack.setGraphicsEffect(effect)
         anim = QPropertyAnimation(effect, b"opacity")
         anim.setDuration(200)
         anim.setStartValue(0.0)
@@ -745,7 +781,6 @@ class HubWindow(QMainWindow):
             return
 
         self.stack.setCurrentWidget(page)
-        self._animate_page_in(page)
 
         if page is self.page_home:
             self._refresh_home()
@@ -821,6 +856,27 @@ class HubWindow(QMainWindow):
             return "Enjoy the good days. You don’t need to be perfect to deserve them."
         return "There are good days and bad days. You still deserve kindness on all of them."
 
+    def _run_daily_planning(self):
+        stats = self.state.setdefault("stats", {})
+        if stats.get("lastPlanningDate") == today_str():
+            return
+
+        mood = get_today_mood(self.state)
+        mood_value = mood.get("value", "Okay") if mood else "Okay"
+
+        num, ok = QInputDialog.getInt(
+            self,
+            "Daily Planning",
+            "How many tasks do you realistically want to focus on today?",
+            value=0, min=0, max=5
+        )
+
+        if ok:
+            stats["plannedTasksToday"] = num
+            stats["targetTasksToday"] = num
+            stats["moodAtStart"] = mood_value
+            stats["lastPlanningDate"] = today_str()
+            self._schedule_save()
     # ────────────────────────────────────────────────────────────────────
     # Projects page
     # ────────────────────────────────────────────────────────────────────
@@ -873,6 +929,8 @@ class HubWindow(QMainWindow):
         stats = self.state.get("stats", {})
         streak = stats.get("currentStreak", 0)
         done_today = stats.get("tasksCompletedToday", 0)
+        planned = stats.get("plannedTasksToday", 0)
+        mood_start = stats.get("moodAtStart")
 
         if streak <= 0:
             streak_msg = "You don't have an active streak yet. That’s okay; you can start any day."
@@ -881,10 +939,14 @@ class HubWindow(QMainWindow):
         else:
             streak_msg = f"You have a {streak}‑day streak. That's a lot of small wins."
 
-        if done_today == 0:
+        if planned > 0:
+            tasks_msg = f"You planned {planned} task(s) and completed {done_today}."
+        elif done_today == 0:
             tasks_msg = "You haven't completed any tasks today yet. Even one tiny thing is enough."
         else:
             tasks_msg = f"You completed {done_today} task(s) today. Your effort matters."
+
+        mood_start_msg = f"Mood at start: {mood_start}" if mood_start else ""
 
         mood = get_today_mood(self.state)
         encouragement = ""
@@ -900,7 +962,9 @@ class HubWindow(QMainWindow):
         else:
             encouragement = "However you feel today is valid. You’re allowed to go at your pace."
 
-        self.stats_summary_label.setText(streak_msg + "\n" + tasks_msg + "\n" + encouragement)
+        self.stats_summary_label.setText(
+            "\n".join(filter(None, [streak_msg, tasks_msg, mood_start_msg, encouragement]))
+        )
 
         # Habits list
         self.habits_list.clear()
@@ -1040,9 +1104,9 @@ class TaskListWidget(QWidget):
         self.section = section
         self._save_callback = save_callback
 
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(6)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
 
         # Header row
         header = QHBoxLayout()
@@ -1058,11 +1122,13 @@ class TaskListWidget(QWidget):
         self.add_btn.setFixedHeight(26)
         header.addWidget(self.add_btn)
 
-        self.layout.addLayout(header)
+        layout.addLayout(header)
 
         self.tasks_list = QListWidget()
         self.tasks_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
-        self.layout.addWidget(self.tasks_list, 1)
+        self.tasks_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.tasks_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        layout.addWidget(self.tasks_list, 1)
 
         self.add_btn.clicked.connect(self._on_add_task)
         self.refresh()
@@ -1074,6 +1140,7 @@ class TaskListWidget(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
             row = QWidget()
+            row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             hl = QHBoxLayout(row)
             hl.setContentsMargins(6, 2, 6, 2)
             hl.setSpacing(6)
@@ -1127,6 +1194,9 @@ class TaskListWidget(QWidget):
 
             chk.clicked.connect(lambda checked, tid=t.get("id"): self._on_toggle_task(tid))
             del_btn.clicked.connect(lambda checked=False, tid=t.get("id"): self._on_delete_task(tid))
+            row.customContextMenuRequested.connect(
+                lambda pos, tid=t.get("id"): self._show_task_menu(tid, row.mapToGlobal(pos))
+            )
 
     def _on_add_task(self) -> None:
         add_task(self.state, text=f"New task in {self.section}", section=self.section)
@@ -1134,26 +1204,78 @@ class TaskListWidget(QWidget):
         self.refresh()
 
     def _on_toggle_task(self, task_id: str) -> None:
-        task = toggle_task_completed(self.state, task_id)
+        toggle_task_completed(self.state, task_id)
         self._save_callback()
-
-        if task and task.get("completed"):
-            # Find widget and animate with a flash
-            for i in range(self.tasks_list.count()):
-                item = self.tasks_list.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == task_id:
-                    widget = self.tasks_list.itemWidget(item)
-                    if widget:
-                        widget.setStyleSheet(f"background-color: rgba(255, 215, 0, 40); border-radius: 6px;")
-                        QTimer.singleShot(200, self.refresh)
-                    return  # Exit after finding and starting animation
-        else:
-            self.refresh()
+        self.refresh()
 
     def _on_delete_task(self, task_id: str) -> None:
         delete_task(self.state, task_id)
         self._save_callback()
         self.refresh()
+    
+    def _show_task_menu(self, task_id: str, pos) -> None:
+        task = next((t for t in self.state["tasks"] if t["id"] == task_id), None)
+        if not task:
+            return
+
+        menu = QMenu()
+        rename_action = menu.addAction("Rename")
+        move_menu = menu.addMenu("Move to")
+        move_today = move_menu.addAction("Today")
+        move_week = move_menu.addAction("This Week")
+        move_someday = move_menu.addAction("Someday")
+
+        if task["section"] == "Today":
+            move_today.setEnabled(False)
+        elif task["section"] == "This Week":
+            move_week.setEnabled(False)
+        elif task["section"] == "Someday":
+            move_someday.setEnabled(False)
+
+        action = menu.exec(pos)
+
+        if action == rename_action:
+            self._rename_task(task_id)
+        elif action == move_today:
+            self._move_task(task_id, "Today")
+        elif action == move_week:
+            self._move_task(task_id, "This Week")
+        elif action == move_someday:
+            self._move_task(task_id, "Someday")
+
+    def _rename_task(self, task_id: str) -> None:
+        task = next((t for t in self.state["tasks"] if t["id"] == task_id), None)
+        if not task:
+            return
+
+        new_text, ok = QInputDialog.getText(self, "Rename Task", "New name:", text=task["text"])
+
+        if ok and new_text:
+            task["text"] = new_text
+            task["updatedAt"] = now_iso()
+            self._save_callback()
+            self.refresh()
+
+    def _move_task(self, task_id: str, new_section: str) -> None:
+        task = next((t for t in self.state["tasks"] if t["id"] == task_id), None)
+        if task and task["section"] != new_section:
+            task["section"] = new_section
+            task["updatedAt"] = now_iso()
+            self._save_callback()
+            self.refresh()
+
+    def dropEvent(self, event) -> None:
+        super().dropEvent(event)
+        tasks_in_this_section = {t['id']: t for t in self.state['tasks'] if t['section'] == self.section}
+        for i in range(self.tasks_list.count()):
+            item = self.tasks_list.item(i)
+            task_id = item.data(Qt.ItemDataRole.UserRole)
+            if task_id in tasks_in_this_section:
+                task = tasks_in_this_section[task_id]
+                if task.get("order") != i:
+                    task['order'] = i
+                    task['updatedAt'] = now_iso()
+        self._save_callback()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SECTION 6: ENTRY POINT
@@ -1163,6 +1285,8 @@ def main() -> None:
     app = QApplication(sys.argv)
     paths = get_data_paths()
     state = load_state(paths)
+    rollover_tasks(state)
+    save_state(paths, state)
     window = HubWindow(state, paths)
     window.showMaximized()
     sys.exit(app.exec())
