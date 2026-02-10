@@ -5,7 +5,7 @@
 import os
 import json
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -41,6 +41,16 @@ MOTIVATIONAL_QUOTES = [
     "You got this.",
     "Your well-being comes first.",
 ]
+
+# Modes: how the app "talks" to you based on mood + progress
+MODE_RECOVERY = "Recovery"
+MODE_FOCUS = "Focus"
+MODE_WRAPUP = "Wrap-up"
+
+# Animation & UX tuning constants
+ANIM_DURATION_FAST = 150
+ANIM_DURATION_MEDIUM = 250
+
 
 # Mood options
 MOOD_OPTIONS = [
@@ -83,6 +93,41 @@ def parse_version_tuple(v: str) -> tuple:
 def is_newer_version(latest: str, current: str) -> bool:
     """Return True if latest > current."""
     return parse_version_tuple(latest) > parse_version_tuple(current)
+
+
+def current_time_of_day() -> str:
+    """Return 'morning', 'afternoon', or 'evening' based on local time."""
+    hour = datetime.now().hour
+    if hour < 12:
+        return "morning"
+    if hour < 18:
+        return "afternoon"
+    return "evening"
+
+
+def determine_today_mode(
+    mood_value: Optional[str],
+    tasks_completed_today: int,
+    planned_tasks_today: int,
+) -> str:
+    """
+    Decide which guidance mode to use today, based on mood and progress.
+
+    - Recovery: low/stressed and little/no progress.
+    - Wrap-up: later in the day and plan is mostly or fully met.
+    - Focus: default productive mode.
+    """
+    tod = current_time_of_day()
+    low_mood = mood_value in ("Low energy", "Stressed")
+    plan_met = planned_tasks_today > 0 and tasks_completed_today >= planned_tasks_today
+
+    if low_mood and tasks_completed_today == 0:
+        return MODE_RECOVERY
+
+    if tod == "evening" and (plan_met or tasks_completed_today > 0):
+        return MODE_WRAPUP
+
+    return MODE_FOCUS
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -142,9 +187,10 @@ def default_state() -> Dict[str, Any]:
             {"id": str(uuid.uuid4()), "name": "Go outside 10 minutes", "active": True},
             {"id": str(uuid.uuid4()), "name": "Study 25 minutes", "active": True},
         ],
+        "ideas": [],
+        "notes": [],
         "moods": [],
         "habitChecks": {},
-        "widgetNotes": {},
         "stats": {
             "currentStreak": 0,
             "lastActivityDate": None,
@@ -159,7 +205,11 @@ def default_state() -> Dict[str, Any]:
             "lastWeeklyReset": None,
             "focusSessions": {},
             "lastIgnoredVersion": None,
+            "tasksCompletedByProject": {},
+            "habitsCompletedByDay": {},
+            "moodsByDate": {},
         },
+        # dayQuality: stores {date, tasksCompleted, tasksPlanned, moodAtStart, moodAtEnd, habitsDone}
         "dayQuality": {},
         "uiGeometry": None,
     }
@@ -185,11 +235,32 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     stats.setdefault("lastWeeklyReset", None)
     stats.setdefault("focusSessions", {})
     stats.setdefault("lastIgnoredVersion", None)
+    stats.setdefault("tasksCompletedByProject", {})
+    stats.setdefault("habitsCompletedByDay", {})
+    stats.setdefault("moodsByDate", {})
 
+    state.setdefault("ideas", [])
+    state.setdefault("notes", [])
     state.setdefault("habitChecks", {})
     state.setdefault("dayQuality", {})
-    state.setdefault("widgetNotes", {})
     state.setdefault("uiGeometry", None)
+
+    # Migration for widgetNotes to the new notes structure
+    if "widgetNotes" in state and isinstance(state.get("widgetNotes"), dict):
+        for date_str, text in state["widgetNotes"].items():
+            if text and text.strip():
+                scope = f"day:{date_str}"
+                exists = any(n for n in state["notes"] if n.get("scope") == scope)
+                if not exists:
+                    state["notes"].append({
+                        "id": str(uuid.uuid4()),
+                        "date": date_str,
+                        "text": text,
+                        "scope": scope,
+                        "createdAt": now_iso(),
+                        "updatedAt": now_iso(),
+                    })
+        del state["widgetNotes"]
 
     fixed_tasks: List[Dict[str, Any]] = []
     for t in state.get("tasks", []):
@@ -203,6 +274,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
             t["section"] = "Today"
         t.setdefault("order", 0)
         t.setdefault("projectId", None)
+        # Future extension: could add due dates, tags, etc. here
         t.setdefault("createdAt", now_iso())
         t.setdefault("updatedAt", now_iso())
         t.setdefault("important", False)
@@ -272,6 +344,70 @@ def set_habit_checked(state: Dict[str, Any], habit_id: str, checked: bool) -> No
     day = state.setdefault("habitChecks", {}).setdefault(today, {})
     day[habit_id] = checked
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IDEAS & NOTES
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def add_idea(
+    state: Dict[str, Any],
+    text: str,
+    project_id: Optional[str] = None,
+    mood_value: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Add a new idea to the state."""
+    idea = {
+        "id": str(uuid.uuid4()),
+        "text": text,
+        "createdAt": now_iso(),
+        "projectId": project_id,
+        "moodValue": mood_value,
+    }
+    state.setdefault("ideas", []).insert(0, idea)
+    return idea
+
+
+def ideas_for_project(state: Dict[str, Any], project_id: str) -> List[Dict[str, Any]]:
+    """Get all ideas for a given project."""
+    return [i for i in state.get("ideas", []) if i.get("projectId") == project_id]
+
+
+def add_note(state: Dict[str, Any], text: str, scope: str) -> Dict[str, Any]:
+    """Add a new note to the state."""
+    note = {
+        "id": str(uuid.uuid4()),
+        "date": today_str(),
+        "text": text,
+        "scope": scope,
+        "createdAt": now_iso(),
+        "updatedAt": now_iso(),
+    }
+    state.setdefault("notes", []).insert(0, note)
+    return note
+
+
+def notes_for_scope(state: Dict[str, Any], scope: str) -> List[Dict[str, Any]]:
+    """Get all notes for a given scope."""
+    return [n for n in state.get("notes", []) if n.get("scope") == scope]
+
+
+def get_today_widget_note(state: Dict[str, Any]) -> str:
+    """Gets today's note from the new notes structure for the widget."""
+    scope = f"day:{today_str()}"
+    today_notes = [n for n in state.get("notes", []) if n.get("scope") == scope]
+    return today_notes[0].get("text", "") if today_notes else ""
+
+
+def set_today_widget_note(state: Dict[str, Any], text: str) -> None:
+    """Sets today's note in the new notes structure for the widget."""
+    scope = f"day:{today_str()}"
+    today_notes = [n for n in state.get("notes", []) if n.get("scope") == scope]
+    if today_notes:
+        today_notes[0]["text"] = text
+        today_notes[0]["updatedAt"] = now_iso()
+    else:
+        add_note(state, text, scope)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TASKS & PROJECTS

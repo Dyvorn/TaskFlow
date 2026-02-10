@@ -81,6 +81,11 @@ from taskflowmodel import (
     PRESSED_BG,
     SECTIONS,
     MOTIVATIONAL_QUOTES,
+    MODE_RECOVERY,
+    MODE_FOCUS,
+    MODE_WRAPUP,
+    ANIM_DURATION_FAST,
+    ANIM_DURATION_MEDIUM,
     MOOD_OPTIONS,
     today_str,
     now_iso,
@@ -91,6 +96,10 @@ from taskflowmodel import (
     save_state,
     get_today_mood,
     set_today_mood,
+    add_idea,
+    get_today_widget_note,
+    set_today_widget_note,
+    determine_today_mode,
     count_today_tasks,
     add_task,
     tasks_in_section,
@@ -131,7 +140,7 @@ from taskflowmodel import (
 # UX tuning constants
 # ──────────────────────────────────────────────────────────────────────────
 
-PAGE_FADE_DURATION_MS = 200          # Soft page transitions
+PAGE_FADE_DURATION_MS = ANIM_DURATION_MEDIUM # Soft page transitions
 SAVE_DEBOUNCE_MS = 800               # Delay before auto-saving after edits
 SPLASH_DURATION_MS = 1200            # Total splash screen time
 SPLASH_FADE_MS = 300                 # Fade in/out for splash
@@ -143,50 +152,6 @@ MAX_PLANNED_TASKS = 10               # Daily planning upper limit
 DEFAULT_PLANNED_TASKS = 3            # Default suggested plan for a day
 
 FOCUS_SESSION_SIZE = 3               # Tasks per "focus session" before suggesting a break
-
-# Modes: how the app "talks" to you based on mood + progress
-MODE_RECOVERY = "Recovery"
-MODE_FOCUS = "Focus"
-MODE_WRAPUP = "Wrap-up"
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Small helpers for time-of-day and modes
-# ──────────────────────────────────────────────────────────────────────────
-
-def current_time_of_day() -> str:
-    """Return 'morning', 'afternoon', or 'evening' based on local time."""
-    hour = datetime.now().hour
-    if hour < 12:
-        return "morning"
-    if hour < 18:
-        return "afternoon"
-    return "evening"
-
-
-def determine_today_mode(
-    mood_value: Optional[str],
-    tasks_completed_today: int,
-    planned_tasks_today: int,
-) -> str:
-    """
-    Decide which guidance mode to use today, based on mood and progress.
-
-    - Recovery: low/stressed and little/no progress.
-    - Wrap-up: later in the day and plan is mostly or fully met.
-    - Focus: default productive mode.
-    """
-    tod = current_time_of_day()
-    low_mood = mood_value in ("Low energy", "Stressed")
-    plan_met = planned_tasks_today > 0 and tasks_completed_today >= planned_tasks_today
-
-    if low_mood and tasks_completed_today == 0:
-        return MODE_RECOVERY
-
-    if tod == "evening" and (plan_met or tasks_completed_today > 0):
-        return MODE_WRAPUP
-
-    return MODE_FOCUS
 
 # ============================================================================
 # SECTION 3: SPLASH SCREEN & UPDATE HELPERS
@@ -1559,6 +1524,27 @@ class HubWindow(QMainWindow):
         l_snapshot.addWidget(self.snapshot_hint)
         layout.addWidget(card_snapshot)
 
+        # Card 3: Ideas & Notes
+        card_ideas = QFrame()
+        card_ideas.setObjectName("GlassCard")
+        l_ideas = QVBoxLayout(card_ideas)
+        l_ideas.setContentsMargins(16, 16, 16, 16)
+        l_ideas.setSpacing(8)
+
+        l_ideas.addWidget(QLabel("Ideas & Notes"))
+
+        self.idea_input = QLineEdit()
+        self.idea_input.setPlaceholderText("Capture a tiny idea...")
+        self.idea_input.returnPressed.connect(self._on_add_idea)
+        l_ideas.addWidget(self.idea_input)
+
+        self.ideas_list = QListWidget()
+        self.ideas_list.setStyleSheet("QListWidget { background: transparent; }")
+        l_ideas.addWidget(self.ideas_list, 1)
+
+        layout.addWidget(card_ideas)
+
+
         # Spacer + quote + quick links
         layout.addItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
@@ -1864,7 +1850,6 @@ class HubWindow(QMainWindow):
         done_today: int,
         mood_value: Optional[str],
     ) -> str:
-        tod = current_time_of_day()
         if mode == MODE_RECOVERY:
             if done_today > 0:
                 return "You did something on a hard day. That really counts. It’s okay to stop here."
@@ -1891,8 +1876,13 @@ class HubWindow(QMainWindow):
     def _refresh_projects(self) -> None:
         self.project_list.clear()
         projects = self.state.get("projects", [])
+        current_widget_proj_id = self.state.get("widgetCurrentProjectId")
+
         for p in projects:
-            item = QListWidgetItem(p.get("name", "Untitled"))
+            name = p.get("name", "Untitled")
+            if p.get("id") == current_widget_proj_id:
+                name += " (Widget Focus)"
+            item = QListWidgetItem(name)
             item.setData(Qt.ItemDataRole.UserRole, p.get("id"))
             self.project_list.addItem(item)
 
@@ -2103,6 +2093,15 @@ class HubWindow(QMainWindow):
         # Also refresh header counts quickly
         self._refresh_stats_and_habits()
 
+    def _on_add_idea(self) -> None:
+        text = self.idea_input.text().strip()
+        if not text:
+            return
+        add_idea(self.state, text)
+        self._schedule_save()
+        self.idea_input.clear()
+        self._refresh_home()  # To show the new idea in the list
+
     # ────────────────────────────────────────────────────────────────────
     # Updates, saving & close
     # ────────────────────────────────────────────────────────────────────
@@ -2145,6 +2144,7 @@ class HubWindow(QMainWindow):
         if download_url:
             msg.setInformativeText(
                 "Do you want to open the download page in your browser?"
+                "\nTaskFlow can handle the update for you in a future version."
             )
             msg.setStandardButtons(
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel

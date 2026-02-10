@@ -26,6 +26,8 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QSizePolicy,
     QGraphicsOpacityEffect,
+    QComboBox,
+    QLineEdit,
 )
 
 from taskflowmodel import (
@@ -37,12 +39,19 @@ from taskflowmodel import (
     TEXT_WHITE,
     TEXT_GRAY,
     GOLD,
+    MODE_RECOVERY,
+    MODE_FOCUS,
+    MODE_WRAPUP,
+    ANIM_DURATION_MEDIUM,
     get_data_paths,
     load_state,
     save_state,
+    determine_today_mode,
+    count_today_tasks,
     tasks_in_section,
     toggle_task_completed,
     get_today_mood,
+    add_idea,
     tasks_for_project,
     get_today_widget_note,
     set_today_widget_note,
@@ -174,23 +183,31 @@ class WidgetWindow(QWidget):
         self.suggestion_label.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px;")
         header_row.addWidget(self.suggestion_label, 2)
 
+        self.project_combo = QComboBox()
+        self.project_combo.currentIndexChanged.connect(self._on_project_changed)
+        header_row.addWidget(self.project_combo, 1)
+
         card_layout.addLayout(header_row)
 
-        # Tabs: Tasks / Notes
+        # Tabs: Tasks / Notes / Ideas
         tabs_row = QHBoxLayout()
         tabs_row.setSpacing(4)
 
         self.btn_tab_tasks = QPushButton("Tasks")
         self.btn_tab_notes = QPushButton("Notes")
+        self.btn_tab_ideas = QPushButton("Ideas")
         self.btn_tab_tasks.setCheckable(True)
         self.btn_tab_notes.setCheckable(True)
+        self.btn_tab_ideas.setCheckable(True)
         self.btn_tab_tasks.setChecked(True)
 
         self.btn_tab_tasks.clicked.connect(lambda: self._set_tab("tasks"))
         self.btn_tab_notes.clicked.connect(lambda: self._set_tab("notes"))
+        self.btn_tab_ideas.clicked.connect(lambda: self._set_tab("ideas"))
 
         tabs_row.addWidget(self.btn_tab_tasks)
         tabs_row.addWidget(self.btn_tab_notes)
+        tabs_row.addWidget(self.btn_tab_ideas)
 
         card_layout.addLayout(tabs_row)
 
@@ -232,6 +249,21 @@ class WidgetWindow(QWidget):
 
         self.stack.addWidget(self.page_notes)
 
+        # Ideas page
+        self.page_ideas = QWidget()
+        pi_layout = QVBoxLayout(self.page_ideas)
+        pi_layout.setContentsMargins(0, 4, 0, 0)
+        pi_layout.setSpacing(4)
+
+        self.idea_input = QLineEdit()
+        self.idea_input.setPlaceholderText("Capture an idea...")
+        self.idea_input.returnPressed.connect(self._on_add_idea)
+        pi_layout.addWidget(self.idea_input)
+
+        self.ideas_list = QListWidget()
+        pi_layout.addWidget(self.ideas_list, 1)
+        self.stack.addWidget(self.page_ideas)
+
         outer.addWidget(card)
 
     # ────────────────────────────────────────────────────────────────────
@@ -244,10 +276,18 @@ class WidgetWindow(QWidget):
             self.btn_tab_tasks.setChecked(True)
             self.btn_tab_notes.setChecked(False)
             self.stack.setCurrentWidget(self.page_tasks)
-        else:
+        elif which == "notes":
             self.btn_tab_tasks.setChecked(False)
             self.btn_tab_notes.setChecked(True)
+            self.btn_tab_ideas.setChecked(False)
             self.stack.setCurrentWidget(self.page_notes)
+        else:  # ideas
+            self.btn_tab_tasks.setChecked(False)
+            self.btn_tab_notes.setChecked(False)
+            self.btn_tab_ideas.setChecked(True)
+            self.stack.setCurrentWidget(self.page_ideas)
+            self._refresh_ideas()
+
 
     def _on_notes_changed(self) -> None:
         self._restart_idle_timers()
@@ -258,11 +298,35 @@ class WidgetWindow(QWidget):
         set_today_widget_note(self.state, text)
         save_state(self.paths, self.state)
 
+    def _on_add_idea(self) -> None:
+        text = self.idea_input.text().strip()
+        if not text:
+            return
+        add_idea(self.state, text)
+        save_state(self.paths, self.state)
+        self.idea_input.clear()
+        self._refresh_ideas()
+
+    def _refresh_ideas(self) -> None:
+        self.ideas_list.clear()
+        # Show recent 10 ideas
+        for idea in self.state.get("ideas", [])[:10]:
+            self.ideas_list.addItem(idea.get("text", ""))
+
     # ────────────────────────────────────────────────────────────────────
     # Tasks + suggestion
     # ────────────────────────────────────────────────────────────────────
 
     def _refresh_tasks(self) -> None:
+        # Refresh project dropdown
+        self.project_combo.blockSignals(True)
+        self.project_combo.clear()
+        self.project_combo.addItem("No Project Focus", None)
+        projects = self.state.get("projects", [])
+        for i, p in enumerate(projects):
+            self.project_combo.addItem(p.get("name", "Untitled"), p.get("id"))
+        self.project_combo.blockSignals(False)
+
         self.tasks_list.clear()
 
         # Today tasks
@@ -412,15 +476,27 @@ class WidgetWindow(QWidget):
             )
         )
         next_task = candidates[0]
+
         mood = get_today_mood(self.state)
         mood_value = (mood or {}).get("value", "Okay")
 
-        if mood_value in ("Low energy", "Stressed"):
+        stats = self.state.get("stats", {})
+        counts = count_today_tasks(self.state)
+        mode = determine_today_mode(
+            mood_value, counts["completed"], stats.get("plannedTasksToday", 0)
+        )
+
+        if mode == MODE_RECOVERY:
             prefix = "Gentle step: "
-        elif mood_value in ("Motivated", "Great"):
-            prefix = "You’re on a roll: "
+        elif mode == MODE_FOCUS:
+            if mood_value in ("Motivated", "Great"):
+                prefix = "You’re on a roll: "
+            else:
+                prefix = "Next good move: "
+        elif mode == MODE_WRAPUP:
+            prefix = "To wrap up: "
         else:
-            prefix = "Next good move: "
+            prefix = "You’re on a roll: "
 
         self.suggestion_label.setText(f"{prefix}{next_task.get('text', '')}")
 
@@ -455,7 +531,7 @@ class WidgetWindow(QWidget):
         end_w = WIDGET_WIDTH if expanded else WIDGET_COLLAPSED_WIDTH
 
         anim = QPropertyAnimation(self, b"size")
-        anim.setDuration(200)
+        anim.setDuration(ANIM_DURATION_MEDIUM)
         anim.setStartValue(QSize(start_w, self.height()))
         anim.setEndValue(QSize(end_w, self.height()))
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -518,6 +594,12 @@ class WidgetWindow(QWidget):
             # dock right
             self._docked_side = "right"
             self.move(geo.right() - self.width(), self.y())
+
+    def _on_project_changed(self, index: int) -> None:
+        project_id = self.project_combo.itemData(index)
+        self.state["widgetCurrentProjectId"] = project_id
+        save_state(self.paths, self.state)
+        self._refresh_tasks()
 
     # ────────────────────────────────────────────────────────────────────
     # Close → save
