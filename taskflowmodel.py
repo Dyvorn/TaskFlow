@@ -16,6 +16,7 @@ APP_NAME = "TaskFlow"
 APP_VERSION = "6.0"
 DATA_DIR_NAME = "TaskFlowV6"
 
+# Theme colors
 GOLD = "#ffd700"
 DARK_BG = "#121212"
 CARD_BG = "#1E1E1E"
@@ -26,8 +27,10 @@ PRESSED_BG = "#55FFFFFF"
 TEXT_WHITE = "#e0e0e0"
 TEXT_GRAY = "#cccccc"
 
+# Sections used by the hub
 SECTIONS = ["Today", "Tomorrow", "This Week", "Someday", "Scheduled", "Archived"]
 
+# Motivational quotes
 MOTIVATIONAL_QUOTES = [
     "Small steps lead to big changes.",
     "Progress over perfection.",
@@ -39,6 +42,7 @@ MOTIVATIONAL_QUOTES = [
     "Your well-being comes first.",
 ]
 
+# Mood options
 MOOD_OPTIONS = [
     "Low energy",
     "Okay",
@@ -47,20 +51,52 @@ MOOD_OPTIONS = [
     "Great",
 ]
 
+# GitHub update config
+GITHUB_OWNER = "Dyvorn"
+GITHUB_REPO = "TaskFlow"
+GITHUB_API_LATEST = (
+    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+)
+
 # ═══════════════════════════════════════════════════════════════════════════
-# DATA PATHS & SIMPLE UTILITIES
+# SIMPLE UTILITIES
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def today_str() -> str:
     return str(date.today())
 
+
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def parse_version_tuple(v: str) -> tuple:
+    """Turn '6.0.1' or 'v6.0.1' into (6, 0, 1) for safe comparison."""
+    try:
+        parts = v.strip().lstrip("v").split(".")
+        return tuple(int(p) for p in parts)
+    except Exception:
+        return (0,)
+
+
+def is_newer_version(latest: str, current: str) -> bool:
+    """Return True if latest > current."""
+    return parse_version_tuple(latest) > parse_version_tuple(current)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DATA PATHS & ATOMIC WRITE
+# ═══════════════════════════════════════════════════════════════════════════
+
 
 def get_data_paths() -> Dict[str, str]:
     """Return directory and file paths used by the hub."""
     if os.name == "nt":
-        base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), DATA_DIR_NAME)
+        base = os.path.join(
+            os.environ.get("APPDATA", os.path.expanduser("~")),
+            DATA_DIR_NAME,
+        )
     else:
         base = os.path.join(os.path.expanduser("~"), f".{DATA_DIR_NAME}")
 
@@ -68,6 +104,7 @@ def get_data_paths() -> Dict[str, str]:
     data_file = os.path.join(base, "taskflow_hub_data.json")
     backup_file = os.path.join(base, "taskflow_hub_data.backup.json")
     return {"dir": base, "data": data_file, "backup": backup_file}
+
 
 def atomic_write_json(path: str, backup_path: str, data: Dict[str, Any]) -> None:
     tmp = path + ".tmp"
@@ -87,9 +124,11 @@ def atomic_write_json(path: str, backup_path: str, data: Dict[str, Any]) -> None
         except OSError:
             pass
 
+
 # ═══════════════════════════════════════════════════════════════════════════
-# DATA MODEL & STATE MANAGEMENT
+# STATE MODEL
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def default_state() -> Dict[str, Any]:
     """Initial state for a new user."""
@@ -104,6 +143,8 @@ def default_state() -> Dict[str, Any]:
             {"id": str(uuid.uuid4()), "name": "Study 25 minutes", "active": True},
         ],
         "moods": [],
+        "habitChecks": {},
+        "widgetNotes": {},
         "stats": {
             "currentStreak": 0,
             "lastActivityDate": None,
@@ -117,35 +158,49 @@ def default_state() -> Dict[str, Any]:
             "weeklyFocus": [],
             "lastWeeklyReset": None,
             "focusSessions": {},
+            "lastIgnoredVersion": None,
         },
+        "dayQuality": {},
+        "uiGeometry": None,
     }
 
+
 def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure all expected keys exist; repair tasks if needed."""
     base = default_state()
     for key, value in base.items():
         state.setdefault(key, value)
 
-    state["stats"].setdefault("currentStreak", 0)
-    state["stats"].setdefault("lastActivityDate", None)
-    state["stats"].setdefault("xp", 0)
-    state["stats"].setdefault("level", 1)
-    state["stats"].setdefault("tasksCompletedToday", 0)
-    state["stats"].setdefault("plannedTasksToday", 0)
-    state["stats"].setdefault("targetTasksToday", 0)
-    state["stats"].setdefault("moodAtStart", None)
-    state["stats"].setdefault("lastPlanningDate", None)
-    state["stats"].setdefault("weeklyFocus", [])
-    state["stats"].setdefault("lastWeeklyReset", None)
-    state["stats"].setdefault("focusSessions", {})
+    stats = state.setdefault("stats", {})
+    stats.setdefault("currentStreak", 0)
+    stats.setdefault("lastActivityDate", None)
+    stats.setdefault("xp", 0)
+    stats.setdefault("level", 1)
+    stats.setdefault("tasksCompletedToday", 0)
+    stats.setdefault("plannedTasksToday", 0)
+    stats.setdefault("targetTasksToday", 0)
+    stats.setdefault("moodAtStart", None)
+    stats.setdefault("lastPlanningDate", None)
+    stats.setdefault("weeklyFocus", [])
+    stats.setdefault("lastWeeklyReset", None)
+    stats.setdefault("focusSessions", {})
+    stats.setdefault("lastIgnoredVersion", None)
+
+    state.setdefault("habitChecks", {})
+    state.setdefault("dayQuality", {})
+    state.setdefault("widgetNotes", {})
+    state.setdefault("uiGeometry", None)
 
     fixed_tasks: List[Dict[str, Any]] = []
     for t in state.get("tasks", []):
-        if not isinstance(t, dict): continue
+        if not isinstance(t, dict):
+            continue
         t.setdefault("id", str(uuid.uuid4()))
         t.setdefault("text", "")
         t.setdefault("completed", False)
         t.setdefault("section", "Today")
-        if t["section"] not in SECTIONS: t["section"] = "Today"
+        if t["section"] not in SECTIONS:
+            t["section"] = "Today"
         t.setdefault("order", 0)
         t.setdefault("projectId", None)
         t.setdefault("createdAt", now_iso())
@@ -155,6 +210,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     state["tasks"] = fixed_tasks
 
     return state
+
 
 def load_state(paths: Dict[str, str]) -> Dict[str, Any]:
     path = paths["data"]
@@ -171,12 +227,20 @@ def load_state(paths: Dict[str, str]) -> Dict[str, Any]:
                 with open(backup, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 return validate_and_migrate_state(data)
-            except Exception: pass
+            except Exception:
+                pass
         return default_state()
+
 
 def save_state(paths: Dict[str, str], state: Dict[str, Any]) -> None:
     state["lastOpened"] = today_str()
     atomic_write_json(paths["data"], paths["backup"], state)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MOOD & HABITS
+# ═══════════════════════════════════════════════════════════════════════════
+
 
 def get_today_mood(state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     today = today_str()
@@ -184,6 +248,7 @@ def get_today_mood(state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if m.get("date") == today:
             return m
     return None
+
 
 def set_today_mood(state: Dict[str, Any], value: str, note: str = "") -> None:
     today = today_str()
@@ -195,24 +260,65 @@ def set_today_mood(state: Dict[str, Any], value: str, note: str = "") -> None:
             return
     moods.append({"date": today, "value": value, "note": note})
 
+
+def get_today_habit_checks(state: Dict[str, Any]) -> Dict[str, bool]:
+    today = today_str()
+    checks = state.setdefault("habitChecks", {})
+    return checks.setdefault(today, {})
+
+
+def set_habit_checked(state: Dict[str, Any], habit_id: str, checked: bool) -> None:
+    today = today_str()
+    day = state.setdefault("habitChecks", {}).setdefault(today, {})
+    day[habit_id] = checked
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TASKS & PROJECTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+
 def count_today_tasks(state: Dict[str, Any]) -> Dict[str, int]:
     today_tasks = [t for t in state.get("tasks", []) if t.get("section") == "Today"]
     done = [t for t in today_tasks if t.get("completed")]
     return {"total": len(today_tasks), "completed": len(done)}
 
-def add_task(state: Dict[str, Any], text: str, section: str = "Today", project_id: Optional[str] = None, important: bool = False) -> Dict[str, Any]:
-    if section not in SECTIONS: section = "Today"
+
+def add_task(
+    state: Dict[str, Any],
+    text: str,
+    section: str = "Today",
+    project_id: Optional[str] = None,
+    important: bool = False,
+) -> Dict[str, Any]:
+    if section not in SECTIONS:
+        section = "Today"
     task = {
-        "id": str(uuid.uuid4()), "text": text, "completed": False, "section": section,
-        "order": 0, "projectId": project_id, "createdAt": now_iso(), "updatedAt": now_iso(),
+        "id": str(uuid.uuid4()),
+        "text": text,
+        "completed": False,
+        "section": section,
+        "order": 0,
+        "projectId": project_id,
+        "createdAt": now_iso(),
+        "updatedAt": now_iso(),
         "important": important,
     }
     state.setdefault("tasks", []).append(task)
     return task
 
+
 def tasks_in_section(state: Dict[str, Any], section: str) -> List[Dict[str, Any]]:
     tasks = [t for t in state.get("tasks", []) if t.get("section") == section]
-    return sorted(tasks, key=lambda t: (0 if not t.get("completed") else 1, 0 if t.get("important") else 1, t.get("order", 0)))
+    return sorted(
+        tasks,
+        key=lambda t: (
+            0 if not t.get("completed") else 1,
+            0 if t.get("important") else 1,
+            t.get("order", 0),
+        ),
+    )
+
 
 def toggle_task_completed(state: Dict[str, Any], task_id: str) -> Optional[Dict[str, Any]]:
     for t in state.get("tasks", []):
@@ -222,8 +328,10 @@ def toggle_task_completed(state: Dict[str, Any], task_id: str) -> Optional[Dict[
             return t
     return None
 
+
 def delete_task(state: Dict[str, Any], task_id: str) -> None:
     state["tasks"] = [t for t in state.get("tasks", []) if t.get("id") != task_id]
+
 
 def get_project_by_id(state: Dict[str, Any], project_id: str) -> Optional[Dict[str, Any]]:
     for p in state.get("projects", []):
@@ -231,29 +339,37 @@ def get_project_by_id(state: Dict[str, Any], project_id: str) -> Optional[Dict[s
             return p
     return None
 
+
 def add_project(state: Dict[str, Any], name: str) -> Dict[str, Any]:
-    proj = {"id": str(uuid.uuid4()), "name": name or "Untitled", "color": GOLD, "createdAt": now_iso()}
+    proj = {
+        "id": str(uuid.uuid4()),
+        "name": name or "Untitled",
+        "color": GOLD,
+        "createdAt": now_iso(),
+    }
     state.setdefault("projects", []).append(proj)
     return proj
+
 
 def tasks_for_project(state: Dict[str, Any], project_id: str) -> List[Dict[str, Any]]:
     return [t for t in state.get("tasks", []) if t.get("projectId") == project_id]
 
-def get_today_habit_checks(state: Dict[str, Any]) -> Dict[str, bool]:
-    today = today_str()
-    checks = state.setdefault("habitChecks", {})
-    return checks.setdefault(today, {})
 
-def set_habit_checked(state: Dict[str, Any], habit_id: str, checked: bool) -> None:
-    today = today_str()
-    day = state.setdefault("habitChecks", {}).setdefault(today, {})
-    day[habit_id] = checked
+# ═══════════════════════════════════════════════════════════════════════════
+# ROLLOVER / DAILY MAINTENANCE
+# ═══════════════════════════════════════════════════════════════════════════
 
-def rollover_tasks(state: dict) -> None:
+
+def rollover_tasks(state: Dict[str, Any]) -> None:
+    """Move yesterday's 'Tomorrow' tasks into 'Today' when the date changes."""
     today = today_str()
     last_opened = state.get("lastOpened")
-    if not last_opened or last_opened == today: return
+    if not last_opened or last_opened == today:
+        return
+
     for task in state.get("tasks", []):
-        if not task.get("completed"):
-            if task.get("section") == "Tomorrow": task["section"] = "Today"
-    state["lastOpened"] = today_str()
+        if not task.get("completed") and task.get("section") == "Tomorrow":
+            task["section"] = "Today"
+            task["updatedAt"] = now_iso()
+
+    state["lastOpened"] = today
