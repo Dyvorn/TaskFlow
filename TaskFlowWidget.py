@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 
 from PyQt6.QtCore import (
     Qt,
@@ -11,7 +11,7 @@ from PyQt6.QtCore import (
     QPropertyAnimation,
     QEasingCurve,
 )
-from PyQt6.QtGui import QColor, QMouseEvent
+from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -22,11 +22,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QListWidget,
     QListWidgetItem,
-    QStackedWidget,
-    QTextEdit,
     QSizePolicy,
-    QGraphicsOpacityEffect,
-    QComboBox,
     QLineEdit,
 )
 
@@ -39,22 +35,14 @@ from taskflowmodel import (
     TEXT_WHITE,
     TEXT_GRAY,
     GOLD,
-    MODE_RECOVERY,
-    MODE_FOCUS,
-    MODE_WRAPUP,
     ANIM_DURATION_MEDIUM,
     get_data_paths,
     load_state,
     save_state,
-    determine_today_mode,
     count_today_tasks,
     tasks_in_section,
     toggle_task_completed,
-    get_today_mood,
-    add_idea,
-    tasks_for_project,
-    get_today_widget_note,
-    set_today_widget_note,
+    add_task,
 )
 
 
@@ -72,11 +60,19 @@ class WidgetWindow(QWidget):
     Small glassy rectangle that docks to screen edges and collapses to a bump.
     """
 
-    def __init__(self, state: Dict[str, Any], paths: Dict[str, str]) -> None:
-        super().__init__(flags=Qt.WindowType.FramelessWindowHint)
+    def __init__(
+        self,
+        state: Dict[str, Any],
+        paths: Dict[str, str],
+        save_callback: Callable[[], None],
+        hub_instance: Optional[QWidget],
+    ) -> None:
+        super().__init__(flags=Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.state = state
         self.paths = paths
+        self._save_callback = save_callback
+        self._hub = hub_instance
 
         # collapse state
         self._docked_side: Optional[str] = None  # "left" or "right"
@@ -103,19 +99,6 @@ class WidgetWindow(QWidget):
         self._apply_style()
         self._refresh_tasks()
         self._restart_idle_timers()
-
-        # If no mood yet today, show a tiny supportive hint
-        if get_today_mood(self.state) is None:
-            self.suggestion_label.setText(
-                "How are you today? You can check in from the hub’s Stats page."
-            )
-
-        self._note_save_timer = QTimer(self)
-        self._note_save_timer.setSingleShot(True)
-        self._note_save_timer.setInterval(800)
-        self._note_save_timer.timeout.connect(self._save_notes)
-
-        self.notes_edit.textChanged.connect(self._on_notes_changed)
 
     # ────────────────────────────────────────────────────────────────────
     # UI
@@ -178,179 +161,90 @@ class WidgetWindow(QWidget):
         self.header_label.setObjectName("WidgetHeader")
         header_row.addWidget(self.header_label, 1)
 
-        self.suggestion_label = QLabel("")
-        self.suggestion_label.setWordWrap(True)
-        self.suggestion_label.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px;")
-        header_row.addWidget(self.suggestion_label, 2)
-
-        self.project_combo = QComboBox()
-        self.project_combo.currentIndexChanged.connect(self._on_project_changed)
-        header_row.addWidget(self.project_combo, 1)
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px;")
+        header_row.addWidget(self.status_label, 2)
 
         card_layout.addLayout(header_row)
 
-        # Tabs: Tasks / Notes / Ideas
-        tabs_row = QHBoxLayout()
-        tabs_row.setSpacing(4)
-
-        self.btn_tab_tasks = QPushButton("Tasks")
-        self.btn_tab_notes = QPushButton("Notes")
-        self.btn_tab_ideas = QPushButton("Ideas")
-        self.btn_tab_tasks.setCheckable(True)
-        self.btn_tab_notes.setCheckable(True)
-        self.btn_tab_ideas.setCheckable(True)
-        self.btn_tab_tasks.setChecked(True)
-
-        self.btn_tab_tasks.clicked.connect(lambda: self._set_tab("tasks"))
-        self.btn_tab_notes.clicked.connect(lambda: self._set_tab("notes"))
-        self.btn_tab_ideas.clicked.connect(lambda: self._set_tab("ideas"))
-
-        tabs_row.addWidget(self.btn_tab_tasks)
-        tabs_row.addWidget(self.btn_tab_notes)
-        tabs_row.addWidget(self.btn_tab_ideas)
-
-        card_layout.addLayout(tabs_row)
-
-        # stacked content
-        self.stack = QStackedWidget()
-        card_layout.addWidget(self.stack, 1)
-
-        # Tasks page
-        self.page_tasks = QWidget()
-        pt_layout = QVBoxLayout(self.page_tasks)
-        pt_layout.setContentsMargins(0, 4, 0, 0)
-        pt_layout.setSpacing(4)
-
+        # Task List
         self.tasks_list = QListWidget()
-        self.tasks_list.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        pt_layout.addWidget(self.tasks_list, 1)
+        card_layout.addWidget(self.tasks_list, 1)
 
-        self.show_more_button = QPushButton("Show more")
-        self.show_more_button.clicked.connect(self._on_show_more)
-        self.show_more_button.setVisible(False)
-        pt_layout.addWidget(self.show_more_button)
+        # Quick Add Input (initially hidden)
+        self.quick_add_input = QLineEdit()
+        self.quick_add_input.setPlaceholderText("Add to Today & press Enter...")
+        self.quick_add_input.returnPressed.connect(self._on_quick_add)
+        self.quick_add_input.setVisible(False)
+        card_layout.addWidget(self.quick_add_input)
 
-        self.stack.addWidget(self.page_tasks)
+        # Action buttons
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(6)
 
-        # Notes page
-        self.page_notes = QWidget()
-        pn_layout = QVBoxLayout(self.page_notes)
-        pn_layout.setContentsMargins(0, 4, 0, 0)
-        pn_layout.setSpacing(4)
+        btn_open_hub = QPushButton("Open Hub")
+        btn_open_today = QPushButton("Open Today")
+        btn_quick_add = QPushButton("+ Quick Add")
 
-        self.notes_edit = QTextEdit()
-        self.notes_edit.setPlaceholderText(
-            "Write a few words about what you’re doing or how it feels."
-        )
-        self.notes_edit.setPlainText(get_today_widget_note(self.state))
-        pn_layout.addWidget(self.notes_edit, 1)
+        btn_open_hub.clicked.connect(lambda: self._open_hub_page("home"))
+        btn_open_today.clicked.connect(lambda: self._open_hub_page("today"))
+        btn_quick_add.clicked.connect(self._toggle_quick_add)
 
-        self.stack.addWidget(self.page_notes)
-
-        # Ideas page
-        self.page_ideas = QWidget()
-        pi_layout = QVBoxLayout(self.page_ideas)
-        pi_layout.setContentsMargins(0, 4, 0, 0)
-        pi_layout.setSpacing(4)
-
-        self.idea_input = QLineEdit()
-        self.idea_input.setPlaceholderText("Capture an idea...")
-        self.idea_input.returnPressed.connect(self._on_add_idea)
-        pi_layout.addWidget(self.idea_input)
-
-        self.ideas_list = QListWidget()
-        pi_layout.addWidget(self.ideas_list, 1)
-        self.stack.addWidget(self.page_ideas)
+        actions_row.addWidget(btn_open_hub)
+        actions_row.addWidget(btn_open_today)
+        actions_row.addWidget(btn_quick_add)
+        card_layout.addLayout(actions_row)
 
         outer.addWidget(card)
 
     # ────────────────────────────────────────────────────────────────────
-    # Tabs
+    # Actions
     # ────────────────────────────────────────────────────────────────────
 
-    def _set_tab(self, which: str) -> None:
+    def _open_hub_page(self, page_key: str):
         self._restart_idle_timers()
-        if which == "tasks":
-            self.btn_tab_tasks.setChecked(True)
-            self.btn_tab_notes.setChecked(False)
-            self.stack.setCurrentWidget(self.page_tasks)
-        elif which == "notes":
-            self.btn_tab_tasks.setChecked(False)
-            self.btn_tab_notes.setChecked(True)
-            self.btn_tab_ideas.setChecked(False)
-            self.stack.setCurrentWidget(self.page_notes)
-        else:  # ideas
-            self.btn_tab_tasks.setChecked(False)
-            self.btn_tab_notes.setChecked(False)
-            self.btn_tab_ideas.setChecked(True)
-            self.stack.setCurrentWidget(self.page_ideas)
-            self._refresh_ideas()
+        if self._hub:
+            self._hub.showNormal()
+            self._hub.raise_()
+            self._hub.activateWindow()
+            self._hub.open_page(page_key)
 
-
-    def _on_notes_changed(self) -> None:
+    def _toggle_quick_add(self):
         self._restart_idle_timers()
-        self._note_save_timer.start()
+        is_visible = self.quick_add_input.isVisible()
+        self.quick_add_input.setVisible(not is_visible)
+        if not is_visible:
+            self.quick_add_input.setFocus()
 
-    def _save_notes(self) -> None:
-        text = self.notes_edit.toPlainText().strip()
-        set_today_widget_note(self.state, text)
-        save_state(self.paths, self.state)
-
-    def _on_add_idea(self) -> None:
-        text = self.idea_input.text().strip()
+    def _on_quick_add(self) -> None:
+        text = self.quick_add_input.text().strip()
         if not text:
             return
-        add_idea(self.state, text)
-        save_state(self.paths, self.state)
-        self.idea_input.clear()
-        self._refresh_ideas()
-
-    def _refresh_ideas(self) -> None:
-        self.ideas_list.clear()
-        # Show recent 10 ideas
-        for idea in self.state.get("ideas", [])[:10]:
-            self.ideas_list.addItem(idea.get("text", ""))
+        add_task(self.state, text=text, section="Today")
+        self._save_callback()
+        self.quick_add_input.clear()
+        self.quick_add_input.setVisible(False)
+        self._refresh_tasks()
 
     # ────────────────────────────────────────────────────────────────────
     # Tasks + suggestion
     # ────────────────────────────────────────────────────────────────────
 
     def _refresh_tasks(self) -> None:
-        # Refresh project dropdown
-        self.project_combo.blockSignals(True)
-        self.project_combo.clear()
-        self.project_combo.addItem("No Project Focus", None)
-        projects = self.state.get("projects", [])
-        for i, p in enumerate(projects):
-            self.project_combo.addItem(p.get("name", "Untitled"), p.get("id"))
-        self.project_combo.blockSignals(False)
-
         self.tasks_list.clear()
 
         # Today tasks
         today_tasks = tasks_in_section(self.state, "Today")
+        incomplete_tasks = [t for t in today_tasks if not t.get("completed")]
 
-        # Current project tasks
-        proj_id = self.state.get("widgetCurrentProjectId")
-        project_tasks = tasks_for_project(self.state, proj_id) if proj_id else []
+        # Sort: important first, then by order
+        incomplete_tasks.sort(key=lambda t: (0 if t.get("important") else 1, t.get("order", 0)))
 
-        # Combine lists with tags
-        combined: list[dict[str, Any]] = []
-        for t in today_tasks:
-            combined.append({"task": t, "kind": "today"})
-        for t in project_tasks:
-            combined.append({"task": t, "kind": "project"})
+        max_visible = self.state.get("settings", {}).get("widgetTaskCount", 5)
+        visible_tasks = incomplete_tasks[:max_visible]
 
-        max_visible = 10  # e.g. 5+5; tune as you like
-        visible = combined[:max_visible]
-        has_more = len(combined) > max_visible
-
-        for entry in visible:
-            t = entry["task"]
-            kind = entry["kind"]
-
+        for t in visible_tasks:
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
@@ -365,9 +259,6 @@ class WidgetWindow(QWidget):
             chk.setFixedSize(QSize(20, 20))
 
             text = t.get("text", "")
-            if kind == "project":
-                text = f"[Proj] {text}"
-
             lbl = QLabel(text)
             lbl.setWordWrap(True)
             if t.get("completed"):
@@ -387,118 +278,18 @@ class WidgetWindow(QWidget):
                 lambda checked, tid=t.get("id"): self._on_toggle_task(tid)
             )
 
-        self.show_more_button.setVisible(has_more)
-
-        # Suggestion line
-        self._update_suggestion_line(today_tasks)
-
-    def _on_show_more(self) -> None:
-        self._restart_idle_timers()
-
-        today_tasks = tasks_in_section(self.state, "Today")
-        proj_id = self.state.get("widgetCurrentProjectId")
-        project_tasks = tasks_for_project(self.state, proj_id) if proj_id else []
-
-        combined: list[dict[str, Any]] = []
-        for t in today_tasks:
-            combined.append({"task": t, "kind": "today"})
-        for t in project_tasks:
-            combined.append({"task": t, "kind": "project"})
-
-        self.tasks_list.clear()
-        for entry in combined:
-            t = entry["task"]
-            kind = entry["kind"]
-
-            item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
-
-            row = QWidget()
-            hl = QHBoxLayout(row)
-            hl.setContentsMargins(2, 0, 2, 0)
-            hl.setSpacing(4)
-
-            chk = QPushButton("✔" if t.get("completed") else "")
-            chk.setCheckable(True)
-            chk.setChecked(t.get("completed"))
-            chk.setFixedSize(QSize(20, 20))
-
-            text = t.get("text", "")
-            if kind == "project":
-                text = f"[Proj] {text}"
-
-            lbl = QLabel(text)
-            lbl.setWordWrap(True)
-            if t.get("completed"):
-                lbl.setStyleSheet(
-                    f"color: {TEXT_GRAY}; text-decoration: line-through;"
-                )
-            elif t.get("important"):
-                lbl.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
-
-            hl.addWidget(chk)
-            hl.addWidget(lbl, 1)
-
-            self.tasks_list.addItem(item)
-            self.tasks_list.setItemWidget(item, row)
-
-            chk.clicked.connect(
-                lambda checked, tid=t.get("id"): self._on_toggle_task(tid)
-            )
-
-        self.show_more_button.setVisible(False)
-        self._update_suggestion_line(today_tasks)
+        # Update status line
+        counts = count_today_tasks(self.state)
+        if counts["total"] == 0:
+            self.status_label.setText("All clear for Today.")
+        else:
+            self.status_label.setText(f"{counts['completed']} of {counts['total']} done.")
 
     def _on_toggle_task(self, task_id: str) -> None:
         toggle_task_completed(self.state, task_id)
-        save_state(self.paths, self.state)
+        self._save_callback()
         self._refresh_tasks()
         self._restart_idle_timers()
-
-    def _update_suggestion_line(self, tasks: list[Dict[str, Any]]) -> None:
-        if not tasks:
-            self.suggestion_label.setText(
-                "No tasks for Today. You can keep it light or add one tiny thing in the hub."
-            )
-            return
-
-        candidates = [t for t in tasks if not t.get("completed")]
-        if not candidates:
-            self.suggestion_label.setText(
-                "Nothing urgent left for Today. Rest is allowed."
-            )
-            return
-
-        candidates.sort(
-            key=lambda t: (
-                0 if t.get("important") else 1,
-                t.get("order", 0),
-            )
-        )
-        next_task = candidates[0]
-
-        mood = get_today_mood(self.state)
-        mood_value = (mood or {}).get("value", "Okay")
-
-        stats = self.state.get("stats", {})
-        counts = count_today_tasks(self.state)
-        mode = determine_today_mode(
-            mood_value, counts["completed"], stats.get("plannedTasksToday", 0)
-        )
-
-        if mode == MODE_RECOVERY:
-            prefix = "Gentle step: "
-        elif mode == MODE_FOCUS:
-            if mood_value in ("Motivated", "Great"):
-                prefix = "You’re on a roll: "
-            else:
-                prefix = "Next good move: "
-        elif mode == MODE_WRAPUP:
-            prefix = "To wrap up: "
-        else:
-            prefix = "You’re on a roll: "
-
-        self.suggestion_label.setText(f"{prefix}{next_task.get('text', '')}")
 
     # ────────────────────────────────────────────────────────────────────
     # Collapse / dock / drag
@@ -523,19 +314,35 @@ class WidgetWindow(QWidget):
         self._long_idle_mode = True
 
     def _set_expanded(self, expanded: bool) -> None:
-        if self._expanded == expanded:
+        if self._expanded == expanded or not self._docked_side:
             return
         self._expanded = expanded
 
-        start_w = self.width()
-        end_w = WIDGET_WIDTH if expanded else WIDGET_COLLAPSED_WIDTH
+        screen = QApplication.primaryScreen()
+        if not screen:
+            return
+        geo = screen.availableGeometry()
 
-        anim = QPropertyAnimation(self, b"size")
-        anim.setDuration(ANIM_DURATION_MEDIUM)
-        anim.setStartValue(QSize(start_w, self.height()))
-        anim.setEndValue(QSize(end_w, self.height()))
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        # The size should always be the full widget width now.
+        self.setFixedSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+
+        start_pos = self.pos()
+        end_pos = None
+
+        if self._docked_side == "right":
+            end_x = geo.right() - (WIDGET_WIDTH if expanded else WIDGET_COLLAPSED_WIDTH)
+            end_pos = QPoint(end_x, self.y())
+        elif self._docked_side == "left":
+            end_x = geo.left() - (0 if expanded else WIDGET_WIDTH - WIDGET_COLLAPSED_WIDTH)
+            end_pos = QPoint(end_x, self.y())
+
+        if end_pos and start_pos != end_pos:
+            anim = QPropertyAnimation(self, b"pos")
+            anim.setDuration(ANIM_DURATION_MEDIUM)
+            anim.setStartValue(start_pos)
+            anim.setEndValue(end_pos)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -561,7 +368,7 @@ class WidgetWindow(QWidget):
 
     def enterEvent(self, event) -> None:
         if self._docked_side and not self._expanded:
-            if not self._long_idle_mode and self._hover_expand_enabled:
+            if self._hover_expand_enabled:
                 self._set_expanded(True)
         self._restart_idle_timers()
         super().enterEvent(event)
@@ -595,31 +402,26 @@ class WidgetWindow(QWidget):
             self._docked_side = "right"
             self.move(geo.right() - self.width(), self.y())
 
-    def _on_project_changed(self, index: int) -> None:
-        project_id = self.project_combo.itemData(index)
-        self.state["widgetCurrentProjectId"] = project_id
-        save_state(self.paths, self.state)
-        self._refresh_tasks()
-
     # ────────────────────────────────────────────────────────────────────
     # Close → save
     # ────────────────────────────────────────────────────────────────────
 
     def closeEvent(self, event) -> None:
-        save_state(self.paths, self.state)
+        self._save_callback()
         super().closeEvent(event)
 
 
-def main() -> None:
+def debug_main() -> None:
     app = QApplication(sys.argv)
     paths = get_data_paths()
     state = load_state(paths)
 
-    widget = WidgetWindow(state, paths)
+    # For debugging, provide dummy callbacks
+    widget = WidgetWindow(state, paths, lambda: save_state(paths, state), None)
     widget.show()
 
     sys.exit(app.exec())
 
 
 if __name__ == "__main__":
-    main()
+    debug_main()

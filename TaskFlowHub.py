@@ -21,6 +21,7 @@ from PyQt6.QtCore import (
     QEasingCurve,
     QRectF,
     QPoint,
+    pyqtSignal,
 )
 from PyQt6.QtGui import (
     QColor,
@@ -97,6 +98,7 @@ from taskflowmodel import (
     get_today_mood,
     set_today_mood,
     add_idea,
+    delete_idea,
     get_today_widget_note,
     set_today_widget_note,
     determine_today_mode,
@@ -1146,6 +1148,8 @@ class ProjectTaskListWidget(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
             row = QWidget()
+            row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            row.customContextMenuRequested.connect(lambda pos, tid=t.get("id"): self._show_task_menu(tid, row.mapToGlobal(pos)))
             hl = QHBoxLayout(row)
             hl.setContentsMargins(6, 2, 6, 2)
             hl.setSpacing(6)
@@ -1268,12 +1272,65 @@ class ProjectTaskListWidget(QWidget):
         self._save_callback()
         self.refresh()
 
+    def _show_task_menu(self, task_id: str, global_pos) -> None:
+        menu = QMenu(self)
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task: return
+
+        act_rename = menu.addAction("Rename")
+        act_important = menu.addAction("Unmark important" if task.get("important") else "Mark as important")
+        
+        move_menu = menu.addMenu("Move to…")
+        for sec in ["Today", "Tomorrow", "This Week", "Someday"]:
+            if sec != task.get("section"):
+                move_menu.addAction(sec)
+        act_delete = menu.addAction("Delete")
+
+        action = menu.exec(global_pos)
+        if not action: return
+
+        if action is act_rename:
+            self._rename_task(task_id)
+        elif action is act_important:
+            self._toggle_important(task_id)
+        elif action.parentWidget() is move_menu:
+            self._move_task_section(task_id, action.text())
+        elif action is act_delete:
+            self._on_delete_task(task_id)
+
+    def _rename_task(self, task_id: str) -> None:
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task: return
+        new_text, ok = QInputDialog.getText(self, "Rename task", "New name:", text=task.get("text", ""))
+        if ok and new_text.strip():
+            task["text"] = new_text.strip()
+            task["updatedAt"] = now_iso()
+            self._save_callback()
+            self.refresh()
+
+    def _toggle_important(self, task_id: str) -> None:
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task: return
+        task["important"] = not task.get("important")
+        task["updatedAt"] = now_iso()
+        self._save_callback()
+        self.refresh()
+
+    def _move_task_section(self, task_id: str, new_section: str) -> None:
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task: return
+        task["section"] = new_section
+        task["updatedAt"] = now_iso()
+        self._save_callback()
+        self.refresh()
+
 # ============================================================================
 # SECTION 6: HUB WINDOW - LAYOUT, NAVIGATION & PAGES
 # ============================================================================
 
 
 class HubWindow(QMainWindow):
+    data_changed = pyqtSignal()
     """Main TaskFlow Hub window: planning + mental health workspace."""
 
     def __init__(self, state: Dict[str, Any], paths: Dict[str, str]):
@@ -1312,15 +1369,6 @@ class HubWindow(QMainWindow):
         # Background update check + daily planning
         self._check_updates_async()
         self._run_daily_planning()
-
-        # Apply shadows to all glass cards
-        for widget in self.findChildren(QFrame, "GlassCard"):
-            shadow = QGraphicsDropShadowEffect(self)
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(0, 0, 0, 80))
-            shadow.setOffset(0, 4)
-            widget.setGraphicsEffect(shadow)
-
         # Keyboard shortcuts
         QShortcut(QKeySequence("Ctrl+1"), self, activated=lambda: self._switch_page(self.page_home))
         QShortcut(QKeySequence("Ctrl+2"), self, activated=lambda: self._switch_page(self.page_today))
@@ -1418,6 +1466,10 @@ class HubWindow(QMainWindow):
         self.btn_projects = QPushButton("Projects")
         self.btn_stats = QPushButton("Stats")
 
+        # New Settings Button
+        self.btn_settings = QPushButton("Settings")
+        self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+
         for btn in (
             self.btn_home,
             self.btn_today,
@@ -1425,6 +1477,7 @@ class HubWindow(QMainWindow):
             self.btn_someday,
             self.btn_projects,
             self.btn_stats,
+            self.btn_settings,
         ):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setMinimumHeight(32)
@@ -1451,6 +1504,7 @@ class HubWindow(QMainWindow):
         self._build_task_pages()
         self._build_projects_page()
         self._build_stats_page()
+        self._build_settings_page()
 
         # Add pages to stack
         self.stack.addWidget(self.page_home)
@@ -1459,6 +1513,7 @@ class HubWindow(QMainWindow):
         self.stack.addWidget(self.page_someday)
         self.stack.addWidget(self.page_projects)
         self.stack.addWidget(self.page_stats)
+        self.stack.addWidget(self.page_settings)
 
         # Connect nav
         self.btn_home.clicked.connect(lambda: self._switch_page(self.page_home))
@@ -1467,6 +1522,7 @@ class HubWindow(QMainWindow):
         self.btn_someday.clicked.connect(lambda: self._switch_page(self.page_someday))
         self.btn_projects.clicked.connect(lambda: self._switch_page(self.page_projects))
         self.btn_stats.clicked.connect(lambda: self._switch_page(self.page_stats))
+        self.btn_settings.clicked.connect(lambda: self._switch_page(self.page_settings))
         self.btn_quit.clicked.connect(self.close)
         self.btn_check_updates.clicked.connect(self._check_updates_async)
 
@@ -1540,6 +1596,8 @@ class HubWindow(QMainWindow):
 
         self.ideas_list = QListWidget()
         self.ideas_list.setStyleSheet("QListWidget { background: transparent; }")
+        self.ideas_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ideas_list.customContextMenuRequested.connect(self._on_idea_menu)
         l_ideas.addWidget(self.ideas_list, 1)
 
         layout.addWidget(card_ideas)
@@ -1566,9 +1624,9 @@ class HubWindow(QMainWindow):
         layout.addLayout(quick_links_layout)
 
     def _build_task_pages(self) -> None:
-        self.page_today = TaskListWidget(self.state, "Today", self._schedule_save)
-        self.page_week = TaskListWidget(self.state, "This Week", self._schedule_save)
-        self.page_someday = TaskListWidget(self.state, "Someday", self._schedule_save)
+        self.page_today = TaskListWidget(self.state, "Today", self.schedule_save)
+        self.page_week = TaskListWidget(self.state, "This Week", self.schedule_save)
+        self.page_someday = TaskListWidget(self.state, "Someday", self.schedule_save)
 
     def _build_projects_page(self) -> None:
         self.page_projects = QWidget()
@@ -1626,7 +1684,7 @@ class HubWindow(QMainWindow):
         self.project_detail_title.setObjectName("PageHeader")
         project_detail_layout.addWidget(self.project_detail_title)
 
-        self.project_task_widget = ProjectTaskListWidget(self.state, self._schedule_save)
+        self.project_task_widget = ProjectTaskListWidget(self.state, self.schedule_save)
         project_detail_layout.addWidget(self.project_task_widget)
 
         content.addWidget(self.project_detail, 1)
@@ -1735,6 +1793,56 @@ class HubWindow(QMainWindow):
 
         layout.addWidget(card_habits, 1)
 
+    def _build_settings_page(self) -> None:
+        self.page_settings = QWidget()
+        layout = QVBoxLayout(self.page_settings)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        card = QFrame()
+        card.setObjectName("GlassCard")
+        l_card = QVBoxLayout(card)
+        l_card.setContentsMargins(16, 16, 16, 16)
+        l_card.setSpacing(12)
+
+        header = QLabel("Settings")
+        header.setObjectName("PageHeader")
+        l_card.addWidget(header)
+
+        # --- Widget Settings ---
+        self.setting_widget_enabled = QCheckBox("Enable companion widget")
+        self.setting_widget_enabled.toggled.connect(self._on_settings_changed)
+        l_card.addWidget(self.setting_widget_enabled)
+
+        widget_tasks_layout = QHBoxLayout()
+        widget_tasks_layout.addWidget(QLabel("Tasks to show in widget:"))
+        self.setting_widget_task_count = QComboBox()
+        self.setting_widget_task_count.addItems(["3", "5", "8", "10"])
+        self.setting_widget_task_count.currentIndexChanged.connect(self._on_settings_changed)
+        widget_tasks_layout.addWidget(self.setting_widget_task_count)
+        l_card.addLayout(widget_tasks_layout)
+
+        # --- Hub Settings ---
+        self.setting_hub_maximized = QCheckBox("Start Hub maximized")
+        self.setting_hub_maximized.toggled.connect(self._on_settings_changed)
+        l_card.addWidget(self.setting_hub_maximized)
+
+        l_card.addStretch(1)
+        layout.addWidget(card)
+
+    def _on_settings_changed(self):
+        settings = self.state.setdefault("settings", {})
+        settings["widgetEnabled"] = self.setting_widget_enabled.isChecked()
+        settings["widgetTaskCount"] = int(self.setting_widget_task_count.currentText())
+        settings["startWithHubMaximized"] = self.setting_hub_maximized.isChecked()
+        self.schedule_save()
+
+    def _refresh_settings(self):
+        settings = self.state.get("settings", {})
+        self.setting_widget_enabled.setChecked(settings.get("widgetEnabled", True))
+        self.setting_widget_task_count.setCurrentText(str(settings.get("widgetTaskCount", 5)))
+        self.setting_hub_maximized.setChecked(settings.get("startWithHubMaximized", True))
+
     # ────────────────────────────────────────────────────────────────────
     # Navigation & page switching
     # ────────────────────────────────────────────────────────────────────
@@ -1750,6 +1858,21 @@ class HubWindow(QMainWindow):
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         anim.finished.connect(lambda: self.stack.setGraphicsEffect(None))
         anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def open_page(self, page_key: str) -> None:
+        """Public method to switch pages by a string key."""
+        page_map = {
+            "home": self.page_home,
+            "today": self.page_today,
+            "week": self.page_week,
+            "someday": self.page_someday,
+            "projects": self.page_projects,
+            "stats": self.page_stats,
+            "settings": self.page_settings,
+        }
+        target_page = page_map.get(page_key.lower())
+        if target_page:
+            self._switch_page(target_page)
 
     def _switch_page(self, page: QWidget) -> None:
         if self.stack.currentWidget() is page:
@@ -1770,6 +1893,8 @@ class HubWindow(QMainWindow):
             self._refresh_projects()
         elif page is self.page_stats:
             self._refresh_stats_and_habits()
+        elif page is self.page_settings:
+            self._refresh_settings()
 
     # ────────────────────────────────────────────────────────────────────
     # Home page logic
@@ -1815,6 +1940,13 @@ class HubWindow(QMainWindow):
 
         suggestion = self._home_suggestion_for_mode(mode, total, done, mood_value)
         self.suggestion_label.setText(f"<i>Gentle suggestion:</i> {suggestion}")
+
+        # Card 3: Ideas list
+        self.ideas_list.clear()
+        for idea in self.state.get("ideas", []):
+            item = QListWidgetItem(idea.get("text", ""))
+            item.setData(Qt.ItemDataRole.UserRole, idea.get("id"))
+            self.ideas_list.addItem(item)
 
         # Card 2: Mood & habits snapshot
         mood_str = f"You're in '{mood_value}' mode" if mood_value else "No mood checked in yet"
@@ -1895,7 +2027,7 @@ class HubWindow(QMainWindow):
         if not ok or not name.strip():
             return
         proj = add_project(self.state, name.strip())
-        self._schedule_save()
+        self.schedule_save()
         self._refresh_projects()
         # Select the new project
         for i in range(self.project_list.count()):
@@ -1918,7 +2050,7 @@ class HubWindow(QMainWindow):
         if ok and new_name.strip():
             proj["name"] = new_name.strip()
             proj["updatedAt"] = now_iso()
-            self._schedule_save()
+            self.schedule_save()
             self._refresh_projects()
 
     def _on_delete_project(self) -> None:
@@ -1946,7 +2078,7 @@ class HubWindow(QMainWindow):
         self.state["projects"] = [
             p for p in self.state.get("projects", []) if p.get("id") != pid
         ]
-        self._schedule_save()
+        self.schedule_save()
         self._refresh_projects()
 
     def _on_project_selected(self) -> None:
@@ -1955,7 +2087,7 @@ class HubWindow(QMainWindow):
             self.project_detail_title.setText("Select a project")
             self.project_task_widget.set_project(None)
             self.state["widgetCurrentProjectId"] = None
-            self._schedule_save()
+            self.schedule_save()
             return
         item = items[0]
         pid = item.data(Qt.ItemDataRole.UserRole)
@@ -1964,12 +2096,12 @@ class HubWindow(QMainWindow):
             self.project_detail_title.setText("Project not found")
             self.project_task_widget.set_project(None)
             self.state["widgetCurrentProjectId"] = None
-            self._schedule_save()
+            self.schedule_save()
             return
         self.project_detail_title.setText(proj.get("name", "Untitled"))
         self.project_task_widget.set_project(pid)
         self.state["widgetCurrentProjectId"] = pid
-        self._schedule_save()
+        self.schedule_save()
 
     # ────────────────────────────────────────────────────────────────────
     # Stats & habits logic
@@ -2089,7 +2221,7 @@ class HubWindow(QMainWindow):
 
     def _on_toggle_habit(self, habit_id: str, checked: bool) -> None:
         set_habit_checked(self.state, habit_id, checked)
-        self._schedule_save()
+        self.schedule_save()
         # Also refresh header counts quickly
         self._refresh_stats_and_habits()
 
@@ -2098,9 +2230,23 @@ class HubWindow(QMainWindow):
         if not text:
             return
         add_idea(self.state, text)
-        self._schedule_save()
+        self.schedule_save()
         self.idea_input.clear()
         self._refresh_home()  # To show the new idea in the list
+
+    def _on_idea_menu(self, pos) -> None:
+        item = self.ideas_list.itemAt(pos)
+        if not item: return
+        menu = QMenu(self)
+        act_del = menu.addAction("Delete")
+        action = menu.exec(self.ideas_list.mapToGlobal(pos))
+        if action == act_del:
+            self._delete_idea(item.data(Qt.ItemDataRole.UserRole))
+
+    def _delete_idea(self, idea_id: str) -> None:
+        delete_idea(self.state, idea_id)
+        self.schedule_save()
+        self._refresh_home()
 
     # ────────────────────────────────────────────────────────────────────
     # Updates, saving & close
@@ -2158,14 +2304,14 @@ class HubWindow(QMainWindow):
 
         if checkbox.isChecked():
             stats["lastIgnoredVersion"] = latest_version
-            self._schedule_save()
+            self.schedule_save()
 
     def _on_save_mood(self) -> None:
         value = self.mood_combo.currentText()
         note = self.mood_note.toPlainText().strip()
         set_today_mood(self.state, value, note)
         self.mood_message.setText(self._mood_message_for_value(value))
-        self._schedule_save()
+        self.schedule_save()
 
     def _run_daily_planning(self) -> None:
         stats = self.state.setdefault("stats", {})
@@ -2186,10 +2332,11 @@ class HubWindow(QMainWindow):
             mood = get_today_mood(self.state)
             stats["moodAtStart"] = mood.get("value") if mood else None
             stats["lastPlanningDate"] = today
-            self._schedule_save()
+            self.schedule_save()
 
-    def _schedule_save(self) -> None:
+    def schedule_save(self) -> None:
         self._save_timer.start()
+        self.data_changed.emit()
 
     def _do_save(self) -> None:
         # Persist window geometry
@@ -2207,25 +2354,27 @@ class HubWindow(QMainWindow):
 # SECTION 7: ENTRY POINT
 # ============================================================================
 
-
-def main() -> None:
+def debug_main() -> None:
+    """For running the Hub in isolation for development."""
     app = QApplication(sys.argv)
     paths = get_data_paths()
     state = load_state(paths)
     rollover_tasks(state)
     save_state(paths, state)
 
-    # Splash
     splash = SplashWindow()
     splash.show()
 
     def show_hub():
         window = HubWindow(state, paths)
-        window.showMaximized()
+        if state.get("settings", {}).get("startWithHubMaximized", True):
+            window.showMaximized()
+        else:
+            window.show()
 
     QTimer.singleShot(SPLASH_DURATION_MS, show_hub)
     sys.exit(app.exec())
 
 
 if __name__ == "__main__":
-    main()
+    debug_main()

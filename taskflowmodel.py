@@ -212,6 +212,13 @@ def default_state() -> Dict[str, Any]:
         # dayQuality: stores {date, tasksCompleted, tasksPlanned, moodAtStart, moodAtEnd, habitsDone}
         "dayQuality": {},
         "uiGeometry": None,
+        "settings": {
+            "widgetEnabled": True,
+            "widgetTaskCount": 5,
+            "widgetDockSide": "right",
+            "startWithHubMaximized": True,
+        },
+        "widgetCurrentProjectId": None,
     }
 
 
@@ -243,6 +250,14 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     state.setdefault("notes", [])
     state.setdefault("habitChecks", {})
     state.setdefault("dayQuality", {})
+    state.setdefault("widgetCurrentProjectId", None)
+
+    settings = state.setdefault("settings", {})
+    settings.setdefault("widgetEnabled", True)
+    settings.setdefault("widgetTaskCount", 5)
+    settings.setdefault("widgetDockSide", "right")
+    settings.setdefault("startWithHubMaximized", True)
+
     state.setdefault("uiGeometry", None)
 
     # Migration for widgetNotes to the new notes structure
@@ -371,6 +386,11 @@ def add_idea(
 def ideas_for_project(state: Dict[str, Any], project_id: str) -> List[Dict[str, Any]]:
     """Get all ideas for a given project."""
     return [i for i in state.get("ideas", []) if i.get("projectId") == project_id]
+
+
+def delete_idea(state: Dict[str, Any], idea_id: str) -> None:
+    """Remove an idea from the state."""
+    state["ideas"] = [i for i in state.get("ideas", []) if i.get("id") != idea_id]
 
 
 def add_note(state: Dict[str, Any], text: str, scope: str) -> Dict[str, Any]:
