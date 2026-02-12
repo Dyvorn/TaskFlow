@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QSizePolicy,
     QLineEdit,
+    QGraphicsOpacityEffect,
 )
 
 from taskflowmodel import (
@@ -49,6 +50,7 @@ from taskflowmodel import (
 WIDGET_WIDTH = 320
 WIDGET_HEIGHT = 520
 WIDGET_COLLAPSED_WIDTH = 32
+SNAP_THRESHOLD = 24
 
 AUTO_COLLAPSE_MS = 4000  # auto collapse after 4s idle when docked
 LONG_IDLE_MS = 10 * 60 * 1000  # after 10 minutes, require click to open
@@ -75,8 +77,10 @@ class WidgetWindow(QWidget):
         self._hub = hub_instance
 
         # collapse state
-        self._docked_side: Optional[str] = None  # "left" or "right"
-        self._expanded = True
+        settings = self.state.get("settings", {})
+        self._docked = settings.get("widgetDocked", True)
+        self._docked_side = settings.get("widgetDockSide", "right")
+        self._expanded = not settings.get("widgetCollapsed", False)
         self._hover_expand_enabled = True
         self._auto_collapse_enabled = True
         self._require_click_after_idle = True
@@ -85,11 +89,19 @@ class WidgetWindow(QWidget):
         # tracking for dragging
         self._drag_active = False
         self._drag_pos = QPoint()
+        
+        self._pos_anim = None
+        self._highlight_overlay = None
+        self._highlight_effect = None
 
         # timers
         self._auto_collapse_timer = QTimer(self)
         self._auto_collapse_timer.setSingleShot(True)
         self._auto_collapse_timer.timeout.connect(self._on_auto_collapse_timeout)
+        
+        self._hover_open_timer = QTimer(self)
+        self._hover_open_timer.setSingleShot(True)
+        self._hover_open_timer.timeout.connect(self._on_hover_open_timeout)
 
         self._idle_timer = QTimer(self)
         self._idle_timer.setSingleShot(True)
@@ -98,7 +110,66 @@ class WidgetWindow(QWidget):
         self._build_ui()
         self._apply_style()
         self._refresh_tasks()
+        self._restore_position()
         self._restart_idle_timers()
+
+    # ────────────────────────────────────────────────────────────────────
+    # Geometry & Positioning Helpers
+    # ────────────────────────────────────────────────────────────────────
+
+    def _get_current_screen_geometry(self):
+        screen = QApplication.screenAt(self.geometry().center())
+        if not screen:
+            screen = QApplication.primaryScreen()
+        return screen.availableGeometry()
+
+    def _clamp_y(self, y: int, geo) -> int:
+        return max(geo.top(), min(y, geo.bottom() - WIDGET_HEIGHT + 1))
+
+    def _expanded_anchor_x(self, side: str, geo) -> int:
+        if side == "left":
+            return geo.left()
+        return geo.right() - WIDGET_WIDTH + 1
+
+    def _collapsed_anchor_x(self, side: str, geo) -> int:
+        if side == "left":
+            return geo.left() - (WIDGET_WIDTH - WIDGET_COLLAPSED_WIDTH)
+        return geo.right() - WIDGET_COLLAPSED_WIDTH + 1
+
+    def _restore_position(self) -> None:
+        settings = self.state.get("settings", {})
+        pos = settings.get("widgetPos")
+        
+        geo = self._get_current_screen_geometry()
+        
+        # Default to right edge if no pos saved
+        if pos and len(pos) == 2:
+            x, y = pos
+        else:
+            x = geo.right() - WIDGET_WIDTH + 1
+            y = geo.top() + 100
+
+        # Ensure Y is valid
+        y = self._clamp_y(y, geo)
+
+        # If docked, force X to the correct anchor based on state
+        if self._docked:
+            if self._expanded:
+                x = self._expanded_anchor_x(self._docked_side, geo)
+            else:
+                x = self._collapsed_anchor_x(self._docked_side, geo)
+        
+        # Ensure size is correct (always full size, we slide off-screen to collapse)
+        self.resize(WIDGET_WIDTH, WIDGET_HEIGHT)
+        self.move(x, y)
+        
+        # Set initial visibility
+        if self._expanded:
+            self.content_wrap.show()
+            self.bump.hide()
+        else:
+            self.content_wrap.hide()
+            self.bump.show()
 
     # ────────────────────────────────────────────────────────────────────
     # UI
@@ -147,11 +218,24 @@ class WidgetWindow(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        card = QFrame()
-        card.setObjectName("WidgetCard")
-        card_layout = QVBoxLayout(card)
+        self.card = QFrame()
+        self.card.setObjectName("WidgetCard")
+        card_layout = QVBoxLayout(self.card)
         card_layout.setContentsMargins(10, 10, 10, 10)
         card_layout.setSpacing(6)
+
+        # Content Wrapper (for hiding real UI during collapse)
+        self.content_wrap = QWidget()
+        self.content_layout = QVBoxLayout(self.content_wrap)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(6)
+
+        # Bump (visible only when collapsed)
+        self.bump = QFrame()
+        self.bump.setObjectName("Bump")
+        self.bump.setStyleSheet(f"background-color: rgba(255, 255, 255, 0.05); border: 1px solid {GLASS_BORDER}; border-radius: 16px;")
+        self.bump.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.bump.hide()
 
         # header row
         header_row = QHBoxLayout()
@@ -166,25 +250,25 @@ class WidgetWindow(QWidget):
         self.status_label.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px;")
         header_row.addWidget(self.status_label, 2)
 
-        card_layout.addLayout(header_row)
+        self.content_layout.addLayout(header_row)
 
         # Task List
         self.tasks_list = QListWidget()
-        card_layout.addWidget(self.tasks_list, 1)
+        self.content_layout.addWidget(self.tasks_list, 1)
 
         # Quick Add Input (initially hidden)
         self.quick_add_input = QLineEdit()
         self.quick_add_input.setPlaceholderText("Add to Today & press Enter...")
         self.quick_add_input.returnPressed.connect(self._on_quick_add)
         self.quick_add_input.setVisible(False)
-        card_layout.addWidget(self.quick_add_input)
+        self.content_layout.addWidget(self.quick_add_input)
 
         # Action buttons
         actions_row = QHBoxLayout()
         actions_row.setSpacing(6)
 
         btn_open_hub = QPushButton("Open Hub")
-        btn_open_today = QPushButton("Open Today")
+        btn_open_today = QPushButton("Today List")
         btn_quick_add = QPushButton("+ Quick Add")
 
         btn_open_hub.clicked.connect(lambda: self._open_hub_page("home"))
@@ -194,9 +278,22 @@ class WidgetWindow(QWidget):
         actions_row.addWidget(btn_open_hub)
         actions_row.addWidget(btn_open_today)
         actions_row.addWidget(btn_quick_add)
-        card_layout.addLayout(actions_row)
+        self.content_layout.addLayout(actions_row)
 
-        outer.addWidget(card)
+        card_layout.addWidget(self.content_wrap)
+        card_layout.addWidget(self.bump)
+
+        # Highlight overlay for dopamine pulse (child of card, on top of card)
+        self._highlight_overlay = QFrame(self.card)
+        self._highlight_overlay.setStyleSheet(f"background-color: {GOLD}; border-radius: 16px;")
+        self._highlight_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._highlight_overlay.hide()
+        
+        self._highlight_effect = QGraphicsOpacityEffect(self._highlight_overlay)
+        self._highlight_effect.setOpacity(0.0)
+        self._highlight_overlay.setGraphicsEffect(self._highlight_effect)
+
+        outer.addWidget(self.card)
 
     # ────────────────────────────────────────────────────────────────────
     # Actions
@@ -296,7 +393,7 @@ class WidgetWindow(QWidget):
     # ────────────────────────────────────────────────────────────────────
 
     def _restart_idle_timers(self) -> None:
-        if self._auto_collapse_enabled and self._docked_side and self._expanded:
+        if self._auto_collapse_enabled and self._docked and self._expanded:
             self._auto_collapse_timer.start(AUTO_COLLAPSE_MS)
         else:
             self._auto_collapse_timer.stop()
@@ -307,42 +404,80 @@ class WidgetWindow(QWidget):
             self._idle_timer.stop()
 
     def _on_auto_collapse_timeout(self) -> None:
-        if self._docked_side and self._expanded:
-            self._set_expanded(False)
+        if self._docked and self._expanded:
+            self._set_expanded(False, is_auto=True)
 
     def _on_long_idle_timeout(self) -> None:
         self._long_idle_mode = True
 
-    def _set_expanded(self, expanded: bool) -> None:
-        if self._expanded == expanded or not self._docked_side:
+    def _on_hover_open_timeout(self) -> None:
+        if self._docked and not self._expanded:
+            self._set_expanded(True)
+
+    def _set_expanded(self, expanded: bool, is_auto: bool = False) -> None:
+        if self._expanded == expanded or not self._docked:
             return
+        
+        # Stop running animation
+        if self._pos_anim and self._pos_anim.state() == QPropertyAnimation.State.Running:
+            self._pos_anim.stop()
+
         self._expanded = expanded
-
-        screen = QApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-
-        # The size should always be the full widget width now.
-        self.setFixedSize(WIDGET_WIDTH, WIDGET_HEIGHT)
+        geo = self._get_current_screen_geometry()
 
         start_pos = self.pos()
-        end_pos = None
+        
+        # Calculate target X based on side and expansion state
+        if expanded:
+            target_x = self._expanded_anchor_x(self._docked_side, geo)
+            easing = QEasingCurve.Type.OutCubic
+            duration = ANIM_DURATION_MEDIUM
+            # Expand: show content immediately (slide in)
+            self.bump.hide()
+            self.content_wrap.show()
+        else:
+            target_x = self._collapsed_anchor_x(self._docked_side, geo)
+            easing = QEasingCurve.Type.InCubic # Accelerate into ramp
+            duration = ANIM_DURATION_MEDIUM + 80
+            # Collapse: hide content immediately, show bump (slide out)
+            self.content_wrap.hide()
+            self.bump.show()
 
-        if self._docked_side == "right":
-            end_x = geo.right() - (WIDGET_WIDTH if expanded else WIDGET_COLLAPSED_WIDTH)
-            end_pos = QPoint(end_x, self.y())
-        elif self._docked_side == "left":
-            end_x = geo.left() - (0 if expanded else WIDGET_WIDTH - WIDGET_COLLAPSED_WIDTH)
-            end_pos = QPoint(end_x, self.y())
+        # Clamp Y to ensure it stays on screen
+        target_y = self._clamp_y(self.y(), geo)
+        end_pos = QPoint(target_x, target_y)
 
-        if end_pos and start_pos != end_pos:
-            anim = QPropertyAnimation(self, b"pos")
-            anim.setDuration(ANIM_DURATION_MEDIUM)
-            anim.setStartValue(start_pos)
-            anim.setEndValue(end_pos)
-            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-            anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        # Update state immediately
+        settings = self.state.setdefault("settings", {})
+        settings["widgetCollapsed"] = not expanded
+        # We don't update widgetPos here because widgetPos tracks the *expanded* position
+        self._save_callback()
+
+        self.resize(WIDGET_WIDTH, WIDGET_HEIGHT)
+
+        self._pos_anim = QPropertyAnimation(self, b"pos")
+        self._pos_anim.setDuration(duration)
+        self._pos_anim.setStartValue(start_pos)
+        self._pos_anim.setEndValue(end_pos)
+        self._pos_anim.setEasingCurve(easing)
+        
+        if not expanded:
+            self._pos_anim.finished.connect(self._pulse_ramp_highlight)
+            
+        self._pos_anim.start()
+
+    def _pulse_ramp_highlight(self) -> None:
+        if not self._highlight_overlay or self._expanded:
+            return
+        self._highlight_overlay.show()
+        
+        anim = QPropertyAnimation(self._highlight_effect, b"opacity", self)
+        anim.setDuration(220)
+        anim.setKeyValueAt(0.0, 0.0)
+        anim.setKeyValueAt(0.5, 0.3) # Peak intensity
+        anim.setKeyValueAt(1.0, 0.0)
+        anim.finished.connect(self._highlight_overlay.hide)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -354,53 +489,91 @@ class WidgetWindow(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._drag_active:
             new_pos = event.globalPosition().toPoint() - self._drag_pos
+            
+            # If dragging, we are effectively expanded (or should be)
+            if not self._expanded:
+                self._set_expanded(True)
+                if self._pos_anim:
+                    self._pos_anim.stop()
+            
             self.move(new_pos)
+            
+            # Update widgetPos while dragging if expanded, so we remember where we left it
+            # even if we don't dock.
+            if self._expanded:
+                self.state["settings"]["widgetPos"] = [new_pos.x(), new_pos.y()]
+            
             event.accept()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._drag_active:
             self._drag_active = False
-            self._dock_to_nearest_edge()
+            
+            geo = self._get_current_screen_geometry()
+            x = self.x()
+            y = self.y()
+            
+            # Check docking thresholds
+            dist_left = abs(x - geo.left())
+            dist_right = abs((x + WIDGET_WIDTH - 1) - geo.right())
+            
+            docked = False
+            side = self._docked_side
+            
+            if dist_left <= SNAP_THRESHOLD:
+                docked = True
+                side = "left"
+                x = self._expanded_anchor_x("left", geo)
+            elif dist_right <= SNAP_THRESHOLD:
+                docked = True
+                side = "right"
+                x = self._expanded_anchor_x("right", geo)
+            
+            # Always clamp Y
+            y = self._clamp_y(y, geo)
+            
+            self._docked = docked
+            self._docked_side = side
+            self._expanded = True # Always expand on drop
+            
+            self.move(x, y)
+            
+            # Persist
+            s = self.state.setdefault("settings", {})
+            s["widgetDocked"] = self._docked
+            s["widgetDockSide"] = self._docked_side
+            s["widgetPos"] = [x, y]
+            s["widgetCollapsed"] = False
+            self._save_callback()
+            
             self._restart_idle_timers()
             event.accept()
         super().mouseReleaseEvent(event)
 
     def enterEvent(self, event) -> None:
-        if self._docked_side and not self._expanded:
-            if self._hover_expand_enabled:
-                self._set_expanded(True)
+        if self._docked and not self._expanded:
+            if self._hover_expand_enabled and not self._long_idle_mode:
+                self._hover_open_timer.start(1500)
         self._restart_idle_timers()
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
+        self._hover_open_timer.stop()
         self._restart_idle_timers()
         super().leaveEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        # When long idle mode is active, double-click (or click) can expand even if hover is disabled.
-        if event.button() == Qt.MouseButton.LeftButton and self._docked_side:
+        if event.button() == Qt.MouseButton.LeftButton and self._docked:
             self._long_idle_mode = False
             self._set_expanded(True)
             self._restart_idle_timers()
         super().mouseDoubleClickEvent(event)
 
-    def _dock_to_nearest_edge(self) -> None:
-        screen = QApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-        center_x = self.frameGeometry().center().x()
-
-        # choose left or right
-        if center_x < geo.center().x():
-            # dock left
-            self._docked_side = "left"
-            self.move(geo.left(), self.y())
-        else:
-            # dock right
-            self._docked_side = "right"
-            self.move(geo.right() - self.width(), self.y())
+    def resizeEvent(self, event) -> None:
+        if self._highlight_overlay and hasattr(self, "card"):
+            self._highlight_overlay.resize(self.card.size())
+        super().resizeEvent(event)
 
     # ────────────────────────────────────────────────────────────────────
     # Close → save

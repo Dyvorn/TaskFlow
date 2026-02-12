@@ -662,7 +662,7 @@ class TaskListWidget(QWidget):
         self.quick_add_input.returnPressed.connect(self._on_quick_add)
         layout.addWidget(self.quick_add_input)
 
-        hint_label = QLabel("Tip: keep tasks small, like a single step. Right-click tasks for more options.")
+        hint_label = QLabel("Tip: Right-click tasks for options.")
         hint_label.setStyleSheet(f"color: {TEXT_GRAY}; font-style: italic; font-size: 11px;")
         layout.addWidget(hint_label)
 
@@ -702,15 +702,15 @@ class TaskListWidget(QWidget):
             self.empty_label.setVisible(True)
             if self.section == "Today":
                 self.empty_label.setText(
-                    "No tasks for Today.\n\nThis is your space for what needs doing now. Add one thing you’d like Future You to be grateful for.\n\nRight-click tasks for more options."
+                    "No tasks for Today.\n\nAdd one thing you’d like Future You to be grateful for."
                 )
             elif self.section == "This Week":
                 self.empty_label.setText(
-                    "No tasks for This Week.\n\nThis is for things you’d like to get to sometime this week, without the pressure of 'today'.\n\nRight-click tasks for more options."
+                    "No tasks for This Week.\n\nPlan ahead without the pressure of 'today'."
                 )
             elif self.section == "Someday":
                 self.empty_label.setText(
-                    "No tasks for Someday.\n\nThis is your idea box. Capture long‑term ideas here without pressure.\n\nRight-click tasks for more options."
+                    "No tasks for Someday.\n\nCapture long‑term ideas here."
                 )
             else:
                 self.empty_label.setText(f"No tasks in {self.section}.")
@@ -1613,7 +1613,7 @@ class HubWindow(QMainWindow):
         layout.addWidget(self.quote_label)
 
         quick_links_layout = QHBoxLayout()
-        btn_open_today = QPushButton("Open Today list")
+        btn_open_today = QPushButton("Open Today")
         btn_open_projects = QPushButton("Open Projects")
         btn_open_today.clicked.connect(lambda: self._switch_page(self.page_today))
         btn_open_projects.clicked.connect(lambda: self._switch_page(self.page_projects))

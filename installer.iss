@@ -1,8 +1,8 @@
-; TaskFlow v6.0 Inno Setup Script
+; TaskFlow v7.0 Inno Setup Script
 
 [Setup]
 AppName=TaskFlow
-AppVersion=6.0
+AppVersion=7.0
 AppPublisher=Dyvorn
 AppPublisherURL=https://github.com/Dyvorn/TaskFlow
 AppSupportURL=https://github.com/Dyvorn/TaskFlow/issues
@@ -10,7 +10,7 @@ AppSupportURL=https://github.com/Dyvorn/TaskFlow/issues
 DefaultDirName={userpf}\TaskFlow
 DefaultGroupName=TaskFlow
 OutputDir=release
-OutputBaseFilename=TaskFlow_v6_Setup
+OutputBaseFilename=TaskFlow_v7_Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

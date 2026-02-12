@@ -1,5 +1,5 @@
 # ============================================================================
-# TASKFLOW HUB V6.0 - DATA MODEL
+# TASKFLOW HUB V7.0 - DATA MODEL
 # ============================================================================
 
 import os
@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional
 # ═══════════════════════════════════════════════════════════════════════════
 
 APP_NAME = "TaskFlow"
-APP_VERSION = "6.0"
-DATA_DIR_NAME = "TaskFlowV6"
+APP_VERSION = "7.0"
+DATA_DIR_NAME = "TaskFlowV7"
 
 # Theme colors
 GOLD = "#ffd700"
@@ -217,6 +217,9 @@ def default_state() -> Dict[str, Any]:
             "widgetTaskCount": 5,
             "widgetDockSide": "right",
             "startWithHubMaximized": True,
+            "widgetDocked": True,
+            "widgetPos": None,
+            "widgetCollapsed": False,
         },
         "widgetCurrentProjectId": None,
     }
@@ -257,6 +260,12 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     settings.setdefault("widgetTaskCount", 5)
     settings.setdefault("widgetDockSide", "right")
     settings.setdefault("startWithHubMaximized", True)
+    settings.setdefault("widgetDocked", True)
+    settings.setdefault("widgetPos", None)
+    settings.setdefault("widgetCollapsed", False)
+
+    if settings["widgetPos"] is not None and (not isinstance(settings["widgetPos"], list) or len(settings["widgetPos"]) != 2):
+        settings["widgetPos"] = None
 
     state.setdefault("uiGeometry", None)
 
