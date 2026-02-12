@@ -15,7 +15,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ; Icon for the setup executable itself
-SetupIconFile=assets\taskflow.ico
+SetupIconFile=icon.ico
 ; Icon for Add/Remove programs
 UninstallDisplayIcon={app}\TaskFlow.exe
 ; User level privileges
