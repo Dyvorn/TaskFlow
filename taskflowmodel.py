@@ -189,6 +189,7 @@ def default_state() -> Dict[str, Any]:
         ],
         "ideas": [],
         "notes": [],
+        "journal": [],
         "moods": [],
         "habitChecks": {},
         "stats": {
@@ -208,6 +209,7 @@ def default_state() -> Dict[str, Any]:
             "tasksCompletedByProject": {},
             "habitsCompletedByDay": {},
             "moodsByDate": {},
+            "dailyLogs": {},
         },
         # dayQuality: stores {date, tasksCompleted, tasksPlanned, moodAtStart, moodAtEnd, habitsDone}
         "dayQuality": {},
@@ -248,9 +250,11 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     stats.setdefault("tasksCompletedByProject", {})
     stats.setdefault("habitsCompletedByDay", {})
     stats.setdefault("moodsByDate", {})
+    stats.setdefault("dailyLogs", {})
 
     state.setdefault("ideas", [])
     state.setdefault("notes", [])
+    state.setdefault("journal", [])
     state.setdefault("habitChecks", {})
     state.setdefault("dayQuality", {})
     state.setdefault("widgetCurrentProjectId", None)
@@ -264,8 +268,14 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     settings.setdefault("widgetPos", None)
     settings.setdefault("widgetCollapsed", False)
 
-    if settings["widgetPos"] is not None and (not isinstance(settings["widgetPos"], list) or len(settings["widgetPos"]) != 2):
+    # Validate widgetPos: must be [int, int] or None
+    w_pos = settings.get("widgetPos")
+    if w_pos is not None and (not isinstance(w_pos, list) or len(w_pos) != 2 or not all(isinstance(x, (int, float)) for x in w_pos)):
         settings["widgetPos"] = None
+
+    # Validate widgetDockSide: must be 'left' or 'right'
+    if settings.get("widgetDockSide") not in ("left", "right"):
+        settings["widgetDockSide"] = "right"
 
     state.setdefault("uiGeometry", None)
 
@@ -302,6 +312,9 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         t.setdefault("createdAt", now_iso())
         t.setdefault("updatedAt", now_iso())
         t.setdefault("important", False)
+        t.setdefault("subArea", None)
+        t.setdefault("recurrence", None)
+        t.setdefault("schedule", None)
         fixed_tasks.append(t)
     state["tasks"] = fixed_tasks
 
@@ -438,6 +451,33 @@ def set_today_widget_note(state: Dict[str, Any], text: str) -> None:
     else:
         add_note(state, text, scope)
 
+
+def get_journal_entry(state: Dict[str, Any], date_str: str) -> Optional[Dict[str, Any]]:
+    """Retrieve the journal entry for a specific date."""
+    for entry in state.get("journal", []):
+        if entry.get("date") == date_str:
+            return entry
+    return None
+
+
+def set_journal_entry(state: Dict[str, Any], date_str: str, text: str) -> None:
+    """Create or update a journal entry."""
+    entry = get_journal_entry(state, date_str)
+    if entry:
+        entry["text"] = text
+        entry["updatedAt"] = now_iso()
+    else:
+        new_entry = {
+            "id": str(uuid.uuid4()),
+            "date": date_str,
+            "text": text,
+            "createdAt": now_iso(),
+            "updatedAt": now_iso(),
+        }
+        state.setdefault("journal", []).insert(0, new_entry)
+        # Keep sorted by date descending
+        state["journal"].sort(key=lambda x: x.get("date", ""), reverse=True)
+
 # ═══════════════════════════════════════════════════════════════════════════
 # TASKS & PROJECTS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -480,16 +520,64 @@ def tasks_in_section(state: Dict[str, Any], section: str) -> List[Dict[str, Any]
         key=lambda t: (
             0 if not t.get("completed") else 1,
             0 if t.get("important") else 1,
+            t.get("schedule", {}).get("date", "9999-99-99") if t.get("schedule") else "9999-99-99",
             t.get("order", 0),
         ),
     )
 
 
+def _handle_recurrence(state: Dict[str, Any], original_task: Dict[str, Any]) -> None:
+    """Creates the next instance of a recurring task."""
+    rec = original_task.get("recurrence")
+    if not rec or not isinstance(rec, dict): return
+    
+    rtype = rec.get("type")
+    if not rtype: return
+    
+    # Calculate next date based on Today (completion date)
+    today_dt = date.today()
+    next_date = None
+    
+    if rtype == "daily":
+        next_date = today_dt + timedelta(days=1)
+    elif rtype == "weekly":
+        next_date = today_dt + timedelta(weeks=1)
+    elif rtype == "monthly":
+        y, m = today_dt.year, today_dt.month
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+        try:
+            next_date = date(y, m, today_dt.day)
+        except ValueError:
+            # Handle short months (e.g. Jan 31 -> Feb 28/29)
+            # Simple fallback: 1st of the month after next
+            next_date = date(y, m + 1, 1) if m < 12 else date(y + 1, 1, 1)
+    
+    if next_date:
+        new_task = original_task.copy()
+        new_task["id"] = str(uuid.uuid4())
+        new_task["completed"] = False
+        new_task["createdAt"] = now_iso()
+        new_task["updatedAt"] = now_iso()
+        new_task["section"] = "Scheduled"
+        new_task["schedule"] = {"date": str(next_date)}
+        # Note: We keep the recurrence setting on the new task so it chains forever
+        state["tasks"].append(new_task)
+
+
 def toggle_task_completed(state: Dict[str, Any], task_id: str) -> Optional[Dict[str, Any]]:
     for t in state.get("tasks", []):
         if t.get("id") == task_id:
-            t["completed"] = not t.get("completed")
+            was_completed = t.get("completed")
+            t["completed"] = not was_completed
             t["updatedAt"] = now_iso()
+            
+            # Handle recurrence on completion
+            if t["completed"] and not was_completed and t.get("recurrence"):
+                _handle_recurrence(state, t)
+                
             return t
     return None
 
@@ -526,15 +614,27 @@ def tasks_for_project(state: Dict[str, Any], project_id: str) -> List[Dict[str, 
 
 
 def rollover_tasks(state: Dict[str, Any]) -> None:
-    """Move yesterday's 'Tomorrow' tasks into 'Today' when the date changes."""
+    """Move 'Tomorrow' and due 'Scheduled' tasks into 'Today'."""
     today = today_str()
     last_opened = state.get("lastOpened")
-    if not last_opened or last_opened == today:
-        return
 
+    # 1. Tomorrow -> Today (only if new day)
+    if last_opened != today:
+        for task in state.get("tasks", []):
+            if not task.get("completed") and task.get("section") == "Tomorrow":
+                task["section"] = "Today"
+                task["updatedAt"] = now_iso()
+
+    # 2. Scheduled -> Today (Check all tasks, regardless of last open)
     for task in state.get("tasks", []):
-        if not task.get("completed") and task.get("section") == "Tomorrow":
-            task["section"] = "Today"
-            task["updatedAt"] = now_iso()
+        if task.get("completed"): continue
+        
+        sched = task.get("schedule")
+        if sched and isinstance(sched, dict) and sched.get("date"):
+            d = sched["date"]
+            # If due date is today or past, and not already in Today/Archived
+            if d <= today and task.get("section") not in ("Today", "Archived"):
+                task["section"] = "Today"
+                task["updatedAt"] = now_iso()
 
     state["lastOpened"] = today

@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 import os
 import json
+import html
 import random
 import threading
 import webbrowser
@@ -58,6 +59,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QLineEdit,
     QGraphicsDropShadowEffect,
+    QCalendarWidget,
 )
 
 try:
@@ -90,6 +92,7 @@ from taskflowmodel import (
     MOOD_OPTIONS,
     today_str,
     now_iso,
+    current_time_of_day,
     get_data_paths,
     default_state,
     validate_and_migrate_state,
@@ -101,6 +104,8 @@ from taskflowmodel import (
     delete_idea,
     get_today_widget_note,
     set_today_widget_note,
+    get_journal_entry,
+    set_journal_entry,
     determine_today_mode,
     count_today_tasks,
     add_task,
@@ -326,6 +331,54 @@ def open_url_safe(url: str) -> None:
         webbrowser.open(url)
     except Exception:
         pass
+
+
+class WelcomeDialog(QDialog):
+    """
+    Start-of-Day screen to capture mood and main focus.
+    """
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowTitle("Welcome Back")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        # Greeting
+        lbl_greet = QLabel(f"Good {current_time_of_day()}.")
+        lbl_greet.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
+        layout.addWidget(lbl_greet)
+
+        layout.addWidget(QLabel("How are you feeling right now?"))
+
+        self.mood_combo = QComboBox()
+        self.mood_combo.addItems(MOOD_OPTIONS)
+        layout.addWidget(self.mood_combo)
+
+        layout.addWidget(QLabel("What is your one main goal for today?"))
+        self.goal_input = QLineEdit()
+        self.goal_input.setPlaceholderText("e.g. Finish the report")
+        layout.addWidget(self.goal_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Start Day")
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {CARD_BG}; }}
+            QLabel {{ color: {TEXT_WHITE}; }}
+            QLineEdit, QComboBox {{ background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {HOVER_BG}; border-radius: 6px; padding: 6px; }}
+        """)
+
+    def get_data(self) -> Dict[str, Any]:
+        return {
+            "mood": self.mood_combo.currentText(),
+            "primaryGoal": self.goal_input.text().strip()
+        }
 
 # ============================================================================
 # SECTION 4: DIALOGS & SMALL VISUAL WIDGETS
@@ -702,15 +755,15 @@ class TaskListWidget(QWidget):
             self.empty_label.setVisible(True)
             if self.section == "Today":
                 self.empty_label.setText(
-                    "No tasks for Today.\n\nAdd one thing you’d like Future You to be grateful for."
+                    "No tasks for Today.\n\nAdd one small thing to get started."
                 )
             elif self.section == "This Week":
                 self.empty_label.setText(
-                    "No tasks for This Week.\n\nPlan ahead without the pressure of 'today'."
+                    "No tasks for This Week.\n\nPlan ahead gently."
                 )
             elif self.section == "Someday":
                 self.empty_label.setText(
-                    "No tasks for Someday.\n\nCapture long‑term ideas here."
+                    "No tasks for Someday.\n\nCapture ideas for later."
                 )
             else:
                 self.empty_label.setText(f"No tasks in {self.section}.")
@@ -749,7 +802,19 @@ class TaskListWidget(QWidget):
                     """
                 )
 
-                lbl = QLabel(t.get("text", ""))
+                # Build label with metadata (schedule/recurrence)
+                text_content = t.get("text", "")
+                meta_info = []
+                
+                sched = t.get("schedule")
+                if sched and isinstance(sched, dict) and sched.get("date"):
+                    meta_info.append(f"📅 {sched['date']}")
+                
+                rec = t.get("recurrence")
+                if rec and isinstance(rec, dict) and rec.get("type"):
+                    meta_info.append(f"↻ {rec['type']}")
+
+                lbl = QLabel()
                 lbl.setWordWrap(True)
                 if t.get("completed"):
                     lbl.setStyleSheet(
@@ -761,6 +826,13 @@ class TaskListWidget(QWidget):
                     )
                 else:
                     lbl.setStyleSheet(f"color: {TEXT_WHITE};")
+                
+                if meta_info:
+                    safe_text = html.escape(text_content)
+                    meta_html = f"<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>"
+                    lbl.setText(safe_text + meta_html)
+                else:
+                    lbl.setText(text_content)
 
                 del_btn = QPushButton("×")
                 del_btn.setFixedSize(QSize(24, 24))
@@ -875,6 +947,10 @@ class TaskListWidget(QWidget):
         act_important = menu.addAction(
             "Unmark important" if is_important else "Mark as important"
         )
+        
+        menu.addSeparator()
+        act_schedule = menu.addAction("Schedule...")
+        act_recur = menu.addAction("Repeat...")
 
         move_menu = menu.addMenu("Move to…")
         for sec in ["Today", "Tomorrow", "This Week", "Someday"]:
@@ -898,6 +974,10 @@ class TaskListWidget(QWidget):
             self._rename_task(task_id)
         elif action is act_important:
             self._set_task_important(task_id, not is_important)
+        elif action is act_schedule:
+            self._prompt_schedule(task_id)
+        elif action is act_recur:
+            self._prompt_recurrence(task_id)
         elif action.parentWidget() is move_menu:
             new_section = action.text()
             self._move_task_section(task_id, new_section)
@@ -920,6 +1000,47 @@ class TaskListWidget(QWidget):
             task["updatedAt"] = now_iso()
             self._save_callback()
             self.refresh()
+
+    def _prompt_schedule(self, task_id: str) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Pick Date")
+        l = QVBoxLayout(dlg)
+        cal = QCalendarWidget()
+        l.addWidget(cal)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        l.addWidget(btns)
+        
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            date_str = cal.selectedDate().toString(Qt.DateFormat.ISODate)
+            self._set_task_schedule(task_id, date_str)
+
+    def _set_task_schedule(self, task_id: str, date_str: str) -> None:
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task: return
+        
+        task["schedule"] = {"date": date_str}
+        # Auto-move based on date
+        if date_str > today_str():
+            task["section"] = "Scheduled"
+        elif date_str <= today_str():
+            task["section"] = "Today"
+            
+        task["updatedAt"] = now_iso()
+        self._save_callback()
+        self.refresh()
+
+    def _prompt_recurrence(self, task_id: str) -> None:
+        items = ["None", "Daily", "Weekly", "Monthly"]
+        val, ok = QInputDialog.getItem(self, "Repeat Task", "Frequency:", items, 0, False)
+        if ok:
+            task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+            if task:
+                task["recurrence"] = None if val == "None" else {"type": val.lower()}
+                task["updatedAt"] = now_iso()
+                self._save_callback()
+                self.refresh()
 
     def _set_task_important(self, task_id: str, important: bool) -> None:
         task = next(
@@ -1324,6 +1445,89 @@ class ProjectTaskListWidget(QWidget):
         self._save_callback()
         self.refresh()
 
+
+class JournalWidget(QWidget):
+    """
+    Simple daily journal with a date list and text editor.
+    """
+    def __init__(self, state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self._save_callback = save_callback
+        self._current_date = today_str()
+        self._build_ui()
+        self.refresh()
+
+    def _build_ui(self) -> None:
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        # Left: Date List
+        left_panel = QFrame()
+        left_panel.setObjectName("GlassCard")
+        left_panel.setFixedWidth(200)
+        l_left = QVBoxLayout(left_panel)
+        l_left.addWidget(QLabel("Entries"))
+        
+        self.date_list = QListWidget()
+        self.date_list.itemSelectionChanged.connect(self._on_date_selected)
+        l_left.addWidget(self.date_list)
+        layout.addWidget(left_panel)
+
+        # Right: Editor
+        right_panel = QFrame()
+        right_panel.setObjectName("GlassCard")
+        l_right = QVBoxLayout(right_panel)
+        
+        self.lbl_date_header = QLabel("")
+        self.lbl_date_header.setStyleSheet(f"color: {GOLD}; font-size: 16px; font-weight: bold;")
+        l_right.addWidget(self.lbl_date_header)
+
+        self.editor = QTextEdit()
+        self.editor.setPlaceholderText("Write your thoughts here...")
+        self.editor.textChanged.connect(self._on_text_changed)
+        l_right.addWidget(self.editor)
+        
+        layout.addWidget(right_panel)
+
+    def refresh(self) -> None:
+        self.date_list.blockSignals(True)
+        self.date_list.clear()
+        
+        # Always ensure Today is present or at top
+        dates = {e["date"] for e in self.state.get("journal", [])}
+        dates.add(today_str())
+        sorted_dates = sorted(list(dates), reverse=True)
+
+        for d in sorted_dates:
+            item = QListWidgetItem(d if d != today_str() else "Today")
+            item.setData(Qt.ItemDataRole.UserRole, d)
+            self.date_list.addItem(item)
+            if d == self._current_date:
+                self.date_list.setCurrentItem(item)
+        
+        self.date_list.blockSignals(False)
+        self._load_entry(self._current_date)
+
+    def _on_date_selected(self) -> None:
+        item = self.date_list.currentItem()
+        if item:
+            self._current_date = item.data(Qt.ItemDataRole.UserRole)
+            self._load_entry(self._current_date)
+
+    def _load_entry(self, date_str: str) -> None:
+        self.lbl_date_header.setText(date_str if date_str != today_str() else f"Today ({date_str})")
+        entry = get_journal_entry(self.state, date_str)
+        self.editor.blockSignals(True)
+        self.editor.setPlainText(entry.get("text", "") if entry else "")
+        self.editor.blockSignals(False)
+
+    def _on_text_changed(self) -> None:
+        text = self.editor.toPlainText()
+        set_journal_entry(self.state, self._current_date, text)
+        self._save_callback()
+
 # ============================================================================
 # SECTION 6: HUB WINDOW - LAYOUT, NAVIGATION & PAGES
 # ============================================================================
@@ -1368,7 +1572,7 @@ class HubWindow(QMainWindow):
 
         # Background update check + daily planning
         self._check_updates_async()
-        self._run_daily_planning()
+        QTimer.singleShot(500, self._run_start_of_day_flow)
         # Keyboard shortcuts
         QShortcut(QKeySequence("Ctrl+1"), self, activated=lambda: self._switch_page(self.page_home))
         QShortcut(QKeySequence("Ctrl+2"), self, activated=lambda: self._switch_page(self.page_today))
@@ -1461,37 +1665,37 @@ class HubWindow(QMainWindow):
 
         self.btn_home = QPushButton("Home")
         self.btn_today = QPushButton("Today")
+        self.btn_scheduled = QPushButton("Scheduled")
         self.btn_week = QPushButton("This Week")
-        self.btn_someday = QPushButton("Someday")
         self.btn_projects = QPushButton("Projects")
+        self.btn_journal = QPushButton("Journal")
         self.btn_stats = QPushButton("Stats")
+        self.btn_someday = QPushButton("Someday")
 
         # New Settings Button
         self.btn_settings = QPushButton("Settings")
-        self.btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_check_updates = QPushButton("Check updates")
+        self.btn_quit = QPushButton("Exit Hub")
 
         for btn in (
             self.btn_home,
             self.btn_today,
+            self.btn_scheduled,
             self.btn_week,
-            self.btn_someday,
             self.btn_projects,
+            self.btn_journal,
             self.btn_stats,
-            self.btn_settings,
+            self.btn_someday,
         ):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setMinimumHeight(32)
             nav_layout.addWidget(btn)
 
-        self.btn_check_updates = QPushButton("Check updates")
-        self.btn_check_updates.setCursor(Qt.CursorShape.PointingHandCursor)
-        nav_layout.addWidget(self.btn_check_updates)
-
         nav_layout.addStretch(1)
 
-        self.btn_quit = QPushButton("Exit Hub")
-        self.btn_quit.setCursor(Qt.CursorShape.PointingHandCursor)
-        nav_layout.addWidget(self.btn_quit)
+        for btn in (self.btn_settings, self.btn_check_updates, self.btn_quit):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            nav_layout.addWidget(btn)
 
         root.addWidget(nav_frame)
 
@@ -1510,8 +1714,10 @@ class HubWindow(QMainWindow):
         self.stack.addWidget(self.page_home)
         self.stack.addWidget(self.page_today)
         self.stack.addWidget(self.page_week)
+        self.stack.addWidget(self.page_scheduled)
         self.stack.addWidget(self.page_someday)
         self.stack.addWidget(self.page_projects)
+        self.stack.addWidget(self.page_journal)
         self.stack.addWidget(self.page_stats)
         self.stack.addWidget(self.page_settings)
 
@@ -1519,8 +1725,10 @@ class HubWindow(QMainWindow):
         self.btn_home.clicked.connect(lambda: self._switch_page(self.page_home))
         self.btn_today.clicked.connect(lambda: self._switch_page(self.page_today))
         self.btn_week.clicked.connect(lambda: self._switch_page(self.page_week))
+        self.btn_scheduled.clicked.connect(lambda: self._switch_page(self.page_scheduled))
         self.btn_someday.clicked.connect(lambda: self._switch_page(self.page_someday))
         self.btn_projects.clicked.connect(lambda: self._switch_page(self.page_projects))
+        self.btn_journal.clicked.connect(lambda: self._switch_page(self.page_journal))
         self.btn_stats.clicked.connect(lambda: self._switch_page(self.page_stats))
         self.btn_settings.clicked.connect(lambda: self._switch_page(self.page_settings))
         self.btn_quit.clicked.connect(self.close)
@@ -1547,9 +1755,19 @@ class HubWindow(QMainWindow):
         lbl_gl.setStyleSheet(f"color: {GOLD}; font-weight: bold; font-size: 16px;")
         l_glance.addWidget(lbl_gl)
 
+        lbl_expl = QLabel("Today is for now. This Week is flexible. Someday is for ideas.")
+        lbl_expl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px; margin-bottom: 4px;")
+        l_glance.addWidget(lbl_expl)
+
         self.today_summary_line = QLabel("")
         self.today_summary_line.setWordWrap(True)
         l_glance.addWidget(self.today_summary_line)
+
+        self.lbl_primary_goal = QLabel("")
+        self.lbl_primary_goal.setWordWrap(True)
+        self.lbl_primary_goal.setStyleSheet(f"color: {GOLD}; font-weight: bold; font-size: 14px; margin-top: 4px;")
+        self.lbl_primary_goal.setVisible(False)
+        l_glance.addWidget(self.lbl_primary_goal)
 
         self.home_glance_tasks = QLabel("")
         self.home_glance_tasks.setWordWrap(True)
@@ -1626,7 +1844,9 @@ class HubWindow(QMainWindow):
     def _build_task_pages(self) -> None:
         self.page_today = TaskListWidget(self.state, "Today", self.schedule_save)
         self.page_week = TaskListWidget(self.state, "This Week", self.schedule_save)
+        self.page_scheduled = TaskListWidget(self.state, "Scheduled", self.schedule_save)
         self.page_someday = TaskListWidget(self.state, "Someday", self.schedule_save)
+        self.page_journal = JournalWidget(self.state, self.schedule_save)
 
     def _build_projects_page(self) -> None:
         self.page_projects = QWidget()
@@ -1865,8 +2085,10 @@ class HubWindow(QMainWindow):
             "home": self.page_home,
             "today": self.page_today,
             "week": self.page_week,
+            "scheduled": self.page_scheduled,
             "someday": self.page_someday,
             "projects": self.page_projects,
+            "journal": self.page_journal,
             "stats": self.page_stats,
             "settings": self.page_settings,
         }
@@ -1887,8 +2109,12 @@ class HubWindow(QMainWindow):
             self.page_today.refresh()
         elif page is self.page_week:
             self.page_week.refresh()
+        elif page is self.page_scheduled:
+            self.page_scheduled.refresh()
         elif page is self.page_someday:
             self.page_someday.refresh()
+        elif page is self.page_journal:
+            self.page_journal.refresh()
         elif page is self.page_projects:
             self._refresh_projects()
         elif page is self.page_stats:
@@ -1922,6 +2148,15 @@ class HubWindow(QMainWindow):
             if important_left > 0:
                 summary_line += f" · {important_left} important left."
         self.today_summary_line.setText(summary_line)
+
+        # Show Primary Goal
+        daily_logs = stats.get("dailyLogs", {})
+        today_log = daily_logs.get(today_str())
+        if today_log and today_log.get("primaryGoal"):
+            self.lbl_primary_goal.setText(f"★ Focus: {today_log['primaryGoal']}")
+            self.lbl_primary_goal.setVisible(True)
+        else:
+            self.lbl_primary_goal.setVisible(False)
 
         tasks = [t for t in tasks_in_section(self.state, "Today") if not t.get("completed")]
         if not tasks:
@@ -2282,15 +2517,14 @@ class HubWindow(QMainWindow):
         msg = QMessageBox(self)
         msg.setWindowTitle("Update available")
         msg.setText(
-            f"A newer version of TaskFlow Hub is available: {latest_version}.\n\n"
+            f"A new version of TaskFlow is available: {latest_version}.\n\n"
             f"Your version: {APP_VERSION}."
         )
         checkbox = QCheckBox("Don't remind me about this version again")
         msg.setCheckBox(checkbox)
         if download_url:
             msg.setInformativeText(
-                "Do you want to open the download page in your browser?"
-                "\nTaskFlow can handle the update for you in a future version."
+                "Would you like to open the download page?"
             )
             msg.setStandardButtons(
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
@@ -2312,6 +2546,27 @@ class HubWindow(QMainWindow):
         set_today_mood(self.state, value, note)
         self.mood_message.setText(self._mood_message_for_value(value))
         self.schedule_save()
+
+    def _run_start_of_day_flow(self) -> None:
+        """Check if we need to show the Welcome Screen or Daily Planning."""
+        today = today_str()
+        stats = self.state.setdefault("stats", {})
+        daily_logs = stats.setdefault("dailyLogs", {})
+
+        # 1. Welcome Flow (Once per day)
+        if today not in daily_logs:
+            dlg = WelcomeDialog(self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                data = dlg.get_data()
+                daily_logs[today] = data
+                # Sync mood to existing mood system
+                if data.get("mood"):
+                    set_today_mood(self.state, data["mood"])
+                self.schedule_save()
+                self._refresh_home()
+
+        # 2. Gentle Planning Check
+        self._run_daily_planning()
 
     def _run_daily_planning(self) -> None:
         stats = self.state.setdefault("stats", {})

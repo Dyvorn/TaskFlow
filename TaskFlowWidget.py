@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 
 import sys
 from typing import Any, Dict, Optional, Callable
@@ -233,7 +234,7 @@ class WidgetWindow(QWidget):
         # Bump (visible only when collapsed)
         self.bump = QFrame()
         self.bump.setObjectName("Bump")
-        self.bump.setStyleSheet(f"background-color: rgba(255, 255, 255, 0.05); border: 1px solid {GLASS_BORDER}; border-radius: 16px;")
+        self.bump.setStyleSheet(f"background-color: rgba(255, 255, 255, 0.1); border: 1px solid {GLASS_BORDER}; border-radius: 16px;")
         self.bump.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.bump.hide()
 
@@ -268,7 +269,7 @@ class WidgetWindow(QWidget):
         actions_row.setSpacing(6)
 
         btn_open_hub = QPushButton("Open Hub")
-        btn_open_today = QPushButton("Today List")
+        btn_open_today = QPushButton("Open Today")
         btn_quick_add = QPushButton("+ Quick Add")
 
         btn_open_hub.clicked.connect(lambda: self._open_hub_page("home"))
