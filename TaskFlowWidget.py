@@ -11,6 +11,7 @@ from PyQt6.QtCore import (
     QPoint,
     QPropertyAnimation,
     QEasingCurve,
+    QParallelAnimationGroup,
 )
 from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import (
@@ -320,9 +321,15 @@ class WidgetWindow(QWidget):
         if not text:
             return
         add_task(self.state, text=text, section="Today")
+        
+        # Visual feedback: Flash input
+        self.quick_add_input.setStyleSheet(f"background-color: rgba(255, 215, 0, 0.2); border: 1px solid {GOLD}; border-radius: 8px; color: {TEXT_WHITE};")
+        QTimer.singleShot(200, lambda: self.quick_add_input.setStyleSheet(""))
+        
         self._save_callback()
-        self.quick_add_input.clear()
-        self.quick_add_input.setVisible(False)
+        
+        # Delay hiding slightly to show the flash
+        QTimer.singleShot(250, lambda: (self.quick_add_input.clear(), self.quick_add_input.setVisible(False), self._refresh_tasks()))
         self._refresh_tasks()
 
     # ────────────────────────────────────────────────────────────────────
@@ -384,6 +391,46 @@ class WidgetWindow(QWidget):
             self.status_label.setText(f"{counts['completed']} of {counts['total']} done.")
 
     def _on_toggle_task(self, task_id: str) -> None:
+        # Check if we are completing (not un-completing) to animate
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if task and not task.get("completed"):
+            # Find the row widget to animate
+            row = None
+            for i in range(self.tasks_list.count()):
+                item = self.tasks_list.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) == task_id:
+                    row = self.tasks_list.itemWidget(item)
+                    break
+            
+            if row:
+                self._animate_and_finalize_toggle(row, task_id)
+                return
+
+        self._finalize_toggle(task_id)
+
+    def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
+        effect = QGraphicsOpacityEffect(row)
+        row.setGraphicsEffect(effect)
+        group = QParallelAnimationGroup(self)
+        
+        anim_fade = QPropertyAnimation(effect, b"opacity")
+        anim_fade.setDuration(ANIM_DURATION_MEDIUM)
+        anim_fade.setStartValue(1.0)
+        anim_fade.setEndValue(0.0)
+        anim_fade.setEasingCurve(QEasingCurve.Type.InQuad)
+        
+        anim_size = QPropertyAnimation(row, b"maximumHeight")
+        anim_size.setDuration(ANIM_DURATION_MEDIUM)
+        anim_size.setStartValue(row.height())
+        anim_size.setEndValue(0)
+        anim_size.setEasingCurve(QEasingCurve.Type.InCubic)
+        
+        group.addAnimation(anim_fade)
+        group.addAnimation(anim_size)
+        group.finished.connect(lambda: self._finalize_toggle(task_id))
+        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _finalize_toggle(self, task_id: str):
         toggle_task_completed(self.state, task_id)
         self._save_callback()
         self._refresh_tasks()

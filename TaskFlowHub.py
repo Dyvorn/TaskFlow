@@ -22,6 +22,7 @@ from PyQt6.QtCore import (
     QEasingCurve,
     QRectF,
     QPoint,
+    QParallelAnimationGroup,
     pyqtSignal,
 )
 from PyQt6.QtGui import (
@@ -881,11 +882,67 @@ class TaskListWidget(QWidget):
         if not text:
             return
         add_task(self.state, text=text, section=self.section)
+        
+        # Dopamine: Flash input success
+        original_style = self.quick_add_input.styleSheet()
+        self.quick_add_input.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background-color: rgba(255, 215, 0, 0.15);
+                border: 1px solid {GOLD};
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: {TEXT_WHITE};
+            }}
+            """
+        )
+        QTimer.singleShot(250, lambda: self.quick_add_input.setStyleSheet(original_style))
+        
         self._save_callback()
         self.quick_add_input.clear()
         self.refresh()
 
     def _on_toggle_task(self, task_id: str) -> None:
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task:
+            return
+
+        is_completing = not task.get("completed", False)
+
+        if is_completing:
+            for i in range(self.tasks_list.count()):
+                item = self.tasks_list.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) == task_id:
+                    row = self.tasks_list.itemWidget(item)
+                    if row:
+                        self._animate_and_finalize_toggle(row, task_id)
+                    return
+        else:
+            toggle_task_completed(self.state, task_id)
+            self._save_callback()
+            self.refresh()
+
+    def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
+        effect = QGraphicsOpacityEffect(row)
+        row.setGraphicsEffect(effect)
+        group = QParallelAnimationGroup(self)
+        anim_fade = QPropertyAnimation(effect, b"opacity")
+        anim_fade.setDuration(ANIM_DURATION_MEDIUM)
+        anim_fade.setStartValue(1.0)
+        anim_fade.setEndValue(0.0)
+        anim_fade.setEasingCurve(QEasingCurve.Type.InQuad)
+        anim_size = QPropertyAnimation(row, b"maximumHeight")
+        anim_size.setDuration(ANIM_DURATION_MEDIUM)
+        anim_size.setStartValue(row.height())
+        anim_size.setEndValue(0)
+        anim_size.setEasingCurve(QEasingCurve.Type.InCubic)
+        group.addAnimation(anim_fade)
+        group.addAnimation(anim_size)
+        group.finished.connect(row.hide)
+        group.finished.connect(lambda: self._finalize_toggle(task_id))
+        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _finalize_toggle(self, task_id: str):
         toggle_task_completed(self.state, task_id)
         self._save_callback()
         self.refresh()
@@ -1085,6 +1142,17 @@ class TaskListWidget(QWidget):
         """
         if self.section != "Today":
             return
+
+        # Dopamine: Pulse button
+        effect = QGraphicsOpacityEffect(self.btn_next)
+        self.btn_next.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity")
+        anim.setDuration(200)
+        anim.setKeyValueAt(0.0, 1.0)
+        anim.setKeyValueAt(0.5, 0.5)
+        anim.setKeyValueAt(1.0, 1.0)
+        anim.finished.connect(lambda: self.btn_next.setGraphicsEffect(None))
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
         tasks = tasks_in_section(self.state, "Today")
         candidates = [
@@ -1362,6 +1430,48 @@ class ProjectTaskListWidget(QWidget):
         self.refresh()
 
     def _on_toggle_task(self, task_id: str) -> None:
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task:
+            return
+
+        is_completing = not task.get("completed", False)
+
+        if is_completing:
+            for i in range(self.tasks_list.count()):
+                item = self.tasks_list.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) == task_id:
+                    row = self.tasks_list.itemWidget(item)
+                    if row:
+                        self._animate_and_finalize_toggle(row, task_id)
+                    return
+        else:
+            toggle_task_completed(self.state, task_id)
+            self._save_callback()
+            self.refresh()
+
+    def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
+        """Animate a row out, then finalize the data change and refresh."""
+        effect = QGraphicsOpacityEffect(row)
+        row.setGraphicsEffect(effect)
+        group = QParallelAnimationGroup(self)
+        anim_fade = QPropertyAnimation(effect, b"opacity")
+        anim_fade.setDuration(ANIM_DURATION_MEDIUM)
+        anim_fade.setStartValue(1.0)
+        anim_fade.setEndValue(0.0)
+        anim_fade.setEasingCurve(QEasingCurve.Type.InQuad)
+        anim_size = QPropertyAnimation(row, b"maximumHeight")
+        anim_size.setDuration(ANIM_DURATION_MEDIUM)
+        anim_size.setStartValue(row.height())
+        anim_size.setEndValue(0)
+        anim_size.setEasingCurve(QEasingCurve.Type.InCubic)
+        group.addAnimation(anim_fade)
+        group.addAnimation(anim_size)
+        group.finished.connect(row.hide)
+        group.finished.connect(lambda: self._finalize_toggle(task_id))
+        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _finalize_toggle(self, task_id: str):
+        """This is called after the completion animation finishes."""
         toggle_task_completed(self.state, task_id)
         self._save_callback()
         self.refresh()
@@ -1517,11 +1627,33 @@ class JournalWidget(QWidget):
             self._load_entry(self._current_date)
 
     def _load_entry(self, date_str: str) -> None:
-        self.lbl_date_header.setText(date_str if date_str != today_str() else f"Today ({date_str})")
-        entry = get_journal_entry(self.state, date_str)
-        self.editor.blockSignals(True)
-        self.editor.setPlainText(entry.get("text", "") if entry else "")
-        self.editor.blockSignals(False)
+        self.lbl_date_header.setText(
+            date_str if date_str != today_str() else f"Today ({date_str})"
+        )
+
+        effect = QGraphicsOpacityEffect(self.editor)
+        self.editor.setGraphicsEffect(effect)
+        anim_out = QPropertyAnimation(effect, b"opacity")
+        anim_out.setDuration(ANIM_DURATION_FAST)
+        anim_out.setStartValue(1.0)
+        anim_out.setEndValue(0.0)
+        anim_out.setEasingCurve(QEasingCurve.Type.InCubic)
+
+        def on_fade_out_finished():
+            entry = get_journal_entry(self.state, date_str)
+            self.editor.blockSignals(True)
+            self.editor.setPlainText(entry.get("text", "") if entry else "")
+            self.editor.blockSignals(False)
+            anim_in = QPropertyAnimation(effect, b"opacity")
+            anim_in.setDuration(ANIM_DURATION_MEDIUM)
+            anim_in.setStartValue(0.0)
+            anim_in.setEndValue(1.0)
+            anim_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim_in.finished.connect(lambda: self.editor.setGraphicsEffect(None))
+            anim_in.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+        anim_out.finished.connect(on_fade_out_finished)
+        anim_out.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _on_text_changed(self) -> None:
         text = self.editor.toPlainText()
@@ -1655,7 +1787,7 @@ class HubWindow(QMainWindow):
         nav_frame.setFixedWidth(180)
         nav_layout = QVBoxLayout(nav_frame)
         nav_layout.setContentsMargins(10, 20, 10, 20)
-        nav_layout.setSpacing(8)
+        nav_layout.setSpacing(12)
 
         title = QLabel(f"{APP_NAME} Hub")
         title.setObjectName("TitleLabel")
@@ -1688,10 +1820,17 @@ class HubWindow(QMainWindow):
             self.btn_someday,
         ):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setMinimumHeight(32)
+            btn.setMinimumHeight(38)
             nav_layout.addWidget(btn)
 
         nav_layout.addStretch(1)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        sep.setStyleSheet(f"background-color: {GLASS_BORDER}; margin-top: 8px; margin-bottom: 8px;")
+        sep.setFixedHeight(1)
+        nav_layout.addWidget(sep)
 
         for btn in (self.btn_settings, self.btn_check_updates, self.btn_quit):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
