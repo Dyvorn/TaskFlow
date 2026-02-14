@@ -1,8 +1,8 @@
 (['C:\\Users\\Lennard Finn '
-  'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowApp.py'],
+  'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowHub.py'],
  ['C:\\Users\\Lennard Finn '
   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow'],
- ['requests'],
+ ['requests', 'taskflowanalytics'],
  [('C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\numpy\\_pyinstaller',
    0),
@@ -45,9 +45,9 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_pyqt6.py',
    'PYSOURCE'),
-  ('TaskFlowApp',
+  ('TaskFlowHub',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowApp.py',
+   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowHub.py',
    'PYSOURCE')],
  [('_pyi_rth_utils.qt',
    'C:\\Users\\Lennard Finn '
@@ -121,89 +121,53 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\copy.py',
    'PYMODULE'),
-  ('random',
+  ('_strptime',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\random.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_strptime.py',
    'PYMODULE'),
-  ('statistics',
+  ('calendar',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\statistics.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\calendar.py',
    'PYMODULE'),
-  ('decimal',
+  ('argparse',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\decimal.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\argparse.py',
    'PYMODULE'),
-  ('_pydecimal',
+  ('shutil',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_pydecimal.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\shutil.py',
    'PYMODULE'),
-  ('contextvars',
+  ('tarfile',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\contextvars.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\tarfile.py',
    'PYMODULE'),
-  ('fractions',
+  ('gzip',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\fractions.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\gzip.py',
    'PYMODULE'),
-  ('numbers',
+  ('_compression',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\numbers.py',
-   'PYMODULE'),
-  ('hashlib',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\hashlib.py',
-   'PYMODULE'),
-  ('logging',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\logging\\__init__.py',
-   'PYMODULE'),
-  ('pickle',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\pickle.py',
-   'PYMODULE'),
-  ('pprint',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\pprint.py',
-   'PYMODULE'),
-  ('dataclasses',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\dataclasses.py',
-   'PYMODULE'),
-  ('_compat_pickle',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_compat_pickle.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_compression.py',
    'PYMODULE'),
   ('struct',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\struct.py',
    'PYMODULE'),
-  ('threading',
+  ('lzma',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\threading.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\lzma.py',
    'PYMODULE'),
-  ('_threading_local',
+  ('bz2',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_threading_local.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\bz2.py',
    'PYMODULE'),
-  ('bisect',
+  ('fnmatch',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\bisect.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\fnmatch.py',
    'PYMODULE'),
-  ('_strptime',
+  ('gettext',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_strptime.py',
-   'PYMODULE'),
-  ('datetime',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\datetime.py',
-   'PYMODULE'),
-  ('_pydatetime',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_pydatetime.py',
-   'PYMODULE'),
-  ('calendar',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\calendar.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\gettext.py',
    'PYMODULE'),
   ('email._encoded_words',
    'C:\\Users\\Lennard Finn '
@@ -216,10 +180,6 @@
   ('getopt',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\getopt.py',
-   'PYMODULE'),
-  ('gettext',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\gettext.py',
    'PYMODULE'),
   ('email.charset',
    'C:\\Users\\Lennard Finn '
@@ -273,10 +233,6 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\quopri.py',
    'PYMODULE'),
-  ('typing',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\typing.py',
-   'PYMODULE'),
   ('importlib.abc',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\importlib\\abc.py',
@@ -304,34 +260,6 @@
   ('tempfile',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\tempfile.py',
-   'PYMODULE'),
-  ('shutil',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\shutil.py',
-   'PYMODULE'),
-  ('tarfile',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\tarfile.py',
-   'PYMODULE'),
-  ('gzip',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\gzip.py',
-   'PYMODULE'),
-  ('_compression',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_compression.py',
-   'PYMODULE'),
-  ('lzma',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\lzma.py',
-   'PYMODULE'),
-  ('bz2',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\bz2.py',
-   'PYMODULE'),
-  ('fnmatch',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\fnmatch.py',
    'PYMODULE'),
   ('importlib._abc',
    'C:\\Users\\Lennard Finn '
@@ -437,26 +365,6 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\email\\feedparser.py',
    'PYMODULE'),
-  ('json',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\__init__.py',
-   'PYMODULE'),
-  ('json.encoder',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\encoder.py',
-   'PYMODULE'),
-  ('json.decoder',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\decoder.py',
-   'PYMODULE'),
-  ('json.scanner',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\scanner.py',
-   'PYMODULE'),
-  ('__future__',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\__future__.py',
-   'PYMODULE'),
   ('importlib.readers',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\importlib\\readers.py',
@@ -513,6 +421,26 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\asyncio\\log.py',
    'PYMODULE'),
+  ('logging',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\logging\\__init__.py',
+   'PYMODULE'),
+  ('pickle',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\pickle.py',
+   'PYMODULE'),
+  ('pprint',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\pprint.py',
+   'PYMODULE'),
+  ('dataclasses',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\dataclasses.py',
+   'PYMODULE'),
+  ('_compat_pickle',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_compat_pickle.py',
+   'PYMODULE'),
   ('subprocess',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\subprocess.py',
@@ -548,6 +476,10 @@
   ('asyncio.threads',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\asyncio\\threads.py',
+   'PYMODULE'),
+  ('contextvars',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\contextvars.py',
    'PYMODULE'),
   ('asyncio.taskgroups',
    'C:\\Users\\Lennard Finn '
@@ -592,6 +524,10 @@
   ('multiprocessing.heap',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\multiprocessing\\heap.py',
+   'PYMODULE'),
+  ('bisect',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\bisect.py',
    'PYMODULE'),
   ('multiprocessing.resource_tracker',
    'C:\\Users\\Lennard Finn '
@@ -709,6 +645,10 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\hmac.py',
    'PYMODULE'),
+  ('hashlib',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\hashlib.py',
+   'PYMODULE'),
   ('multiprocessing.reduction',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\multiprocessing\\reduction.py',
@@ -812,6 +752,18 @@
   ('http.client',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\http\\client.py',
+   'PYMODULE'),
+  ('decimal',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\decimal.py',
+   'PYMODULE'),
+  ('_pydecimal',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_pydecimal.py',
+   'PYMODULE'),
+  ('numbers',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\numbers.py',
    'PYMODULE'),
   ('multiprocessing',
    'C:\\Users\\Lennard Finn '
@@ -1217,18 +1169,6 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\pydoc.py',
    'PYMODULE'),
-  ('webbrowser',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\webbrowser.py',
-   'PYMODULE'),
-  ('_ios_support',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_ios_support.py',
-   'PYMODULE'),
-  ('shlex',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\shlex.py',
-   'PYMODULE'),
   ('http.server',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\http\\server.py',
@@ -1236,14 +1176,6 @@
   ('socketserver',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\socketserver.py',
-   'PYMODULE'),
-  ('html',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\html\\__init__.py',
-   'PYMODULE'),
-  ('html.entities',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\html\\entities.py',
    'PYMODULE'),
   ('pydoc_data.topics',
    'C:\\Users\\Lennard Finn '
@@ -1388,6 +1320,10 @@
   ('setuptools.dist',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\dist.py',
+   'PYMODULE'),
+  ('shlex',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\shlex.py',
    'PYMODULE'),
   ('setuptools.command.bdist_wheel',
    'C:\\Users\\Lennard Finn '
@@ -1817,6 +1753,34 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\_distutils_hack\\override.py',
    'PYMODULE'),
+  ('stringprep',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\stringprep.py',
+   'PYMODULE'),
+  ('tracemalloc',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\tracemalloc.py',
+   'PYMODULE'),
+  ('_py_abc',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_py_abc.py',
+   'PYMODULE'),
+  ('taskflowai',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\taskflowai.py',
+   'PYMODULE'),
+  ('taskflowanalytics',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\taskflowanalytics.py',
+   'PYMODULE'),
+  ('taskflowmodel',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\taskflowmodel.py',
+   'PYMODULE'),
+  ('uuid',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\uuid.py',
+   'PYMODULE'),
   ('requests',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\requests\\__init__.py',
@@ -2097,97 +2061,105 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\urllib3\\contrib\\emscripten\\fetch.py',
    'PYMODULE'),
-  ('stringprep',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\stringprep.py',
-   'PYMODULE'),
-  ('tracemalloc',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\tracemalloc.py',
-   'PYMODULE'),
-  ('_py_abc',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_py_abc.py',
-   'PYMODULE'),
-  ('TaskFlowWidget',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowWidget.py',
-   'PYMODULE'),
   ('PyQt6',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\__init__.py',
    'PYMODULE'),
-  ('TaskFlowHub',
+  ('typing',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowHub.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\typing.py',
    'PYMODULE'),
-  ('taskflowmodel',
+  ('datetime',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\taskflowmodel.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\datetime.py',
    'PYMODULE'),
-  ('uuid',
+  ('_pydatetime',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\uuid.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_pydatetime.py',
    'PYMODULE'),
-  ('argparse',
+  ('webbrowser',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\argparse.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\webbrowser.py',
+   'PYMODULE'),
+  ('_ios_support',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_ios_support.py',
+   'PYMODULE'),
+  ('threading',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\threading.py',
+   'PYMODULE'),
+  ('_threading_local',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_threading_local.py',
+   'PYMODULE'),
+  ('random',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\random.py',
+   'PYMODULE'),
+  ('statistics',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\statistics.py',
+   'PYMODULE'),
+  ('fractions',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\fractions.py',
+   'PYMODULE'),
+  ('html',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\html\\__init__.py',
+   'PYMODULE'),
+  ('html.entities',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\html\\entities.py',
+   'PYMODULE'),
+  ('json',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\__init__.py',
+   'PYMODULE'),
+  ('json.encoder',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\encoder.py',
+   'PYMODULE'),
+  ('json.decoder',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\decoder.py',
+   'PYMODULE'),
+  ('json.scanner',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\json\\scanner.py',
+   'PYMODULE'),
+  ('__future__',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\__future__.py',
    'PYMODULE')],
  [('python313.dll',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\python313.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\platforms\\qwindows.dll',
+  ('PyQt6\\Qt6\\plugins\\styles\\qmodernwindowsstyle.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\platforms\\qwindows.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\styles\\qmodernwindowsstyle.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qwebp.dll',
+  ('PyQt6\\Qt6\\bin\\opengl32sw.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qwebp.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qgif.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qgif.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qsvg.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qsvg.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qjpeg.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qjpeg.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qtiff.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qtiff.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\generic\\qtuiotouchplugin.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\generic\\qtuiotouchplugin.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\opengl32sw.dll',
    'BINARY'),
   ('PyQt6\\Qt6\\plugins\\imageformats\\qtga.dll',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qtga.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\iconengines\\qsvgicon.dll',
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qpdf.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\iconengines\\qsvgicon.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qicns.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qicns.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qpdf.dll',
    'BINARY'),
   ('PyQt6\\Qt6\\plugins\\imageformats\\qico.dll',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qico.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qpdf.dll',
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qwebp.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qpdf.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\imageformats\\qwbmp.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qwbmp.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qwebp.dll',
    'BINARY'),
   ('PyQt6\\Qt6\\plugins\\platforms\\qminimal.dll',
    'C:\\Users\\Lennard Finn '
@@ -2197,21 +2169,49 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\platforms\\qoffscreen.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\bin\\opengl32sw.dll',
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qicns.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\opengl32sw.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qicns.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\plugins\\styles\\qmodernwindowsstyle.dll',
+  ('PyQt6\\Qt6\\plugins\\iconengines\\qsvgicon.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\styles\\qmodernwindowsstyle.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\iconengines\\qsvgicon.dll',
    'BINARY'),
-  ('_decimal.pyd',
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qgif.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_decimal.pyd',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qgif.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qjpeg.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qjpeg.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qwbmp.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qwbmp.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\plugins\\generic\\qtuiotouchplugin.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\generic\\qtuiotouchplugin.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qsvg.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qsvg.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\plugins\\imageformats\\qtiff.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\imageformats\\qtiff.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\plugins\\platforms\\qwindows.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\plugins\\platforms\\qwindows.dll',
+   'BINARY'),
+  ('_lzma.pyd',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_lzma.pyd',
    'EXTENSION'),
-  ('_hashlib.pyd',
+  ('_bz2.pyd',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_hashlib.pyd',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_bz2.pyd',
    'EXTENSION'),
   ('select.pyd',
    'C:\\Users\\Lennard Finn '
@@ -2224,14 +2224,6 @@
   ('unicodedata.pyd',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\unicodedata.pyd',
-   'EXTENSION'),
-  ('_lzma.pyd',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_lzma.pyd',
-   'EXTENSION'),
-  ('_bz2.pyd',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_bz2.pyd',
    'EXTENSION'),
   ('_overlapped.pyd',
    'C:\\Users\\Lennard Finn '
@@ -2249,6 +2241,10 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_ctypes.pyd',
    'EXTENSION'),
+  ('_hashlib.pyd',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_hashlib.pyd',
+   'EXTENSION'),
   ('_multiprocessing.pyd',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_multiprocessing.pyd',
@@ -2256,6 +2252,10 @@
   ('pyexpat.pyd',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\pyexpat.pyd',
+   'EXTENSION'),
+  ('_decimal.pyd',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_decimal.pyd',
    'EXTENSION'),
   ('_asyncio.pyd',
    'C:\\Users\\Lennard Finn '
@@ -2265,6 +2265,10 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_wmi.pyd',
    'EXTENSION'),
+  ('_uuid.pyd',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_uuid.pyd',
+   'EXTENSION'),
   ('charset_normalizer\\md__mypyc.cp313-win_amd64.pyd',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\charset_normalizer\\md__mypyc.cp313-win_amd64.pyd',
@@ -2273,45 +2277,45 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\charset_normalizer\\md.cp313-win_amd64.pyd',
    'EXTENSION'),
-  ('PyQt6\\QtGui.pyd',
+  ('PyQt6\\QtWidgets.pyd',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\QtGui.pyd',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\QtWidgets.pyd',
    'EXTENSION'),
   ('PyQt6\\sip.cp313-win_amd64.pyd',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\sip.cp313-win_amd64.pyd',
    'EXTENSION'),
-  ('_uuid.pyd',
+  ('PyQt6\\QtGui.pyd',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\_uuid.pyd',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\QtGui.pyd',
    'EXTENSION'),
   ('PyQt6\\QtCore.pyd',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\QtCore.pyd',
    'EXTENSION'),
-  ('PyQt6\\QtWidgets.pyd',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\QtWidgets.pyd',
-   'EXTENSION'),
   ('VCRUNTIME140.dll',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\VCRUNTIME140.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\bin\\Qt6Gui.dll',
+  ('PyQt6\\Qt6\\bin\\Qt6Widgets.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Gui.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\bin\\Qt6Core.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Core.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Widgets.dll',
    'BINARY'),
   ('PyQt6\\Qt6\\bin\\MSVCP140.dll',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\MSVCP140.dll',
    'BINARY'),
-  ('VCRUNTIME140_1.dll',
+  ('PyQt6\\Qt6\\bin\\Qt6Core.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\VCRUNTIME140_1.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Core.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\bin\\Qt6Gui.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Gui.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\bin\\Qt6Pdf.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Pdf.dll',
    'BINARY'),
   ('PyQt6\\Qt6\\bin\\Qt6Svg.dll',
    'C:\\Users\\Lennard Finn '
@@ -2321,13 +2325,9 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Network.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\bin\\Qt6Pdf.dll',
+  ('VCRUNTIME140_1.dll',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Pdf.dll',
-   'BINARY'),
-  ('PyQt6\\Qt6\\bin\\Qt6Widgets.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\Qt6Widgets.dll',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\VCRUNTIME140_1.dll',
    'BINARY'),
   ('libcrypto-3.dll',
    'C:\\Users\\Lennard Finn '
@@ -2341,13 +2341,13 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\DLLs\\libffi-8.dll',
    'BINARY'),
-  ('PyQt6\\Qt6\\bin\\MSVCP140_2.dll',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\MSVCP140_2.dll',
-   'BINARY'),
   ('python3.dll',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\python3.dll',
+   'BINARY'),
+  ('PyQt6\\Qt6\\bin\\MSVCP140_2.dll',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\bin\\MSVCP140_2.dll',
    'BINARY'),
   ('PyQt6\\Qt6\\bin\\VCRUNTIME140_1.dll',
    'C:\\Users\\Lennard Finn '
@@ -2363,466 +2363,450 @@
    'BINARY')],
  [],
  [],
- [('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\INSTALLER',
+ [('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\LICENSE',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\INSTALLER',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\LICENSE',
    'DATA'),
   ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\REQUESTED',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\REQUESTED',
    'DATA'),
-  ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\top_level.txt',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\top_level.txt',
-   'DATA'),
-  ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\LICENSE',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\LICENSE',
-   'DATA'),
   ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\RECORD',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\RECORD',
    'DATA'),
-  ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\METADATA',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\METADATA',
-   'DATA'),
   ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\WHEEL',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\WHEEL',
+   'DATA'),
+  ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\top_level.txt',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\top_level.txt',
+   'DATA'),
+  ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\INSTALLER',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\INSTALLER',
+   'DATA'),
+  ('setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\METADATA',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata-8.0.0.dist-info\\METADATA',
    'DATA'),
   ('setuptools\\_vendor\\jaraco\\text\\Lorem ipsum.txt',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\setuptools\\_vendor\\jaraco\\text\\Lorem '
    'ipsum.txt',
    'DATA'),
-  ('certifi\\cacert.pem',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\certifi\\cacert.pem',
-   'DATA'),
   ('certifi\\py.typed',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\certifi\\py.typed',
    'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_nn.qm',
+  ('certifi\\cacert.pem',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_nn.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_nl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_nl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_de.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_de.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_ca.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ca.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_cs.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_cs.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_lv.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_lv.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_zh_TW.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_zh_TW.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_sv.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_sv.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_ar.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ar.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_pl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_pl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_lv.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_lv.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_zh_CN.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_zh_CN.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_ka.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ka.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_de.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_de.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_uk.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_uk.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_tr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_tr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_ru.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ru.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_gd.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_gd.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_nn.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_nn.qm',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\certifi\\cacert.pem',
    'DATA'),
   ('PyQt6\\Qt6\\translations\\qt_sk.qm',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_sk.qm',
    'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_sk.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_sk.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_hu.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_hu.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_en.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_en.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_uk.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_uk.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_ru.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ru.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_bg.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_bg.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_ja.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ja.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_ja.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ja.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_bg.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_bg.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_ru.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ru.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_hu.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_hu.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_es.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_es.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_pt_BR.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_pt_BR.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_zh_TW.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_zh_TW.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_ko.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ko.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_gl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_gl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_fr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_fr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_ca.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ca.qm',
-   'DATA'),
   ('PyQt6\\Qt6\\translations\\qtbase_pl.qm',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_pl.qm',
    'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_pt_BR.qm',
+  ('PyQt6\\Qt6\\translations\\qtbase_sv.qm',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_pt_BR.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_hu.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_hu.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_fa.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_fa.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_he.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_he.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_nl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_nl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_sv.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_sv.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_hr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_hr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_sl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_sl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_da.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_da.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_sk.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_sk.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_ca.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ca.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_ar.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ar.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_it.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_it.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_de.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_de.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_en.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_en.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_tr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_tr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_gl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_gl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_tr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_tr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_pt_PT.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_pt_PT.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_lg.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_lg.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_es.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_es.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_fi.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_fi.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_nn.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_nn.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_zh_CN.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_zh_CN.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_es.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_es.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_hr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_hr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_lg.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_lg.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_lt.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_lt.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_zh_CN.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_zh_CN.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_hr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_hr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_uk.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_uk.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_fa.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_fa.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_zh_TW.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_zh_TW.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_ka.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ka.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_he.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_he.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_gd.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_gd.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_ka.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ka.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_sl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_sl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_en.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_en.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_pt_BR.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_pt_BR.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_it.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_it.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_ja.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ja.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_pl.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_pl.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_cs.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_cs.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_fr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_fr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_ar.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ar.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_bg.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_bg.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_fr.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_fr.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_da.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_da.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_da.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_da.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_cs.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_cs.qm',
-   'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_ko.qm',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ko.qm',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_sv.qm',
    'DATA'),
   ('PyQt6\\Qt6\\translations\\qt_help_sv.qm',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_sv.qm',
    'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_help_it.qm',
+  ('PyQt6\\Qt6\\translations\\qt_lg.qm',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_it.qm',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_lg.qm',
    'DATA'),
-  ('PyQt6\\Qt6\\translations\\qtbase_fi.qm',
+  ('PyQt6\\Qt6\\translations\\qtbase_nl.qm',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_fi.qm',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_nl.qm',
    'DATA'),
-  ('PyQt6\\Qt6\\translations\\qt_nl.qm',
+  ('PyQt6\\Qt6\\translations\\qt_help_gl.qm',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_nl.qm',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_gl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_zh_CN.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_zh_CN.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_tr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_tr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_ka.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ka.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_ru.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ru.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_ar.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ar.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_fr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_fr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_cs.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_cs.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_ca.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ca.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_lv.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_lv.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_ja.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ja.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_ko.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ko.qm',
    'DATA'),
   ('PyQt6\\Qt6\\translations\\qt_help_ko.qm',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ko.qm',
    'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_zh_TW.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_zh_TW.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_it.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_it.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_fi.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_fi.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_bg.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_bg.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_pl.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_pl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_it.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_it.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_zh_CN.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_zh_CN.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_es.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_es.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_zh_TW.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_zh_TW.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_nn.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_nn.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_uk.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_uk.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_zh_TW.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_zh_TW.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_hu.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_hu.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_uk.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_uk.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_cs.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_cs.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_nn.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_nn.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_da.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_da.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_lt.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_lt.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_he.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_he.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_ar.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ar.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_bg.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_bg.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_gd.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_gd.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_es.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_es.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_gl.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_gl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_nl.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_nl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_hr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_hr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_en.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_en.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_sl.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_sl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_uk.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_uk.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_da.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_da.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_gd.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_gd.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_de.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_de.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_tr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_tr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_en.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_en.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_ko.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ko.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_ru.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ru.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_pt_BR.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_pt_BR.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_lg.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_lg.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_pt_BR.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_pt_BR.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_sv.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_sv.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_da.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_da.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_fi.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_fi.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_lv.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_lv.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_de.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_de.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_nn.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_nn.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_he.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_he.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_sl.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_sl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_fa.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_fa.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_tr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_tr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_de.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_de.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_fr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_fr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_pl.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_pl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_cs.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_cs.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_pt_BR.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_pt_BR.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_hr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_hr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_it.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_it.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_zh_CN.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_zh_CN.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_pt_PT.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_pt_PT.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_en.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_en.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_ca.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ca.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_ja.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_ja.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_nl.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_nl.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_ja.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ja.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_hr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_hr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_fa.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_fa.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_ca.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ca.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_es.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_es.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_hu.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_hu.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_fr.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_fr.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_hu.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_hu.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_bg.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_bg.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_ka.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_ka.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_ar.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ar.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qtbase_sk.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qtbase_sk.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_ru.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ru.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_sk.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_sk.qm',
+   'DATA'),
+  ('PyQt6\\Qt6\\translations\\qt_help_ka.qm',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\Qt6\\translations\\qt_help_ka.qm',
+   'DATA'),
   ('base_library.zip',
    'C:\\Users\\Lennard Finn '
    'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\build\\TaskFlow\\base_library.zip',
    'DATA')],
- [('copyreg',
+ [('traceback',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\copyreg.py',
-   'PYMODULE'),
-  ('genericpath',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\genericpath.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\traceback.py',
    'PYMODULE'),
   ('reprlib',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\reprlib.py',
    'PYMODULE'),
-  ('linecache',
+  ('io',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\linecache.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\io.py',
    'PYMODULE'),
-  ('heapq',
+  ('codecs',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\heapq.py',
-   'PYMODULE'),
-  ('os',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\os.py',
-   'PYMODULE'),
-  ('_weakrefset',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_weakrefset.py',
-   'PYMODULE'),
-  ('_collections_abc',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_collections_abc.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\codecs.py',
    'PYMODULE'),
   ('encodings.zlib_codec',
    'C:\\Users\\Lennard Finn '
@@ -3312,41 +3296,17 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\__init__.py',
    'PYMODULE'),
-  ('operator',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\operator.py',
-   'PYMODULE'),
-  ('enum',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\enum.py',
-   'PYMODULE'),
-  ('traceback',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\traceback.py',
-   'PYMODULE'),
-  ('locale',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\locale.py',
-   'PYMODULE'),
-  ('collections',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\collections\\__init__.py',
-   'PYMODULE'),
-  ('io',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\io.py',
-   'PYMODULE'),
-  ('functools',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\functools.py',
-   'PYMODULE'),
   ('warnings',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\warnings.py',
    'PYMODULE'),
-  ('sre_constants',
+  ('operator',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\sre_constants.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\operator.py',
+   'PYMODULE'),
+  ('functools',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\functools.py',
    'PYMODULE'),
   ('re._parser',
    'C:\\Users\\Lennard Finn '
@@ -3364,37 +3324,25 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\re\\_casefix.py',
    'PYMODULE'),
-  ('re',
+  ('linecache',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\re\\__init__.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\linecache.py',
    'PYMODULE'),
-  ('codecs',
+  ('types',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\codecs.py',
-   'PYMODULE'),
-  ('ntpath',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\ntpath.py',
-   'PYMODULE'),
-  ('posixpath',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\posixpath.py',
-   'PYMODULE'),
-  ('sre_compile',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\sre_compile.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\types.py',
    'PYMODULE'),
   ('abc',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\abc.py',
    'PYMODULE'),
-  ('weakref',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\weakref.py',
-   'PYMODULE'),
   ('stat',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\stat.py',
+   'PYMODULE'),
+  ('sre_compile',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\sre_compile.py',
    'PYMODULE'),
   ('sre_parse',
    'C:\\Users\\Lennard Finn '
@@ -3404,7 +3352,59 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\keyword.py',
    'PYMODULE'),
-  ('types',
+  ('locale',
    'C:\\Users\\Lennard Finn '
-   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\types.py',
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\locale.py',
+   'PYMODULE'),
+  ('genericpath',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\genericpath.py',
+   'PYMODULE'),
+  ('posixpath',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\posixpath.py',
+   'PYMODULE'),
+  ('sre_constants',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\sre_constants.py',
+   'PYMODULE'),
+  ('_weakrefset',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_weakrefset.py',
+   'PYMODULE'),
+  ('weakref',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\weakref.py',
+   'PYMODULE'),
+  ('copyreg',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\copyreg.py',
+   'PYMODULE'),
+  ('enum',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\enum.py',
+   'PYMODULE'),
+  ('_collections_abc',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\_collections_abc.py',
+   'PYMODULE'),
+  ('ntpath',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\ntpath.py',
+   'PYMODULE'),
+  ('heapq',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\heapq.py',
+   'PYMODULE'),
+  ('collections',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\collections\\__init__.py',
+   'PYMODULE'),
+  ('re',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\re\\__init__.py',
+   'PYMODULE'),
+  ('os',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\os.py',
    'PYMODULE')])

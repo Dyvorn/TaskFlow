@@ -2,7 +2,7 @@
 
 **Focus. Flow. Finish.**
 
-TaskFlow is a privacy-first, AI-powered productivity hub designed to help you manage tasks, habits, and mental well-being without your data ever leaving your device.
+TaskFlow is a privacy-first, AI-powered productivity hub designed to help you manage tasks, habits, and mental well-being without your data ever leaving your device. The AI starts on your device and stays there.
 
 ## 🚀 Features
 

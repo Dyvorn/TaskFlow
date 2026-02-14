@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['TaskFlowApp.py'],
+    ['TaskFlowHub.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=['requests'],
+    hiddenimports=['requests', 'taskflowanalytics'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

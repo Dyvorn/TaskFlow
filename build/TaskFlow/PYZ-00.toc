@@ -4,14 +4,6 @@
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\site-packages\\PyQt6\\__init__.py',
    'PYMODULE'),
-  ('TaskFlowHub',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowHub.py',
-   'PYMODULE'),
-  ('TaskFlowWidget',
-   'C:\\Users\\Lennard Finn '
-   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\TaskFlowWidget.py',
-   'PYMODULE'),
   ('__future__',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\__future__.py',
@@ -1647,6 +1639,14 @@
   ('tarfile',
    'C:\\Users\\Lennard Finn '
    'Penzler\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\tarfile.py',
+   'PYMODULE'),
+  ('taskflowai',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\taskflowai.py',
+   'PYMODULE'),
+  ('taskflowanalytics',
+   'C:\\Users\\Lennard Finn '
+   'Penzler\\Documents\\VSC_Projects\\todo_app\\TaskFlow\\taskflowanalytics.py',
    'PYMODULE'),
   ('taskflowmodel',
    'C:\\Users\\Lennard Finn '
