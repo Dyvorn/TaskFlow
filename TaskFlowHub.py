@@ -11,8 +11,9 @@ import html
 import random
 import threading
 import webbrowser
+import re
 from datetime import datetime, date, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Callable
 
 from PyQt6.QtCore import (
     Qt,
@@ -107,7 +108,6 @@ from taskflowmodel import (
     set_today_widget_note,
     get_journal_entry,
     set_journal_entry,
-    determine_today_mode,
     count_today_tasks,
     add_task,
     tasks_in_section,
@@ -116,6 +116,7 @@ from taskflowmodel import (
     get_project_by_id,
     add_project,
     tasks_for_project,
+    duplicate_project,
     get_today_habit_checks,
     set_habit_checked,
     rollover_tasks,
@@ -125,6 +126,10 @@ from taskflowmodel import (
     GITHUB_REPO,
     GITHUB_API_LATEST,
 )
+
+# Import new analytics engine
+import taskflowanalytics
+import taskflowai
 
 # ============================================================================
 # SECTION 2: APP CONFIGURATION & MODES
@@ -450,6 +455,142 @@ class DailyPlanningDialog(QDialog):
     def planned_tasks(self) -> int:
         return self.spinbox.value()
 
+class BrainDumpDialog(QDialog):
+    """
+    A dialog for bulk task entry with AI processing options.
+    """
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowTitle("Brain Dump 🧠")
+        self.setModal(True)
+        self.resize(500, 400)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        lbl = QLabel("Unload your mind. Type a list or a paragraph, and we'll sort it out.")
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
+        layout.addWidget(lbl)
+        
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlaceholderText("e.g.\n- Buy milk\n- Call John about the project\n- Finish the report by Friday")
+        self.text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: rgba(0, 0, 0, 0.3);
+                color: {TEXT_WHITE};
+                border: 1px solid {HOVER_BG};
+                border-radius: 8px;
+                padding: 10px;
+                font-size: 14px;
+            }}
+            QTextEdit:focus {{
+                border: 1px solid {GOLD};
+            }}
+        """)
+        layout.addWidget(self.text_edit)
+        
+        # Options row
+        opt_layout = QHBoxLayout()
+        self.chk_ai = QCheckBox("Use AI to guess categories & priority")
+        self.chk_ai.setChecked(True)
+        self.chk_ai.setStyleSheet(f"""
+            QCheckBox {{ color: {TEXT_WHITE}; }}
+            QCheckBox::indicator {{ width: 18px; height: 18px; border-radius: 4px; border: 1px solid {HOVER_BG}; }}
+            QCheckBox::indicator:checked {{ background-color: {GOLD}; border: 1px solid {GOLD}; }}
+        """)
+        opt_layout.addWidget(self.chk_ai)
+        opt_layout.addStretch()
+        
+        btn_clear = QPushButton("Clear")
+        btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_clear.setStyleSheet(f"color: {TEXT_GRAY}; background: transparent; border: none;")
+        btn_clear.clicked.connect(self.text_edit.clear)
+        opt_layout.addWidget(btn_clear)
+        
+        layout.addLayout(opt_layout)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Process Tasks")
+        
+        # Style buttons
+        for btn in buttons.buttons():
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 16px; border: 1px solid {GLASS_BORDER};")
+        
+        # Highlight primary
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 6px; padding: 6px 16px; font-weight: bold; border: none;")
+        
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        self.setStyleSheet(f"background-color: {CARD_BG};")
+
+    def get_text(self) -> str:
+        return self.text_edit.toPlainText()
+        
+    def use_ai(self) -> bool:
+        return self.chk_ai.isChecked()
+
+class ProfileWidget(QWidget):
+    """
+    Page to configure the AI persona and user details.
+    """
+    def __init__(self, state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self._save_callback = save_callback
+        self._build_ui()
+        self.refresh()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(20)
+
+        header = QLabel("AI Coach Settings")
+        header.setObjectName("PageHeader")
+        layout.addWidget(header)
+
+        # Form
+        form_card = QFrame()
+        form_card.setObjectName("GlassCard")
+        f_layout = QVBoxLayout(form_card)
+        f_layout.setSpacing(15)
+
+        f_layout.addWidget(QLabel("What should I call you?"))
+        self.name_input = QLineEdit()
+        self.name_input.textChanged.connect(self._save)
+        f_layout.addWidget(self.name_input)
+
+        f_layout.addWidget(QLabel("What is your primary role? (e.g. Student, Developer)"))
+        self.role_input = QLineEdit()
+        self.role_input.textChanged.connect(self._save)
+        f_layout.addWidget(self.role_input)
+
+        f_layout.addWidget(QLabel("Coaching Style"))
+        self.style_combo = QComboBox()
+        self.style_combo.addItems(["Gentle", "Direct", "Stoic", "Hype"])
+        self.style_combo.currentTextChanged.connect(self._save)
+        f_layout.addWidget(self.style_combo)
+
+        layout.addWidget(form_card)
+        layout.addStretch(1)
+
+    def refresh(self):
+        p = self.state.get("userProfile", {})
+        self.name_input.setText(p.get("name", ""))
+        self.role_input.setText(p.get("role", ""))
+        self.style_combo.setCurrentText(p.get("style", "Gentle"))
+
+    def _save(self):
+        p = self.state.setdefault("userProfile", {})
+        p["name"] = self.name_input.text()
+        p["role"] = self.role_input.text()
+        p["style"] = self.style_combo.currentText()
+        self._save_callback()
 
 class MoodGraphWidget(QWidget):
     """
@@ -587,6 +728,282 @@ class HabitGraphWidget(QWidget):
         painter.setBrush(QBrush(QColor(HOVER_BG)))
         painter.drawRect(QRectF(2, rect.height() - 2, rect.width() - 4, 2))
 
+class CategoryGraphWidget(QWidget):
+    """
+    Visualizes task completion by category using simple bars.
+    """
+    def __init__(self, state: Dict[str, Any], parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self.setMinimumHeight(120)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        
+        data = taskflowanalytics.get_category_breakdown(self.state)
+        if not data:
+            painter.setPen(QColor(TEXT_GRAY))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "No categorized data yet.")
+            return
+
+        total = sum(data.values())
+        max_val = max(data.values()) if data.values() else 1
+        
+        bar_height = 16
+        spacing = 8
+        y = 10
+        
+        sorted_cats = sorted(data.items(), key=lambda x: x[1], reverse=True)[:5] # Top 5
+        
+        for cat, count in sorted_cats:
+            # Label
+            painter.setPen(QColor(TEXT_WHITE))
+            painter.drawText(0, y + 12, f"{cat} ({count})")
+            
+            # Bar
+            bar_width = int((count / max_val) * (rect.width() - 100))
+            painter.setBrush(QColor(GOLD))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(100, y, bar_width, bar_height, 4, 4)
+            
+            y += bar_height + spacing
+
+class ProductivityScoreWidget(QWidget):
+    """
+    Circular progress bar showing the daily productivity score.
+    """
+    def __init__(self, state: Dict[str, Any], parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self.setMinimumSize(140, 140)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        
+    def paintEvent(self, event) -> None:
+        score = taskflowanalytics.get_productivity_score(self.state)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        center = rect.center()
+        radius = int(min(rect.width(), rect.height()) / 2 - 10)
+        
+        # Background track
+        painter.setPen(QPen(QColor(HOVER_BG), 10, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawEllipse(center, radius, radius)
+        
+        # Arc
+        painter.setPen(QPen(QColor(GOLD), 10, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        # Qt draws arcs in 1/16th degrees. 360 degrees = 360 * 16.
+        # Start at 90 (top), go negative (clockwise).
+        span = int((score / 100.0) * 360 * 16)
+        painter.drawArc(int(center.x() - radius), int(center.y() - radius), int(radius*2), int(radius*2), 90 * 16, -span)
+        
+        # Text
+        painter.setPen(QColor(TEXT_WHITE))
+        f = painter.font()
+        f.setPointSize(28)
+        f.setBold(True)
+        painter.setFont(f)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(score))
+        
+        f.setPointSize(10)
+        f.setBold(False)
+        painter.setFont(f)
+        painter.drawText(rect.adjusted(0, 40, 0, 0), Qt.AlignmentFlag.AlignCenter, "Daily Score")
+
+class HourlyChartWidget(QWidget):
+    """
+    Bar chart showing activity by hour of day.
+    """
+    def __init__(self, state: Dict[str, Any], parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self.setMinimumHeight(120)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        
+        data = taskflowanalytics.get_hourly_activity(self.state)
+        max_val = max(data.values()) if data else 1
+        
+        bar_width = rect.width() / 24
+        
+        for h in range(24):
+            val = data.get(h, 0)
+            if val > 0:
+                h_ratio = val / max_val
+                bar_h = h_ratio * (rect.height() - 20)
+                x = h * bar_width
+                y = rect.height() - bar_h - 15
+                
+                painter.setBrush(QColor(GOLD))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRoundedRect(QRectF(x + 2, y, bar_width - 4, bar_h), 2, 2)
+            
+            # Hour labels every 6 hours
+            if h % 6 == 0:
+                painter.setPen(QColor(TEXT_GRAY))
+                painter.drawText(QRectF(h * bar_width, rect.height() - 12, bar_width * 2, 12), Qt.AlignmentFlag.AlignLeft, f"{h:02}")
+
+class HeatmapWidget(QWidget):
+    """
+    GitHub-style contribution graph (last 52 weeks).
+    """
+    def __init__(self, state: Dict[str, Any], parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self.setMinimumHeight(100)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        data = taskflowanalytics.get_activity_heatmap_data(self.state)
+        today = date.today()
+        
+        # Calculate start date (52 weeks ago, aligned to Sunday)
+        start_date = today - timedelta(weeks=52)
+        start_date = start_date - timedelta(days=start_date.weekday() + 1) # Align to Sunday
+        
+        cell_size = 10
+        spacing = 3
+        
+        for week in range(53):
+            for day in range(7):
+                curr_date = start_date + timedelta(weeks=week, days=day)
+                if curr_date > today:
+                    continue
+                
+                date_str = str(curr_date)
+                count = data.get(date_str, 0)
+                
+                # Color based on count
+                alpha = 30 if count == 0 else min(255, 60 + count * 40)
+                color = QColor(GOLD)
+                color.setAlpha(alpha)
+                
+                x = week * (cell_size + spacing)
+                y = day * (cell_size + spacing)
+                
+                painter.setBrush(color)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawRoundedRect(x, y, cell_size, cell_size, 2, 2)
+
+# ============================================================================
+# SECTION 4.5: SHARED UI HELPERS
+# ============================================================================
+
+
+def animate_widget_entry(widget: QWidget):
+    """Fade in animation for newly added widgets."""
+    effect = QGraphicsOpacityEffect(widget)
+    widget.setGraphicsEffect(effect)
+    anim = QPropertyAnimation(effect, b"opacity", widget)
+    anim.setDuration(ANIM_DURATION_MEDIUM)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+    anim.finished.connect(lambda: widget.setGraphicsEffect(None))
+    anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+def create_task_row_widget(
+    task: Dict[str, Any],
+    on_toggle: Callable[[bool, str], None],
+    on_delete: Callable[[bool, str], None],
+    on_context_menu: Callable[[QPoint, str], None]
+) -> QWidget:
+    """
+    Creates a standardized task row widget used in multiple lists.
+    """
+    row = QWidget()
+    row.setObjectName("TaskRow")
+    row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    row.setStyleSheet(f"""
+        #TaskRow {{
+            border-radius: 8px;
+            background-color: transparent;
+        }}
+        #TaskRow:hover {{ background-color: {HOVER_BG}; }}
+    """)
+    row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    hl = QHBoxLayout(row)
+    hl.setContentsMargins(6, 2, 6, 2)
+    hl.setSpacing(6)
+
+    chk = QPushButton("✔" if task.get("completed") else "")
+    chk.setFixedSize(QSize(22, 22))
+    chk.setCheckable(True)
+    chk.setChecked(task.get("completed", False))
+    chk.setStyleSheet(
+        f"""
+        QPushButton {{
+            background-color: transparent;
+            border-radius: 11px;
+            border: 1px solid {HOVER_BG};
+            color: {GOLD};
+            font-weight: bold;
+        }}
+        QPushButton:checked {{
+            background-color: {GOLD};
+            color: {DARK_BG};
+        }}
+        """
+    )
+
+    # Build label with metadata (schedule/recurrence)
+    text_content = task.get("text", "")
+    meta_info = []
+    
+    sched = task.get("schedule")
+    if sched and isinstance(sched, dict) and sched.get("date"):
+        meta_info.append(f"📅 {sched['date']}")
+    
+    rec = task.get("recurrence")
+    if rec and isinstance(rec, dict) and rec.get("type"):
+        meta_info.append(f"↻ {rec['type']}")
+
+    cat = task.get("category")
+    if cat:
+        meta_info.append(f"🏷 {cat}")
+
+    lbl = QLabel()
+    lbl.setWordWrap(True)
+    if task.get("completed"):
+        lbl.setStyleSheet(f"color: {TEXT_GRAY}; text-decoration: line-through;")
+    elif task.get("important"):
+        lbl.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
+    else:
+        lbl.setStyleSheet(f"color: {TEXT_WHITE};")
+    
+    if meta_info:
+        safe_text = html.escape(text_content)
+        meta_html = f"<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>"
+        lbl.setText(safe_text + meta_html)
+    else:
+        lbl.setText(text_content)
+
+    del_btn = QPushButton("×")
+    del_btn.setFixedSize(QSize(24, 24))
+    del_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-weight: bold; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
+
+    hl.addWidget(chk)
+    hl.addWidget(lbl, 1)
+    hl.addWidget(del_btn)
+
+    tid = task.get("id")
+    chk.clicked.connect(lambda c: on_toggle(c, tid))
+    del_btn.clicked.connect(lambda c: on_delete(c, tid))
+    row.customContextMenuRequested.connect(lambda pos: on_context_menu(pos, tid))
+
+    return row
+
 # ============================================================================
 # SECTION 5: TASK LIST WIDGETS (TODAY / WEEK / SOMEDAY / PROJECTS)
 # ============================================================================
@@ -701,7 +1118,7 @@ class TaskListWidget(QWidget):
         # Quick add row
         self.quick_add_input = QLineEdit()
         placeholder = "Quick add…" if self.section == "Today" else f"Add task to {self.section}…"
-        self.quick_add_input.setPlaceholderText(placeholder)
+        self.quick_add_input.setPlaceholderText(placeholder + " (use #Work for category)")
         self.quick_add_input.setStyleSheet(
             f"""
             QLineEdit {{
@@ -777,99 +1194,15 @@ class TaskListWidget(QWidget):
                 item = QListWidgetItem()
                 item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-                row = QWidget()
-                row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-                hl = QHBoxLayout(row)
-                hl.setContentsMargins(6, 2, 6, 2)
-                hl.setSpacing(6)
-
-                chk = QPushButton("✔" if t.get("completed") else "")
-                chk.setFixedSize(QSize(22, 22))
-                chk.setCheckable(True)
-                chk.setChecked(t.get("completed"))
-                chk.setStyleSheet(
-                    f"""
-                    QPushButton {{
-                        background-color: transparent;
-                        border-radius: 11px;
-                        border: 1px solid {HOVER_BG};
-                        color: {GOLD};
-                        font-weight: bold;
-                    }}
-                    QPushButton:checked {{
-                        background-color: {GOLD};
-                        color: {DARK_BG};
-                    }}
-                    """
+                row = create_task_row_widget(
+                    t,
+                    lambda _, tid: self._on_toggle_task(tid),
+                    lambda _, tid: self._on_delete_task(tid),
+                    lambda pos, tid: self._show_task_menu(tid, row.mapToGlobal(pos))
                 )
-
-                # Build label with metadata (schedule/recurrence)
-                text_content = t.get("text", "")
-                meta_info = []
-                
-                sched = t.get("schedule")
-                if sched and isinstance(sched, dict) and sched.get("date"):
-                    meta_info.append(f"📅 {sched['date']}")
-                
-                rec = t.get("recurrence")
-                if rec and isinstance(rec, dict) and rec.get("type"):
-                    meta_info.append(f"↻ {rec['type']}")
-
-                lbl = QLabel()
-                lbl.setWordWrap(True)
-                if t.get("completed"):
-                    lbl.setStyleSheet(
-                        f"color: {TEXT_GRAY}; text-decoration: line-through;"
-                    )
-                elif t.get("important"):
-                    lbl.setStyleSheet(
-                        f"color: {GOLD}; font-weight: bold;"
-                    )
-                else:
-                    lbl.setStyleSheet(f"color: {TEXT_WHITE};")
-                
-                if meta_info:
-                    safe_text = html.escape(text_content)
-                    meta_html = f"<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>"
-                    lbl.setText(safe_text + meta_html)
-                else:
-                    lbl.setText(text_content)
-
-                del_btn = QPushButton("×")
-                del_btn.setFixedSize(QSize(24, 24))
-                del_btn.setStyleSheet(
-                    f"""
-                    QPushButton {{
-                        background-color: transparent;
-                        border: none;
-                        color: {TEXT_GRAY};
-                        font-weight: bold;
-                        font-size: 14px;
-                    }}
-                    QPushButton:hover {{
-                        color: {GOLD};
-                    }}
-                    """
-                )
-
-                hl.addWidget(chk)
-                hl.addWidget(lbl, 1)
-                hl.addWidget(del_btn)
 
                 self.tasks_list.addItem(item)
                 self.tasks_list.setItemWidget(item, row)
-
-                chk.clicked.connect(
-                    lambda checked, tid=t.get("id"): self._on_toggle_task(tid)
-                )
-                del_btn.clicked.connect(
-                    lambda _checked=False, tid=t.get("id"): self._on_delete_task(tid)
-                )
-                row.customContextMenuRequested.connect(
-                    lambda pos, tid=t.get("id"): self._show_task_menu(
-                        tid, row.mapToGlobal(pos)
-                    )
-                )
 
         self.tasks_list.setUpdatesEnabled(True)
 
@@ -881,7 +1214,15 @@ class TaskListWidget(QWidget):
         text = self.quick_add_input.text().strip()
         if not text:
             return
-        add_task(self.state, text=text, section=self.section)
+            
+        # Parse category from text (e.g., "Buy milk #Personal")
+        category = None
+        match = re.search(r"#(\w+)", text)
+        if match:
+            category = match.group(1)
+            text = text.replace(match.group(0), "").strip()
+            
+        task = add_task(self.state, text=text, section=self.section, category=category)
         
         # Dopamine: Flash input success
         original_style = self.quick_add_input.styleSheet()
@@ -901,6 +1242,16 @@ class TaskListWidget(QWidget):
         self._save_callback()
         self.quick_add_input.clear()
         self.refresh()
+
+        # Animate the new item
+        for i in range(self.tasks_list.count()):
+            item = self.tasks_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == task["id"]:
+                self.tasks_list.scrollToItem(item)
+                row = self.tasks_list.itemWidget(item)
+                if row:
+                    animate_widget_entry(row)
+                break
 
     def _on_toggle_task(self, task_id: str) -> None:
         task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
@@ -1251,6 +1602,11 @@ class ProjectTaskListWidget(QWidget):
         self.btn_mark_all.clicked.connect(self._on_mark_all_done)
         info_row.addWidget(self.btn_mark_all)
 
+        self.btn_clear_completed = QPushButton("Clear completed")
+        self.btn_clear_completed.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear_completed.clicked.connect(self._on_clear_completed)
+        info_row.addWidget(self.btn_clear_completed)
+
         layout.addLayout(info_row)
 
         # Quick add
@@ -1310,6 +1666,14 @@ class ProjectTaskListWidget(QWidget):
         self._set_enabled(True)
 
         tasks = tasks_for_project(self.state, self._project_id)
+        
+        # Sort: Incomplete first, then Important, then by order
+        tasks.sort(key=lambda t: (
+            1 if t.get("completed") else 0,
+            0 if t.get("important") else 1,
+            t.get("order", 0)
+        ))
+
         open_count = len([t for t in tasks if not t.get("completed")])
         done_count = len([t for t in tasks if t.get("completed")])
 
@@ -1336,79 +1700,21 @@ class ProjectTaskListWidget(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-            row = QWidget()
-            row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            row.customContextMenuRequested.connect(lambda pos, tid=t.get("id"): self._show_task_menu(tid, row.mapToGlobal(pos)))
-            hl = QHBoxLayout(row)
-            hl.setContentsMargins(6, 2, 6, 2)
-            hl.setSpacing(6)
-
-            chk = QPushButton("✔" if t.get("completed") else "")
-            chk.setFixedSize(QSize(22, 22))
-            chk.setCheckable(True)
-            chk.setChecked(t.get("completed"))
-            chk.setStyleSheet(
-                f"""
-                QPushButton {{
-                    background-color: transparent;
-                    border-radius: 11px;
-                    border: 1px solid {HOVER_BG};
-                    color: {GOLD};
-                    font-weight: bold;
-                }}
-                QPushButton:checked {{
-                    background-color: {GOLD};
-                    color: {DARK_BG};
-                }}
-                """
+            row = create_task_row_widget(
+                t,
+                lambda _, tid: self._on_toggle_task(tid),
+                lambda _, tid: self._on_delete_task(tid),
+                lambda pos, tid: self._show_task_menu(tid, row.mapToGlobal(pos))
             )
-
-            lbl = QLabel(t.get("text", ""))
-            lbl.setWordWrap(True)
-            if t.get("completed"):
-                lbl.setStyleSheet(
-                    f"color: {TEXT_GRAY}; text-decoration: line-through;"
-                )
-            elif t.get("important"):
-                lbl.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
-            else:
-                lbl.setStyleSheet(f"color: {TEXT_WHITE};")
-
-            del_btn = QPushButton("×")
-            del_btn.setFixedSize(QSize(24, 24))
-            del_btn.setStyleSheet(
-                f"""
-                QPushButton {{
-                    background: transparent;
-                    border: none;
-                    color: {TEXT_GRAY};
-                    font-weight: bold;
-                    font-size: 14px;
-                }}
-                QPushButton:hover {{
-                    color: {GOLD};
-                }}
-                """
-            )
-
-            hl.addWidget(chk)
-            hl.addWidget(lbl, 1)
-            hl.addWidget(del_btn)
 
             self.tasks_list.addItem(item)
             self.tasks_list.setItemWidget(item, row)
-
-            chk.clicked.connect(
-                lambda checked, tid=t.get("id"): self._on_toggle_task(tid)
-            )
-            del_btn.clicked.connect(
-                lambda _checked=False, tid=t.get("id"): self._on_delete_task(tid)
-            )
 
     def _set_enabled(self, enabled: bool) -> None:
         self.quick_add_input.setEnabled(enabled)
         self.btn_send_today.setEnabled(enabled)
         self.btn_mark_all.setEnabled(enabled)
+        self.btn_clear_completed.setEnabled(enabled)
         self.tasks_list.setEnabled(enabled)
 
     # ────────────────────────────────────────────────────────────────────
@@ -1419,15 +1725,41 @@ class ProjectTaskListWidget(QWidget):
         text = self.quick_add_input.text().strip()
         if not text or not self._project_id:
             return
-        add_task(
+        task = add_task(
             self.state,
             text=text,
             section="Someday",
             project_id=self._project_id,
         )
+        
+        # Dopamine: Flash input success (Consistent with main list)
+        original_style = self.quick_add_input.styleSheet()
+        self.quick_add_input.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background-color: rgba(255, 215, 0, 0.15);
+                border: 1px solid {GOLD};
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: {TEXT_WHITE};
+            }}
+            """
+        )
+        QTimer.singleShot(250, lambda: self.quick_add_input.setStyleSheet(original_style))
+
         self._save_callback()
         self.quick_add_input.clear()
         self.refresh()
+
+        # Animate the new item
+        for i in range(self.tasks_list.count()):
+            item = self.tasks_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == task["id"]:
+                self.tasks_list.scrollToItem(item)
+                row = self.tasks_list.itemWidget(item)
+                if row:
+                    animate_widget_entry(row)
+                break
 
     def _on_toggle_task(self, task_id: str) -> None:
         task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
@@ -1502,6 +1834,21 @@ class ProjectTaskListWidget(QWidget):
                 t["updatedAt"] = now_iso()
         self._save_callback()
         self.refresh()
+
+    def _on_clear_completed(self) -> None:
+        if not self._project_id:
+            return
+        
+        # Remove completed tasks belonging to this project
+        original_count = len(self.state.get("tasks", []))
+        self.state["tasks"] = [
+            t for t in self.state.get("tasks", [])
+            if not (t.get("projectId") == self._project_id and t.get("completed"))
+        ]
+        
+        if len(self.state["tasks"]) < original_count:
+            self._save_callback()
+            self.refresh()
 
     def _show_task_menu(self, task_id: str, global_pos) -> None:
         menu = QMenu(self)
@@ -1705,6 +2052,10 @@ class HubWindow(QMainWindow):
         # Background update check + daily planning
         self._check_updates_async()
         QTimer.singleShot(500, self._run_start_of_day_flow)
+        
+        # Listen for data changes to refresh UI (e.g. from Widget)
+        self.data_changed.connect(self._on_data_changed)
+        
         # Keyboard shortcuts
         QShortcut(QKeySequence("Ctrl+1"), self, activated=lambda: self._switch_page(self.page_home))
         QShortcut(QKeySequence("Ctrl+2"), self, activated=lambda: self._switch_page(self.page_today))
@@ -1714,6 +2065,7 @@ class HubWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+6"), self, activated=lambda: self._switch_page(self.page_stats))
         QShortcut(QKeySequence("Ctrl+T"), self, activated=lambda: self._switch_page(self.page_today))
         QShortcut(QKeySequence("Ctrl+P"), self, activated=lambda: self._switch_page(self.page_projects))
+        QShortcut(QKeySequence("Ctrl+B"), self, activated=self._toggle_focus_mode)
 
     # ────────────────────────────────────────────────────────────────────
     # UI construction
@@ -1772,6 +2124,28 @@ class HubWindow(QMainWindow):
                 color: {TEXT_WHITE};
                 border: none;
             }}
+            /* Custom Scrollbars */
+            QScrollBar:vertical {{
+                border: none;
+                background: {DARK_BG};
+                width: 8px;
+                margin: 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {HOVER_BG};
+                min-height: 20px;
+                border-radius: 4px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            
+            /* Active Sidebar Button */
+            QPushButton:checked {{
+                background-color: {HOVER_BG};
+                border-left: 2px solid {GOLD};
+                color: {GOLD};
+            }}
             """
         )
 
@@ -1782,10 +2156,10 @@ class HubWindow(QMainWindow):
         root.setSpacing(12)
 
         # Left navigation
-        nav_frame = QFrame()
-        nav_frame.setObjectName("NavBar")
-        nav_frame.setFixedWidth(180)
-        nav_layout = QVBoxLayout(nav_frame)
+        self.nav_frame = QFrame()
+        self.nav_frame.setObjectName("NavBar")
+        self.nav_frame.setFixedWidth(180)
+        nav_layout = QVBoxLayout(self.nav_frame)
         nav_layout.setContentsMargins(10, 20, 10, 20)
         nav_layout.setSpacing(12)
 
@@ -1803,7 +2177,9 @@ class HubWindow(QMainWindow):
         self.btn_journal = QPushButton("Journal")
         self.btn_stats = QPushButton("Stats")
         self.btn_someday = QPushButton("Someday")
+        self.btn_profile = QPushButton("AI Coach")
 
+        self.btn_focus = QPushButton("Focus Mode (Ctrl+B)")
         # New Settings Button
         self.btn_settings = QPushButton("Settings")
         self.btn_check_updates = QPushButton("Check updates")
@@ -1818,8 +2194,11 @@ class HubWindow(QMainWindow):
             self.btn_journal,
             self.btn_stats,
             self.btn_someday,
+            self.btn_profile,
+            self.btn_focus,
         ):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setCheckable(True)
             btn.setMinimumHeight(38)
             nav_layout.addWidget(btn)
 
@@ -1832,11 +2211,11 @@ class HubWindow(QMainWindow):
         sep.setFixedHeight(1)
         nav_layout.addWidget(sep)
 
-        for btn in (self.btn_settings, self.btn_check_updates, self.btn_quit):
+        for btn in (self.btn_focus, self.btn_settings, self.btn_check_updates, self.btn_quit):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             nav_layout.addWidget(btn)
 
-        root.addWidget(nav_frame)
+        root.addWidget(self.nav_frame)
 
         # Right pages
         self.stack = QStackedWidget()
@@ -1848,6 +2227,7 @@ class HubWindow(QMainWindow):
         self._build_projects_page()
         self._build_stats_page()
         self._build_settings_page()
+        self.page_profile = ProfileWidget(self.state, self.schedule_save)
 
         # Add pages to stack
         self.stack.addWidget(self.page_home)
@@ -1859,6 +2239,21 @@ class HubWindow(QMainWindow):
         self.stack.addWidget(self.page_journal)
         self.stack.addWidget(self.page_stats)
         self.stack.addWidget(self.page_settings)
+        self.stack.addWidget(self.page_profile)
+
+        # Map pages to buttons for active state management
+        self.nav_map = {
+            self.page_home: self.btn_home,
+            self.page_today: self.btn_today,
+            self.page_week: self.btn_week,
+            self.page_scheduled: self.btn_scheduled,
+            self.page_someday: self.btn_someday,
+            self.page_projects: self.btn_projects,
+            self.page_journal: self.btn_journal,
+            self.page_stats: self.btn_stats,
+            self.page_settings: self.btn_settings,
+            self.page_profile: self.btn_profile,
+        }
 
         # Connect nav
         self.btn_home.clicked.connect(lambda: self._switch_page(self.page_home))
@@ -1869,9 +2264,11 @@ class HubWindow(QMainWindow):
         self.btn_projects.clicked.connect(lambda: self._switch_page(self.page_projects))
         self.btn_journal.clicked.connect(lambda: self._switch_page(self.page_journal))
         self.btn_stats.clicked.connect(lambda: self._switch_page(self.page_stats))
+        self.btn_profile.clicked.connect(lambda: self._switch_page(self.page_profile))
         self.btn_settings.clicked.connect(lambda: self._switch_page(self.page_settings))
         self.btn_quit.clicked.connect(self.close)
         self.btn_check_updates.clicked.connect(self._check_updates_async)
+        self.btn_focus.clicked.connect(self._toggle_focus_mode)
 
     # ────────────────────────────────────────────────────────────────────
     # Page builders
@@ -1970,10 +2367,17 @@ class HubWindow(QMainWindow):
         layout.addWidget(self.quote_label)
 
         quick_links_layout = QHBoxLayout()
+        
+        btn_brain_dump = QPushButton("🧠 Brain Dump")
+        btn_brain_dump.setStyleSheet(f"background-color: {HOVER_BG}; color: {GOLD}; font-weight: bold;")
+        btn_brain_dump.clicked.connect(self._on_brain_dump)
+        
         btn_open_today = QPushButton("Open Today")
         btn_open_projects = QPushButton("Open Projects")
         btn_open_today.clicked.connect(lambda: self._switch_page(self.page_today))
         btn_open_projects.clicked.connect(lambda: self._switch_page(self.page_projects))
+        
+        quick_links_layout.addWidget(btn_brain_dump)
         quick_links_layout.addStretch(1)
         quick_links_layout.addWidget(btn_open_today)
         quick_links_layout.addWidget(btn_open_projects)
@@ -2010,6 +2414,8 @@ class HubWindow(QMainWindow):
 
         self.project_list = QListWidget()
         self.project_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.project_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.project_list.customContextMenuRequested.connect(self._on_project_menu)
         l_plist.addWidget(self.project_list, 1)
 
         self.empty_projects_label = QLabel(
@@ -2060,97 +2466,106 @@ class HubWindow(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        # Card 1: Top summary
+        # Top Row: Score + Summary
+        top_row = QHBoxLayout()
+        
+        # Score Card
+        card_score = QFrame()
+        card_score.setObjectName("GlassCard")
+        l_score = QVBoxLayout(card_score)
+        l_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.score_widget = ProductivityScoreWidget(self.state)
+        l_score.addWidget(self.score_widget)
+        top_row.addWidget(card_score)
+
+        # Summary Card
         card_top = QFrame()
         card_top.setObjectName("GlassCard")
         l_top = QVBoxLayout(card_top)
-        l_top.setContentsMargins(16, 16, 16, 16)
-        l_top.setSpacing(8)
-
-        l_top.addWidget(QLabel("Today Summary"))
+        l_top.addWidget(QLabel("Insights"))
         self.stats_summary_label = QLabel("")
         self.stats_summary_label.setWordWrap(True)
         l_top.addWidget(self.stats_summary_label)
-        layout.addWidget(card_top)
+        top_row.addWidget(card_top, 1)
+        
+        layout.addLayout(top_row)
 
-        # Card 2: Check-in
-        card_checkin = QFrame()
-        card_checkin.setObjectName("GlassCard")
-        l_checkin = QVBoxLayout(card_checkin)
-        l_checkin.setContentsMargins(16, 16, 16, 16)
-        l_checkin.setSpacing(8)
+        # Heatmap Card
+        card_heat = QFrame()
+        card_heat.setObjectName("GlassCard")
+        l_heat = QVBoxLayout(card_heat)
+        l_heat.addWidget(QLabel("Activity Heatmap (Last 52 Weeks)"))
+        self.heatmap_widget = HeatmapWidget(self.state)
+        l_heat.addWidget(self.heatmap_widget)
+        layout.addWidget(card_heat)
 
-        l_checkin.addWidget(QLabel("Today Check‑In"))
-
-        mood_row = QHBoxLayout()
-        self.mood_combo = QComboBox()
-        self.mood_combo.addItems(MOOD_OPTIONS)
-        self.mood_save_btn = QPushButton("Save mood")
-        mood_row.addWidget(self.mood_combo, 1)
-        mood_row.addWidget(self.mood_save_btn)
-        l_checkin.addLayout(mood_row)
-
-        self.mood_note = QTextEdit()
-        self.mood_note.setPlaceholderText("Optional: write a few words about your day.")
-        self.mood_note.setFixedHeight(60)
-        l_checkin.addWidget(self.mood_note)
-
-        self.mood_message = QLabel("")
-        self.mood_message.setWordWrap(True)
-        self.mood_message.setStyleSheet(f"color: {TEXT_GRAY};")
-        l_checkin.addWidget(self.mood_message)
-        layout.addWidget(card_checkin)
-        self.mood_save_btn.clicked.connect(self._on_save_mood)
-
-        # Card 3: Middle graphs
+        # Middle Row: Hourly + Categories
         graphs_layout = QHBoxLayout()
-        graphs_layout.setSpacing(10)
+        
+        # Hourly
+        card_hourly = QFrame()
+        card_hourly.setObjectName("GlassCard")
+        l_hourly = QVBoxLayout(card_hourly)
+        l_hourly.addWidget(QLabel("Most Productive Hours"))
+        self.hourly_chart = HourlyChartWidget(self.state)
+        l_hourly.addWidget(self.hourly_chart)
+        graphs_layout.addWidget(card_hourly)
 
+        # Categories
+        card_cat = QFrame()
+        card_cat.setObjectName("GlassCard")
+        l_cat = QVBoxLayout(card_cat)
+        l_cat.addWidget(QLabel("Focus Breakdown"))
+        self.category_graph = CategoryGraphWidget(self.state)
+        l_cat.addWidget(self.category_graph)
+        graphs_layout.addWidget(card_cat)
+        
+        layout.addLayout(graphs_layout)
+
+        # Bottom Row: Mood + Habits
+        bottom_row = QHBoxLayout()
+
+        # Mood Graph
         card_mood = QFrame()
         card_mood.setObjectName("GlassCard")
         l_mood = QVBoxLayout(card_mood)
-        l_mood.setContentsMargins(16, 16, 16, 16)
-        l_mood.setSpacing(8)
-        l_mood.addWidget(QLabel("Mood history (14 days)"))
+        l_mood.addWidget(QLabel("Mood History"))
         self.mood_graph = MoodGraphWidget(self.state)
         l_mood.addWidget(self.mood_graph)
-        graphs_layout.addWidget(card_mood)
+        
+        # Mood Input (Compact)
+        mood_input_row = QHBoxLayout()
+        self.mood_combo = QComboBox()
+        self.mood_combo.addItems(MOOD_OPTIONS)
+        self.mood_save_btn = QPushButton("Log")
+        self.mood_save_btn.clicked.connect(self._on_save_mood)
+        mood_input_row.addWidget(self.mood_combo)
+        mood_input_row.addWidget(self.mood_save_btn)
+        l_mood.addLayout(mood_input_row)
+        
+        # Hidden note field for simplicity in stats view, or keep it if needed
+        self.mood_note = QTextEdit()
+        self.mood_note.setVisible(False) # Hidden in this new layout to save space
+        self.mood_message = QLabel("") # Hidden
+        
+        bottom_row.addWidget(card_mood)
 
+        # Habit Graph
         card_habit = QFrame()
         card_habit.setObjectName("GlassCard")
         l_habit = QVBoxLayout(card_habit)
-        l_habit.setContentsMargins(16, 16, 16, 16)
-        l_habit.setSpacing(8)
-        l_habit.addWidget(QLabel("Habit consistency (14 days)"))
+        l_habit.addWidget(QLabel("Habit Consistency"))
         self.habit_graph = HabitGraphWidget(self.state)
         l_habit.addWidget(self.habit_graph)
-        graphs_layout.addWidget(card_habit)
-
-        # Card 4: Bottom habits list
-        card_habits = QFrame()
-        card_habits.setObjectName("GlassCard")
-        l_habits = QVBoxLayout(card_habits)
-
-        l_habits.setContentsMargins(16, 16, 16, 16)
-        l_habits.setSpacing(8)
-
-        self.habits_header_label = QLabel("Today’s habits")
-        self.habits_header_label.setStyleSheet(
-            f"color: {TEXT_WHITE}; font-weight: bold;"
-        )
-        l_habits.addWidget(self.habits_header_label)
-
-        self.habits_list = QListWidget()
-        l_habits.addWidget(self.habits_list, 1)
-
-        self.habit_message = QLabel("")
-        self.habit_message.setWordWrap(True)
-        self.habit_message.setStyleSheet(
-            f"color: {TEXT_GRAY}; font-style: italic;"
-        )
-        l_habits.addWidget(self.habit_message)
-
-        layout.addWidget(card_habits, 1)
+        bottom_row.addWidget(card_habit)
+        
+        layout.addLayout(bottom_row)
+        
+        # We removed the habits list from stats page to make room for charts.
+        # Habits are still accessible on Home page.
+        self.habits_list = QListWidget() # Dummy to prevent errors if referenced elsewhere
+        self.habits_header_label = QLabel()
+        self.habit_message = QLabel()
 
     def _build_settings_page(self) -> None:
         self.page_settings = QWidget()
@@ -2242,6 +2657,12 @@ class HubWindow(QMainWindow):
         self.stack.setCurrentWidget(page)
         self._animate_page_in()
 
+        # Update sidebar active state
+        for btn in self.nav_map.values():
+            btn.setChecked(False)
+        if page in self.nav_map:
+            self.nav_map[page].setChecked(True)
+
         if page is self.page_home:
             self._refresh_home()
         elif page is self.page_today:
@@ -2260,6 +2681,18 @@ class HubWindow(QMainWindow):
             self._refresh_stats_and_habits()
         elif page is self.page_settings:
             self._refresh_settings()
+        elif page is self.page_profile:
+            self.page_profile.refresh()
+
+    def _toggle_focus_mode(self) -> None:
+        """Toggle the visibility of the sidebar."""
+        visible = self.nav_frame.isVisible()
+        self.nav_frame.setVisible(not visible)
+        self.btn_focus.setChecked(visible) # If it was visible, it's now hidden (checked state implies 'Focus Mode Active')
+        
+        if visible:
+            # We just hid it
+            self.statusBar().showMessage("Focus Mode Active. Press Ctrl+B to restore sidebar.", 3000)
 
     # ────────────────────────────────────────────────────────────────────
     # Home page logic
@@ -2269,7 +2702,6 @@ class HubWindow(QMainWindow):
         stats = self.state.get("stats", {})
         mood = get_today_mood(self.state)
         mood_value = mood.get("value") if mood else None
-        mode = determine_today_mode(mood_value, stats.get("tasksCompletedToday", 0), stats.get("plannedTasksToday", 0))
 
         # Card 1: Today at a glance
         counts = count_today_tasks(self.state)
@@ -2312,8 +2744,10 @@ class HubWindow(QMainWindow):
             glance_html = "".join(lines)
         self.home_glance_tasks.setText(glance_html)
 
-        suggestion = self._home_suggestion_for_mode(mode, total, done, mood_value)
-        self.suggestion_label.setText(f"<i>Gentle suggestion:</i> {suggestion}")
+        # Use AI for the home suggestion to keep the persona consistent
+        insights = taskflowai.generate_insights(self.state)
+        suggestion = insights["advice"]
+        self.suggestion_label.setText(f"<i>{suggestion}</i>")
 
         # Card 3: Ideas list
         self.ideas_list.clear()
@@ -2348,32 +2782,6 @@ class HubWindow(QMainWindow):
         if value == "Great":
             return "Enjoy the good days. You don’t need to be perfect to deserve them."
         return "There are good days and bad days. You still deserve kindness on all of them."
-
-    def _home_suggestion_for_mode(
-        self,
-        mode: str,
-        total_today: int,
-        done_today: int,
-        mood_value: Optional[str],
-    ) -> str:
-        if mode == MODE_RECOVERY:
-            if done_today > 0:
-                return "You did something on a hard day. That really counts. It’s okay to stop here."
-            if total_today == 0:
-                return "Maybe add one tiny task for Today—or just log how you feel and rest."
-            return "Pick the gentlest task in Today and keep it small. You don’t have to clear the list."
-        if mode == MODE_WRAPUP:
-            if done_today == 0:
-                return "You can keep today light. Maybe just plan one thing for tomorrow."
-            return "You’re at the end of the day. A short review and one task for tomorrow is enough."
-        # Focus mode
-        if total_today == 0:
-            return "Add one small thing to Today that Future You will appreciate."
-        if done_today == 0:
-            return "Pick one tiny task in Today and start with that. You don’t need to do them all."
-        if done_today < total_today:
-            return "You’re in motion. You’re allowed to stop when your energy runs low."
-        return "You cleared today’s plan. Anything else you do is bonus."
 
     # ────────────────────────────────────────────────────────────────────
     # Projects page logic
@@ -2426,6 +2834,31 @@ class HubWindow(QMainWindow):
             proj["updatedAt"] = now_iso()
             self.schedule_save()
             self._refresh_projects()
+
+    def _duplicate_project(self, project_id: str) -> None:
+        new_proj = duplicate_project(self.state, project_id)
+        if new_proj:
+            self.schedule_save()
+            self._refresh_projects()
+
+    def _on_project_menu(self, pos) -> None:
+        item = self.project_list.itemAt(pos)
+        if not item: return
+        
+        menu = QMenu(self)
+        act_dup = menu.addAction("Duplicate")
+        act_ren = menu.addAction("Rename")
+        act_del = menu.addAction("Delete")
+        
+        action = menu.exec(self.project_list.mapToGlobal(pos))
+        if not action: return
+        
+        if action == act_dup:
+            self._duplicate_project(item.data(Qt.ItemDataRole.UserRole))
+        elif action == act_ren:
+            self._on_rename_project()
+        elif action == act_del:
+            self._on_delete_project()
 
     def _on_delete_project(self) -> None:
         item = self.project_list.currentItem()
@@ -2482,116 +2915,24 @@ class HubWindow(QMainWindow):
     # ────────────────────────────────────────────────────────────────────
 
     def _refresh_stats_and_habits(self) -> None:
-        stats = self.state.get("stats", {})
-        streak = stats.get("currentStreak", 0)
-        done_today = stats.get("tasksCompletedToday", 0)
-        planned = stats.get("plannedTasksToday", 0)
-        mood_start = stats.get("moodAtStart")
-
-        # Card 1: Summary
-        if streak <= 0:
-            streak_msg = "You don't have an active streak yet. That's okay; you can start any day."
-        else:
-            streak_msg = f"You have a {streak}‑day streak. That's a lot of small wins."
-
-        tasks_msg = f"You completed {done_today} task(s) today."
-        if planned > 0:
-            tasks_msg += f" (Your plan was {planned}.)"
-
-        mood = get_today_mood(self.state)
-        encouragement = ""
-        if mood:
-            val = mood.get("value", "")
-            if val in ("Low energy", "Stressed"):
-                encouragement = "On heavy days, just existing is already work."
-            else:
-                encouragement = "However you feel today is valid. You’re allowed to go at your pace."
-        else:
-            encouragement = "No mood saved yet for today; you can check in whenever you feel ready."
-
-        self.stats_summary_label.setText(f"{streak_msg}\n{tasks_msg}\n{encouragement}")
-
-        # Card 2: Check-in
-        if mood:
-            value = mood.get("value", "Okay")
-            note = mood.get("note", "")
-            idx = self.mood_combo.findText(value)
-            self.mood_combo.setCurrentIndex(idx if idx >= 0 else 0)
-            self.mood_note.setPlainText(note)
-            self.mood_message.setText(self._mood_message_for_value(value))
-        else:
-            self.mood_combo.setCurrentIndex(0)
-            self.mood_note.clear()
-            self.mood_message.setText("Check in to see a message here.")
-
-        # Planning message
-        planning_msg = ""
-        if planned > 0:
-            if done_today >= planned:
-                planning_msg = f"You planned {planned} task(s) today and you met that plan."
-            else:
-                planning_msg = f"You planned {planned} task(s) today and completed {done_today}."
-
-        # Card 4: Habits list
-        self.habits_list.clear()
-        checks = get_today_habit_checks(self.state)
-        habits = [h for h in self.state.get("habits", []) if h.get("active", True)]
-        done_habits = sum(1 for h in habits if checks.get(h.get("id", ""), False))
-        total_habits = len(habits)
-        self.habits_header_label.setText(
-            f"Today’s habits ({done_habits} of {total_habits} done)"
+        # Get intelligent insights
+        insights = taskflowai.generate_insights(self.state)
+        
+        summary_html = (
+            f"<p style='font-size:16px; margin-bottom:4px;'><b>Current Vibe:</b> <span style='color:{GOLD}'>{insights['mood_guess']}</span></p>"
+            f"<p style='font-size:14px; margin-bottom:8px;'>{insights['advice']}</p>"
+            f"<p style='font-size:12px; color:{TEXT_GRAY}; font-style:italic;'>💡 Suggestion: {insights['task_suggestion']}</p>"
         )
 
-        if not habits:
-            self.habit_message.setText("You can add habits in the settings.")
-        else:
-            self.habit_message.setText("Every check is a small win.")
-
-        for h in habits:
-            item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, h.get("id"))
-
-            row = QWidget()
-            hl = QHBoxLayout(row)
-            hl.setContentsMargins(6, 2, 6, 2)
-            hl.setSpacing(6)
-
-            btn = QPushButton("✔" if checks.get(h["id"], False) else "")
-            btn.setCheckable(True)
-            btn.setChecked(checks.get(h["id"], False))
-            btn.setFixedSize(QSize(22, 22))
-            btn.setStyleSheet(
-                f"""
-                QPushButton {{
-                    background-color: transparent;
-                    border-radius: 11px;
-                    border: 1px solid {HOVER_BG};
-                    color: {GOLD};
-                    font-weight: bold;
-                }}
-                QPushButton:checked {{
-                    background-color: {GOLD};
-                    color: {DARK_BG};
-                }}
-                """
-            )
-
-            lbl = QLabel(h.get("name", "Habit"))
-            lbl.setStyleSheet(f"color: {TEXT_WHITE};")
-
-            hl.addWidget(btn)
-            hl.addWidget(lbl, 1)
-
-            self.habits_list.addItem(item)
-            self.habits_list.setItemWidget(item, row)
-
-            btn.clicked.connect(
-                lambda checked, hid=h["id"]: self._on_toggle_habit(hid, checked)
-            )
+        self.stats_summary_label.setText(summary_html)
 
         # Refresh graphs
         self.mood_graph.update()
         self.habit_graph.update()
+        self.category_graph.update()
+        self.score_widget.update()
+        self.heatmap_widget.update()
+        self.hourly_chart.update()
 
     def _on_toggle_habit(self, habit_id: str, checked: bool) -> None:
         set_habit_checked(self.state, habit_id, checked)
@@ -2621,6 +2962,35 @@ class HubWindow(QMainWindow):
         delete_idea(self.state, idea_id)
         self.schedule_save()
         self._refresh_home()
+
+    def _on_brain_dump(self) -> None:
+        dlg = BrainDumpDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            text = dlg.get_text().strip()
+            if not text: return
+            
+            count = 0
+            if dlg.use_ai():
+                # Use the new analytics function
+                suggestions = taskflowai.analyze_brain_dump(text, self.state)
+                for s in suggestions:
+                    add_task(
+                        self.state, 
+                        text=s["text"], 
+                        section=s.get("section", "Today"), 
+                        category=s["category"], 
+                        important=s["important"]
+                    )
+                    count += 1
+            else:
+                # Simple split by newline
+                lines = [l.strip() for l in text.split('\n') if l.strip()]
+                for l in lines:
+                    add_task(self.state, text=l, section="Today")
+                    count += 1
+            
+            self.schedule_save()
+            QMessageBox.information(self, "Brain Dump", f"Added {count} tasks to Today.")
 
     # ────────────────────────────────────────────────────────────────────
     # Updates, saving & close
@@ -2681,10 +3051,35 @@ class HubWindow(QMainWindow):
 
     def _on_save_mood(self) -> None:
         value = self.mood_combo.currentText()
-        note = self.mood_note.toPlainText().strip()
+        
+        # Preserve existing note if the editor is hidden/empty
+        existing = get_today_mood(self.state)
+        note = existing.get("note", "") if existing else ""
+        
+        if self.mood_note.isVisible():
+            note = self.mood_note.toPlainText().strip()
+            
         set_today_mood(self.state, value, note)
-        self.mood_message.setText(self._mood_message_for_value(value))
         self.schedule_save()
+        self._refresh_stats_and_habits()
+
+    def _on_data_changed(self) -> None:
+        """Refresh the currently visible page when data changes."""
+        current = self.stack.currentWidget()
+        if current is self.page_today:
+            self.page_today.refresh()
+        elif current is self.page_week:
+            self.page_week.refresh()
+        elif current is self.page_scheduled:
+            self.page_scheduled.refresh()
+        elif current is self.page_someday:
+            self.page_someday.refresh()
+        elif current is self.page_projects:
+            self.project_task_widget.refresh()
+        elif current is self.page_stats:
+            self._refresh_stats_and_habits()
+        elif current is self.page_home:
+            self._refresh_home()
 
     def _run_start_of_day_flow(self) -> None:
         """Check if we need to show the Welcome Screen or Daily Planning."""

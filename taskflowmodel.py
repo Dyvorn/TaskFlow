@@ -180,7 +180,14 @@ def default_state() -> Dict[str, Any]:
     return {
         "version": APP_VERSION,
         "lastOpened": today_str(),
+        "userProfile": {
+            "name": "Friend",
+            "role": "Generalist",
+            "style": "Gentle",  # Options: Gentle, Direct, Stoic, Hype
+        },
         "tasks": [],
+        "activityLog": [],
+        "categories": ["Work", "Personal", "Health", "Learning", "Finance"],
         "projects": [],
         "habits": [
             {"id": str(uuid.uuid4()), "name": "Drink water", "active": True},
@@ -232,8 +239,13 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     base = default_state()
     for key, value in base.items():
         state.setdefault(key, value)
+        # Ensure critical containers are not None
+        if state[key] is None and isinstance(value, (dict, list)):
+            state[key] = value
 
-    stats = state.setdefault("stats", {})
+    if not isinstance(state.get("stats"), dict):
+        state["stats"] = {}
+    stats = state["stats"]
     stats.setdefault("currentStreak", 0)
     stats.setdefault("lastActivityDate", None)
     stats.setdefault("xp", 0)
@@ -252,11 +264,18 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     stats.setdefault("moodsByDate", {})
     stats.setdefault("dailyLogs", {})
 
-    state.setdefault("ideas", [])
-    state.setdefault("notes", [])
-    state.setdefault("journal", [])
-    state.setdefault("habitChecks", {})
-    state.setdefault("dayQuality", {})
+    if not isinstance(state.get("userProfile"), dict):
+        state["userProfile"] = {"name": "Friend", "role": "Generalist", "style": "Gentle"}
+    state["userProfile"].setdefault("style", "Gentle")
+    state["userProfile"].setdefault("name", "Friend")
+
+    if not isinstance(state.get("activityLog"), list): state["activityLog"] = []
+    if not isinstance(state.get("categories"), list): state["categories"] = ["Work", "Personal", "Health", "Learning", "Finance"]
+    if not isinstance(state.get("ideas"), list): state["ideas"] = []
+    if not isinstance(state.get("notes"), list): state["notes"] = []
+    if not isinstance(state.get("journal"), list): state["journal"] = []
+    if not isinstance(state.get("habitChecks"), dict): state["habitChecks"] = {}
+    if not isinstance(state.get("dayQuality"), dict): state["dayQuality"] = {}
     state.setdefault("widgetCurrentProjectId", None)
 
     settings = state.setdefault("settings", {})
@@ -315,6 +334,8 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         t.setdefault("subArea", None)
         t.setdefault("recurrence", None)
         t.setdefault("schedule", None)
+        t.setdefault("category", None)
+        t.setdefault("completedAt", t["updatedAt"] if t["completed"] else None)
         fixed_tasks.append(t)
     state["tasks"] = fixed_tasks
 
@@ -324,13 +345,21 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
 def load_state(paths: Dict[str, str]) -> Dict[str, Any]:
     path = paths["data"]
     backup = paths["backup"]
+
     if not os.path.exists(path):
         return default_state()
+
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return validate_and_migrate_state(data)
     except Exception:
+        # If main file is corrupt, rename it so it isn't overwritten by a fresh save
+        try:
+            os.rename(path, path + ".corrupted")
+        except OSError:
+            pass
+
         if os.path.exists(backup):
             try:
                 with open(backup, "r", encoding="utf-8") as f:
@@ -345,6 +374,23 @@ def save_state(paths: Dict[str, str], state: Dict[str, Any]) -> None:
     state["lastOpened"] = today_str()
     atomic_write_json(paths["data"], paths["backup"], state)
 
+
+def log_activity(state: Dict[str, Any], action: str, entity_type: str, entity_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> None:
+    """Records a user action into the activity log for statistics."""
+    entry = {
+        "id": str(uuid.uuid4()),
+        "timestamp": now_iso(),
+        "action": action,
+        "entityType": entity_type,
+        "entityId": entity_id,
+        "details": details or {}
+    }
+    log = state.setdefault("activityLog", [])
+    log.append(entry)
+    
+    # Keep log size manageable (last 10,000 entries)
+    if len(log) > 10000:
+        state["activityLog"] = log[-10000:]
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MOOD & HABITS
@@ -495,6 +541,7 @@ def add_task(
     section: str = "Today",
     project_id: Optional[str] = None,
     important: bool = False,
+    category: Optional[str] = None,
 ) -> Dict[str, Any]:
     if section not in SECTIONS:
         section = "Today"
@@ -508,8 +555,10 @@ def add_task(
         "createdAt": now_iso(),
         "updatedAt": now_iso(),
         "important": important,
+        "category": category,
     }
     state.setdefault("tasks", []).append(task)
+    log_activity(state, "created", "task", task["id"], {"text": text, "section": section, "category": category})
     return task
 
 
@@ -574,15 +623,27 @@ def toggle_task_completed(state: Dict[str, Any], task_id: str) -> Optional[Dict[
             t["completed"] = not was_completed
             t["updatedAt"] = now_iso()
             
+            if t["completed"]:
+                t["completedAt"] = now_iso()
+            else:
+                t["completedAt"] = None
+            
             # Handle recurrence on completion
             if t["completed"] and not was_completed and t.get("recurrence"):
                 _handle_recurrence(state, t)
                 
+            action = "completed" if t["completed"] else "uncompleted"
+            log_activity(state, action, "task", task_id)
+            
             return t
     return None
 
 
 def delete_task(state: Dict[str, Any], task_id: str) -> None:
+    # Find task to log details before deleting
+    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+    if task:
+        log_activity(state, "deleted", "task", task_id, {"text": task.get("text")})
     state["tasks"] = [t for t in state.get("tasks", []) if t.get("id") != task_id]
 
 
@@ -601,11 +662,38 @@ def add_project(state: Dict[str, Any], name: str) -> Dict[str, Any]:
         "createdAt": now_iso(),
     }
     state.setdefault("projects", []).append(proj)
+    log_activity(state, "created", "project", proj["id"], {"name": name})
     return proj
 
 
 def tasks_for_project(state: Dict[str, Any], project_id: str) -> List[Dict[str, Any]]:
     return [t for t in state.get("tasks", []) if t.get("projectId") == project_id]
+
+
+def duplicate_project(state: Dict[str, Any], project_id: str) -> Optional[Dict[str, Any]]:
+    """Creates a copy of a project and all its tasks."""
+    project = get_project_by_id(state, project_id)
+    if not project:
+        return None
+    
+    # Clone project
+    new_proj = project.copy()
+    new_proj["id"] = str(uuid.uuid4())
+    new_proj["name"] = f"{project['name']} (Copy)"
+    new_proj["createdAt"] = now_iso()
+    state["projects"].append(new_proj)
+    
+    # Clone tasks
+    tasks = tasks_for_project(state, project_id)
+    for t in tasks:
+        new_task = t.copy()
+        new_task["id"] = str(uuid.uuid4())
+        new_task["projectId"] = new_proj["id"]
+        new_task["createdAt"] = now_iso()
+        new_task["updatedAt"] = now_iso()
+        state["tasks"].append(new_task)
+        
+    return new_proj
 
 
 # ═══════════════════════════════════════════════════════════════════════════

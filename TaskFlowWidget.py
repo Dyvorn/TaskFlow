@@ -333,7 +333,7 @@ class WidgetWindow(QWidget):
         self._refresh_tasks()
 
     # ────────────────────────────────────────────────────────────────────
-    # Tasks + suggestion
+    # Tasks
     # ────────────────────────────────────────────────────────────────────
 
     def _refresh_tasks(self) -> None:
