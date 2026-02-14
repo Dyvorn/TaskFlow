@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 # ═══════════════════════════════════════════════════════════════════════════
 
 APP_NAME = "TaskFlow"
-APP_VERSION = "7.0"
+APP_VERSION = "7.1"
 DATA_DIR_NAME = "TaskFlowV7"
 
 # Theme colors
@@ -148,7 +148,9 @@ def get_data_paths() -> Dict[str, str]:
     os.makedirs(base, exist_ok=True)
     data_file = os.path.join(base, "taskflow_hub_data.json")
     backup_file = os.path.join(base, "taskflow_hub_data.backup.json")
-    return {"dir": base, "data": data_file, "backup": backup_file}
+    kb_file = os.path.join(base, "knowledge_base.json")
+    training_file = os.path.join(base, "user_training.json")
+    return {"dir": base, "data": data_file, "backup": backup_file, "kb": kb_file, "training": training_file}
 
 
 def atomic_write_json(path: str, backup_path: str, data: Dict[str, Any]) -> None:
@@ -187,7 +189,7 @@ def default_state() -> Dict[str, Any]:
         },
         "tasks": [],
         "activityLog": [],
-        "categories": ["Work", "Personal", "Health", "Learning", "Finance"],
+        "categories": ["Work", "Personal", "Health", "Learning", "Finance", "Dev", "Creative"],
         "projects": [],
         "habits": [
             {"id": str(uuid.uuid4()), "name": "Drink water", "active": True},
@@ -272,7 +274,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     state["userProfile"].setdefault("name", "Friend")
 
     if not isinstance(state.get("activityLog"), list): state["activityLog"] = []
-    if not isinstance(state.get("categories"), list): state["categories"] = ["Work", "Personal", "Health", "Learning", "Finance"]
+    if not isinstance(state.get("categories"), list): state["categories"] = ["Work", "Personal", "Health", "Learning", "Finance", "Dev", "Creative"]
     if not isinstance(state.get("ideas"), list): state["ideas"] = []
     if not isinstance(state.get("notes"), list): state["notes"] = []
     if not isinstance(state.get("journal"), list): state["journal"] = []

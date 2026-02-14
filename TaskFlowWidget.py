@@ -146,7 +146,7 @@ class WidgetWindow(QWidget):
         
         # Default to right edge if no pos saved
         if pos and len(pos) == 2:
-            x, y = pos
+            x, y = int(pos[0]), int(pos[1])
         else:
             x = geo.right() - WIDGET_WIDTH + 1
             y = geo.top() + 100
@@ -238,6 +238,13 @@ class WidgetWindow(QWidget):
         self.bump.setStyleSheet(f"background-color: rgba(255, 255, 255, 0.1); border: 1px solid {GLASS_BORDER}; border-radius: 16px;")
         self.bump.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.bump.hide()
+        
+        # Add a visual handle to the bump
+        bump_layout = QVBoxLayout(self.bump)
+        bump_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bump_handle = QLabel("⋮")
+        bump_handle.setStyleSheet(f"color: {GOLD}; font-size: 20px; font-weight: bold;")
+        bump_layout.addWidget(bump_handle)
 
         # header row
         header_row = QHBoxLayout()
@@ -251,6 +258,13 @@ class WidgetWindow(QWidget):
         self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px;")
         header_row.addWidget(self.status_label, 2)
+
+        # Collapse button
+        self.btn_collapse = QPushButton("›")
+        self.btn_collapse.setFixedSize(24, 24)
+        self.btn_collapse.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_collapse.clicked.connect(lambda: self._set_expanded(False))
+        header_row.addWidget(self.btn_collapse)
 
         self.content_layout.addLayout(header_row)
 
@@ -347,13 +361,31 @@ class WidgetWindow(QWidget):
         incomplete_tasks.sort(key=lambda t: (0 if t.get("important") else 1, t.get("order", 0)))
 
         max_visible = self.state.get("settings", {}).get("widgetTaskCount", 5)
-        visible_tasks = incomplete_tasks[:max_visible]
+        
+        visible_tasks = []
+        is_showing_scheduled = False
+
+        if incomplete_tasks:
+            visible_tasks = incomplete_tasks[:max_visible]
+        else:
+            # If Today is empty, look for Scheduled
+            scheduled = tasks_in_section(self.state, "Scheduled")
+            scheduled = [t for t in scheduled if not t.get("completed")]
+            # Sort primarily by date
+            scheduled.sort(key=lambda t: t.get("schedule", {}).get("date", "9999-99-99"))
+            
+            if scheduled:
+                visible_tasks = scheduled[:max_visible]
+                is_showing_scheduled = True
 
         for t in visible_tasks:
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
             row = QWidget()
+            row.setObjectName("WidgetTaskRow")
+            row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            row.setStyleSheet(f"#WidgetTaskRow:hover {{ background-color: {HOVER_BG}; border-radius: 6px; }}")
             hl = QHBoxLayout(row)
             hl.setContentsMargins(2, 0, 2, 0)
             hl.setSpacing(4)
@@ -366,6 +398,14 @@ class WidgetWindow(QWidget):
             text = t.get("text", "")
             lbl = QLabel(text)
             lbl.setWordWrap(True)
+            
+            if is_showing_scheduled:
+                sched = t.get("schedule")
+                date_str = sched.get("date", "") if isinstance(sched, dict) else ""
+                if date_str:
+                    lbl.setText(f"<span style='color:{GOLD}; font-size:10px;'>{date_str}</span> {text}")
+                    lbl.setTextFormat(Qt.TextFormat.RichText)
+
             if t.get("completed"):
                 lbl.setStyleSheet(
                     f"color: {TEXT_GRAY}; text-decoration: line-through;"
@@ -385,7 +425,9 @@ class WidgetWindow(QWidget):
 
         # Update status line
         counts = count_today_tasks(self.state)
-        if counts["total"] == 0:
+        if is_showing_scheduled:
+            self.status_label.setText("Today is clear. Upcoming:")
+        elif counts["total"] == 0:
             self.status_label.setText("All clear for Today.")
         else:
             self.status_label.setText(f"{counts['completed']} of {counts['total']} done.")
@@ -452,6 +494,11 @@ class WidgetWindow(QWidget):
             self._idle_timer.stop()
 
     def _on_auto_collapse_timeout(self) -> None:
+        # Don't collapse if user is typing
+        if self.quick_add_input.isVisible() and self.quick_add_input.hasFocus():
+            self._restart_idle_timers()
+            return
+            
         if self._docked and self._expanded:
             self._set_expanded(False, is_auto=True)
 
@@ -474,6 +521,9 @@ class WidgetWindow(QWidget):
         geo = self._get_current_screen_geometry()
 
         start_pos = self.pos()
+        
+        # Update collapse button direction
+        self.btn_collapse.setText("›" if self._docked_side == "right" else "‹")
         
         # Calculate target X based on side and expansion state
         if expanded:
@@ -585,7 +635,7 @@ class WidgetWindow(QWidget):
             self._docked_side = side
             self._expanded = True # Always expand on drop
             
-            self.move(x, y)
+            self.move(int(x), int(y))
             
             # Persist
             s = self.state.setdefault("settings", {})
@@ -602,7 +652,7 @@ class WidgetWindow(QWidget):
     def enterEvent(self, event) -> None:
         if self._docked and not self._expanded:
             if self._hover_expand_enabled and not self._long_idle_mode:
-                self._hover_open_timer.start(1500)
+                self._hover_open_timer.start(300) # Faster response (was 1500)
         self._restart_idle_timers()
         super().enterEvent(event)
 

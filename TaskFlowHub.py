@@ -24,7 +24,7 @@ from PyQt6.QtCore import (
     QRectF,
     QPoint,
     QParallelAnimationGroup,
-    pyqtSignal,
+    pyqtSignal, 
 )
 from PyQt6.QtGui import (
     QColor,
@@ -33,7 +33,7 @@ from PyQt6.QtGui import (
     QPen,
     QBrush,
     QShortcut,
-    QKeySequence,
+    QKeySequence, 
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -62,6 +62,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QGraphicsDropShadowEffect,
     QCalendarWidget,
+    QScrollArea,
 )
 
 try:
@@ -375,9 +376,20 @@ class WelcomeDialog(QDialog):
         layout.addWidget(buttons)
 
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {CARD_BG}; }}
+            QDialog {{ background-color: {CARD_BG}; border: 1px solid {GLASS_BORDER}; border-radius: 16px; }}
             QLabel {{ color: {TEXT_WHITE}; }}
-            QLineEdit, QComboBox {{ background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {HOVER_BG}; border-radius: 6px; padding: 6px; }}
+            QLineEdit, QComboBox {{ 
+                background-color: rgba(0,0,0,0.3); 
+                color: {TEXT_WHITE}; 
+                border: 1px solid {HOVER_BG}; 
+                border-radius: 6px; 
+                padding: 6px; 
+            }}
+            QLineEdit:focus, QComboBox:focus {{ border: 1px solid {GOLD}; }}
+            QPushButton {{
+                background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 16px; border: 1px solid {GLASS_BORDER};
+            }}
+            QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; border: none; }}
         """)
 
     def get_data(self) -> Dict[str, Any]:
@@ -558,6 +570,7 @@ class ProfileWidget(QWidget):
         form_card = QFrame()
         form_card.setObjectName("GlassCard")
         f_layout = QVBoxLayout(form_card)
+        f_layout.setContentsMargins(24, 24, 24, 24)
         f_layout.setSpacing(15)
 
         f_layout.addWidget(QLabel("What should I call you?"))
@@ -575,6 +588,15 @@ class ProfileWidget(QWidget):
         self.style_combo.addItems(["Gentle", "Direct", "Stoic", "Hype"])
         self.style_combo.currentTextChanged.connect(self._save)
         f_layout.addWidget(self.style_combo)
+        
+        # Style descriptions
+        self.lbl_style_desc = QLabel()
+        self.lbl_style_desc.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 12px; font-style: italic; margin-top: 4px;")
+        self.lbl_style_desc.setWordWrap(True)
+        f_layout.addWidget(self.lbl_style_desc)
+        
+        # Update description when combo changes
+        self.style_combo.currentTextChanged.connect(self._update_style_desc)
 
         layout.addWidget(form_card)
         layout.addStretch(1)
@@ -584,6 +606,16 @@ class ProfileWidget(QWidget):
         self.name_input.setText(p.get("name", ""))
         self.role_input.setText(p.get("role", ""))
         self.style_combo.setCurrentText(p.get("style", "Gentle"))
+        self._update_style_desc(self.style_combo.currentText())
+
+    def _update_style_desc(self, style):
+        descs = {
+            "Gentle": "Kind, encouraging, and patient. Focuses on small steps and well-being.",
+            "Direct": "No-nonsense, efficient, and results-oriented. Focuses on execution.",
+            "Stoic": "Calm, rational, and disciplined. Focuses on what you can control.",
+            "Hype": "High energy, enthusiastic, and aggressive. Focuses on winning and crushing goals."
+        }
+        self.lbl_style_desc.setText(descs.get(style, ""))
 
     def _save(self):
         p = self.state.setdefault("userProfile", {})
@@ -1524,10 +1556,10 @@ class TaskListWidget(QWidget):
             self._prompt_schedule(task_id)
         elif action is act_recur:
             self._prompt_recurrence(task_id)
-        elif action.parentWidget() is move_menu:
+        elif action.parent() is move_menu:
             new_section = action.text()
             self._move_task_section(task_id, new_section)
-        elif action.parentWidget() is proj_menu:
+        elif action.parent() is proj_menu:
             proj_id = action.data()
             self._assign_task_project(task_id, proj_id)
 
@@ -2025,7 +2057,7 @@ class ProjectTaskListWidget(QWidget):
             self._rename_task(task_id)
         elif action is act_important:
             self._toggle_important(task_id)
-        elif action.parentWidget() is move_menu:
+        elif action.parent() is move_menu:
             self._move_task_section(task_id, action.text())
         elif action is act_delete:
             self._on_delete_task(task_id)
@@ -2174,6 +2206,16 @@ class HubWindow(QMainWindow):
         super().__init__()
         self.state = state
         self.paths = paths
+
+        # Initialize AI with external Knowledge Base ("Life JSON")
+        taskflowai.init_knowledge_base(self.paths["kb"])
+        
+        # Load User Model ("User JSON") - The Portable Brain
+        taskflowai.load_user_model(self.paths["training"])
+        
+        # If model is empty but we have history (e.g. first run after update), train immediately
+        if not taskflowai.USER_MODEL["word_associations"] and self.state.get("tasks"):
+            taskflowai.save_user_training(self.state, self.paths["training"])
 
         # Geometry
         geom = self.state.get("uiGeometry")
@@ -2523,15 +2565,23 @@ class HubWindow(QMainWindow):
         quick_links_layout = QHBoxLayout()
         
         btn_brain_dump = QPushButton("🧠 Brain Dump")
-        btn_brain_dump.setStyleSheet(f"background-color: {HOVER_BG}; color: {GOLD}; font-weight: bold;")
         btn_brain_dump.clicked.connect(self._on_brain_dump)
+        
+        btn_time = QPushButton("⏱ I have time...")
+        btn_time.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_time.clicked.connect(self._on_suggest_by_time)
         
         btn_open_today = QPushButton("Open Today")
         btn_open_projects = QPushButton("Open Projects")
+        
+        for btn in (btn_brain_dump, btn_time, btn_open_today, btn_open_projects):
+            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 8px; border: 1px solid {GLASS_BORDER};")
+            
         btn_open_today.clicked.connect(lambda: self._switch_page(self.page_today))
         btn_open_projects.clicked.connect(lambda: self._switch_page(self.page_projects))
         
         quick_links_layout.addWidget(btn_brain_dump)
+        quick_links_layout.addWidget(btn_time)
         quick_links_layout.addStretch(1)
         quick_links_layout.addWidget(btn_open_today)
         quick_links_layout.addWidget(btn_open_projects)
@@ -2755,7 +2805,25 @@ class HubWindow(QMainWindow):
         self.setting_hub_maximized.toggled.connect(self._on_settings_changed)
         l_card.addWidget(self.setting_hub_maximized)
 
+        # --- Data Management ---
+        l_card.addSpacing(10)
+        lbl_data = QLabel("Data & AI")
+        lbl_data.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
+        l_card.addWidget(lbl_data)
+
+        btn_open_data = QPushButton("Open Data Folder (Edit .json)")
+        btn_open_data.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_open_data.clicked.connect(self._open_data_folder)
+        btn_open_data.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 6px; padding: 8px;")
+        l_card.addWidget(btn_open_data)
+
         l_card.addStretch(1)
+        
+        lbl_ver = QLabel(f"TaskFlow v{APP_VERSION}")
+        lbl_ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_ver.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 12px;")
+        l_card.addWidget(lbl_ver)
+
         layout.addWidget(card)
 
     def _on_settings_changed(self):
@@ -2770,6 +2838,14 @@ class HubWindow(QMainWindow):
         self.setting_widget_enabled.setChecked(settings.get("widgetEnabled", True))
         self.setting_widget_task_count.setCurrentText(str(settings.get("widgetTaskCount", 5)))
         self.setting_hub_maximized.setChecked(settings.get("startWithHubMaximized", True))
+
+    def _open_data_folder(self):
+        folder = self.paths["dir"]
+        # On Windows, os.startfile is more reliable for folders than webbrowser
+        if sys.platform == "win32":
+            os.startfile(folder)
+        else:
+            open_url_safe(folder)
 
     # ────────────────────────────────────────────────────────────────────
     # Navigation & page switching
@@ -3249,6 +3325,32 @@ class HubWindow(QMainWindow):
         self.schedule_save()
         self._refresh_stats_and_habits()
 
+    def _on_suggest_by_time(self) -> None:
+        minutes, ok = QInputDialog.getInt(self, "Available Time", "How many minutes do you have?", 30, 5, 480, 5)
+        if not ok: return
+        
+        task = taskflowai.suggest_task_by_time(self.state, minutes)
+        if task:
+            est = task.get("estimated_duration") or taskflowai.estimate_duration(task["text"])
+            msg = f"You have time for:\n\n<b>{task['text']}</b>\n\n(Estimated: {est} mins)"
+            
+            box = QMessageBox(self)
+            box.setWindowTitle("Suggestion")
+            box.setText(msg)
+            box.setTextFormat(Qt.TextFormat.RichText)
+            btn_do = box.addButton("Do it now", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            
+            if box.clickedButton() == btn_do:
+                if task["section"] != "Today":
+                    task["section"] = "Today"
+                    task["updatedAt"] = now_iso()
+                    self.schedule_save()
+                self._switch_page(self.page_today)
+        else:
+            QMessageBox.information(self, "No match", "Couldn't find a short enough task. Maybe take a break?")
+
     def _on_data_changed(self) -> None:
         """Refresh the currently visible page when data changes."""
         current = self.stack.currentWidget()
@@ -3327,6 +3429,8 @@ class HubWindow(QMainWindow):
         g = self.geometry()
         self.state["uiGeometry"] = [g.x(), g.y(), g.width(), g.height()]
         save_state(self.paths, self.state)
+        # Generate and save the User Training JSON ("User JSON")
+        taskflowai.save_user_training(self.state, self.paths["training"])
 
     def closeEvent(self, event) -> None:
         # Optional: End-of-day reflection dialog could go here

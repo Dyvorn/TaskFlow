@@ -5,8 +5,9 @@ import shutil
 
 # --- Configuration ---
 APP_NAME = "TaskFlow"
-MAIN_SCRIPT = "TaskFlowApp.py"
+MAIN_SCRIPT = "TaskFlowHub.py"
 ICON_FILE = "icon.ico" # Assumes icon is in an assets folder
+ISS_FILE = "TaskFlow.iss"
 
 
 def build():
@@ -33,6 +34,7 @@ def build():
         "--windowed",
         "--name", APP_NAME,
         "--hidden-import", "requests", # Ensure requests is included if available
+        "--hidden-import", "taskflowanalytics",
     ]
 
     if os.path.exists(ICON_FILE):
@@ -45,8 +47,22 @@ def build():
 
     subprocess.check_call(cmd)
 
-    print(f"--- Build complete! ---")
+    print(f"--- PyInstaller build complete! ---")
     print(f"Executable created in: {os.path.abspath('dist')}")
+
+    # --- Inno Setup ---
+    if os.path.exists(ISS_FILE):
+        print(f"3. Compiling Installer with Inno Setup...")
+        try:
+            # Assumes ISCC is in PATH. If not, add it or use full path.
+            subprocess.check_call(["iscc", ISS_FILE])
+            print(f"--- Installer created successfully! ---")
+        except FileNotFoundError:
+            print("Error: 'iscc' command not found. Is Inno Setup installed and in your PATH?")
+        except subprocess.CalledProcessError as e:
+            print(f"Error compiling installer: {e}")
+    else:
+        print(f"Warning: {ISS_FILE} not found. Skipping installer generation.")
 
 if __name__ == "__main__":
     build()
