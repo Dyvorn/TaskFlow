@@ -592,6 +592,122 @@ class ProfileWidget(QWidget):
         p["style"] = self.style_combo.currentText()
         self._save_callback()
 
+class SomedayReviewDialog(QDialog):
+    """
+    Dialog to review a few random tasks from Someday.
+    """
+    def __init__(self, tasks: List[Dict[str, Any]], state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowTitle("Review Someday Tasks")
+        self.tasks = tasks
+        self.state = state
+        self.save_callback = save_callback
+        self.setModal(True)
+        self.resize(400, 400)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        lbl = QLabel("Here are 3 tasks from your Someday list. Still relevant?")
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
+        layout.addWidget(lbl)
+        
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet("background: transparent; border: none;")
+        self.content = QWidget()
+        self.content.setStyleSheet("background: transparent;")
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setSpacing(10)
+        self.content_layout.addStretch() # Push items to top
+        self.scroll.setWidget(self.content)
+        layout.addWidget(self.scroll)
+        
+        # Insert tasks at the beginning (before stretch)
+        for t in self.tasks:
+            self._add_task_row(t)
+            
+        btn_close = QPushButton("Done")
+        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_close.clicked.connect(self.accept)
+        btn_close.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 8px 16px; border: 1px solid {GLASS_BORDER};")
+        layout.addWidget(btn_close)
+        
+        self.setStyleSheet(f"background-color: {CARD_BG};")
+
+    def _add_task_row(self, task):
+        frame = QFrame()
+        frame.setStyleSheet(f"background-color: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; border: 1px solid {HOVER_BG};")
+        fl = QVBoxLayout(frame)
+        fl.setSpacing(8)
+        
+        lbl = QLabel(task.get("text", ""))
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"color: {TEXT_WHITE}; font-weight: bold; font-size: 14px;")
+        fl.addWidget(lbl)
+        
+        btns = QHBoxLayout()
+        btns.setSpacing(10)
+        
+        btn_today = QPushButton("Move to Today")
+        btn_today.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_today.setStyleSheet(f"color: {GOLD}; background: transparent; text-align: left; font-weight: bold;")
+        btn_today.clicked.connect(lambda: self._move_to_today(task, frame))
+        
+        btn_del = QPushButton("Delete")
+        btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_del.setStyleSheet(f"color: #ff6b6b; background: transparent; text-align: left;")
+        btn_del.clicked.connect(lambda: self._delete_task(task, frame))
+        
+        btn_keep = QPushButton("Keep")
+        btn_keep.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_keep.setStyleSheet(f"color: {TEXT_GRAY}; background: transparent; text-align: left;")
+        btn_keep.clicked.connect(lambda: self._keep_task(frame))
+        
+        btns.addWidget(btn_today)
+        btns.addWidget(btn_del)
+        btns.addWidget(btn_keep)
+        btns.addStretch()
+        
+        fl.addLayout(btns)
+        
+        # Insert before the stretch (which is the last item)
+        self.content_layout.insertWidget(self.content_layout.count() - 1, frame)
+
+    def _move_to_today(self, task, frame):
+        task["section"] = "Today"
+        task["updatedAt"] = now_iso()
+        self.save_callback()
+        self._animate_remove(frame)
+
+    def _delete_task(self, task, frame):
+        if task in self.state["tasks"]:
+            self.state["tasks"].remove(task)
+        self.save_callback()
+        self._animate_remove(frame)
+
+    def _keep_task(self, frame):
+        self._animate_remove(frame)
+
+    def _animate_remove(self, frame):
+        effect = QGraphicsOpacityEffect(frame)
+        frame.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", frame)
+        anim.setDuration(300)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        anim.finished.connect(lambda: self._finalize_remove(frame))
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _finalize_remove(self, frame):
+        frame.hide()
+        frame.deleteLater()
+
 class MoodGraphWidget(QWidget):
     """
     Simple 14‑day mood history bar graph.
@@ -1092,6 +1208,28 @@ class TaskListWidget(QWidget):
             self.btn_next.clicked.connect(self._suggest_next_task)
             header.addWidget(self.btn_next)
 
+        # Someday review button
+        if self.section == "Someday":
+            self.btn_review = QPushButton("Review 3 Random")
+            self.btn_review.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background-color: {HOVER_BG};
+                    color: {GOLD};
+                    font-weight: bold;
+                    border-radius: 12px;
+                    padding: 4px 10px;
+                    border: 1px solid {GLASS_BORDER};
+                }}
+                QPushButton:hover {{
+                    background-color: rgba(255, 255, 255, 40);
+                }}
+                """
+            )
+            self.btn_review.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.btn_review.clicked.connect(self._review_someday_tasks)
+            header.addWidget(self.btn_review)
+
         # Section menu button
         self.menu_btn = QPushButton("⋯")
         self.menu_btn.setFixedSize(26, 26)
@@ -1173,15 +1311,15 @@ class TaskListWidget(QWidget):
             self.empty_label.setVisible(True)
             if self.section == "Today":
                 self.empty_label.setText(
-                    "No tasks for Today.\n\nAdd one small thing to get started."
+                    "No tasks for Today.\n\nUse Brain Dump to unload your mind, then pick 1 small win."
                 )
             elif self.section == "This Week":
                 self.empty_label.setText(
-                    "No tasks for This Week.\n\nPlan ahead gently."
+                    "No tasks for This Week.\n\nBrain Dump helps you plan ahead."
                 )
             elif self.section == "Someday":
                 self.empty_label.setText(
-                    "No tasks for Someday.\n\nCapture ideas for later."
+                    "No ideas yet.\n\nBrain Dump is the fastest way to capture them."
                 )
             else:
                 self.empty_label.setText(f"No tasks in {self.section}.")
@@ -1549,6 +1687,22 @@ class TaskListWidget(QWidget):
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         anim.finished.connect(lambda: row.setGraphicsEffect(None))
         anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _review_someday_tasks(self) -> None:
+        tasks = tasks_in_section(self.state, "Someday")
+        incomplete = [t for t in tasks if not t.get("completed")]
+        
+        if not incomplete:
+            QMessageBox.information(self, "Review Someday", "No tasks in Someday to review.")
+            return
+            
+        # Pick 3 random
+        count = min(3, len(incomplete))
+        picks = random.sample(incomplete, count)
+        
+        dlg = SomedayReviewDialog(picks, self.state, self._save_callback, self)
+        dlg.exec()
+        self.refresh()
 
 class ProjectTaskListWidget(QWidget):
     """
@@ -2291,7 +2445,7 @@ class HubWindow(QMainWindow):
         lbl_gl.setStyleSheet(f"color: {GOLD}; font-weight: bold; font-size: 16px;")
         l_glance.addWidget(lbl_gl)
 
-        lbl_expl = QLabel("Today is for now. This Week is flexible. Someday is for ideas.")
+        lbl_expl = QLabel("Brain Dump everything. TaskFlow sorts it into Today / Tomorrow / This Week / Someday.")
         lbl_expl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px; margin-bottom: 4px;")
         l_glance.addWidget(lbl_expl)
 
@@ -2963,34 +3117,66 @@ class HubWindow(QMainWindow):
         self.schedule_save()
         self._refresh_home()
 
-    def _on_brain_dump(self) -> None:
+    def _on_brain_dump(self, onboarding: bool = False) -> None:
         dlg = BrainDumpDialog(self)
+        if onboarding:
+            dlg.setWindowTitle("Welcome! Let's start with a Brain Dump 🧠")
+
         if dlg.exec() == QDialog.DialogCode.Accepted:
             text = dlg.get_text().strip()
             if not text: return
             
-            count = 0
+            created_ids = []
+            
             if dlg.use_ai():
                 # Use the new analytics function
                 suggestions = taskflowai.analyze_brain_dump(text, self.state)
+                counts = {"Today": 0, "Tomorrow": 0, "This Week": 0, "Someday": 0}
+                
                 for s in suggestions:
-                    add_task(
+                    sec = s.get("section", "Today")
+                    t = add_task(
                         self.state, 
                         text=s["text"], 
-                        section=s.get("section", "Today"), 
+                        section=sec, 
                         category=s["category"], 
                         important=s["important"]
                     )
-                    count += 1
+                    created_ids.append(t["id"])
+                    counts[sec] = counts.get(sec, 0) + 1
+                
+                parts = [f"{k}: {v}" for k, v in counts.items() if v > 0]
+                msg = "Sorted into: " + ", ".join(parts) if parts else "No tasks created."
+                QMessageBox.information(self, "Brain Dump Sorted", msg)
+                
             else:
-                # Simple split by newline
+                # Simple split by newline -> Someday
                 lines = [l.strip() for l in text.split('\n') if l.strip()]
                 for l in lines:
-                    add_task(self.state, text=l, section="Today")
-                    count += 1
+                    t = add_task(self.state, text=l, section="Someday")
+                    created_ids.append(t["id"])
+                
+                if created_ids:
+                    # Prompt to move to Today
+                    plan_dlg = DailyPlanningDialog(0, self)
+                    plan_dlg.setWindowTitle("Pick Focus")
+                    if plan_dlg.exec() == QDialog.DialogCode.Accepted:
+                        count_to_move = plan_dlg.planned_tasks()
+                        moved_count = 0
+                        for i in range(min(count_to_move, len(created_ids))):
+                            tid = created_ids[i]
+                            for t in self.state["tasks"]:
+                                if t["id"] == tid:
+                                    t["section"] = "Today"
+                                    t["updatedAt"] = now_iso()
+                                    moved_count += 1
+                                    break
+                        QMessageBox.information(self, "Brain Dump", f"Captured {len(created_ids)} items to Someday.\nMoved {moved_count} to Today.")
+                    else:
+                        QMessageBox.information(self, "Brain Dump", f"Captured {len(created_ids)} items to Someday.")
             
             self.schedule_save()
-            QMessageBox.information(self, "Brain Dump", f"Added {count} tasks to Today.")
+            self._switch_page(self.page_today)
 
     # ────────────────────────────────────────────────────────────────────
     # Updates, saving & close
@@ -3086,6 +3272,15 @@ class HubWindow(QMainWindow):
         today = today_str()
         stats = self.state.setdefault("stats", {})
         daily_logs = stats.setdefault("dailyLogs", {})
+
+        # 0. Brain Dump Onboarding
+        if not stats.get("didShowBrainDumpOnboarding", False):
+            total_tasks = len(self.state.get("tasks", []))
+            if total_tasks == 0:
+                self._on_brain_dump(onboarding=True)
+                stats["didShowBrainDumpOnboarding"] = True
+                self.schedule_save()
+                # Proceed to normal flow
 
         # 1. Welcome Flow (Once per day)
         if today not in daily_logs:

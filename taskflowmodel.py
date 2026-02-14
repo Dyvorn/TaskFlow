@@ -217,6 +217,7 @@ def default_state() -> Dict[str, Any]:
             "habitsCompletedByDay": {},
             "moodsByDate": {},
             "dailyLogs": {},
+            "didShowBrainDumpOnboarding": False,
         },
         # dayQuality: stores {date, tasksCompleted, tasksPlanned, moodAtStart, moodAtEnd, habitsDone}
         "dayQuality": {},
@@ -263,6 +264,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     stats.setdefault("habitsCompletedByDay", {})
     stats.setdefault("moodsByDate", {})
     stats.setdefault("dailyLogs", {})
+    stats.setdefault("didShowBrainDumpOnboarding", False)
 
     if not isinstance(state.get("userProfile"), dict):
         state["userProfile"] = {"name": "Friend", "role": "Generalist", "style": "Gentle"}
