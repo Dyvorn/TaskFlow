@@ -281,9 +281,10 @@ def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Tod
     # Check for #Category
     categories = state.get("categories", [])
     for cat in categories:
-        if re.search(rf"\b#{re.escape(cat)}\b", text, re.IGNORECASE):
+        # Match #Category at start, end, or surrounded by whitespace
+        if re.search(rf"(?:^|\s)#{re.escape(cat)}\b", text, re.IGNORECASE):
             explicit_cat = cat
-            text = re.sub(rf"\b#{re.escape(cat)}\b", "", text, flags=re.IGNORECASE)
+            text = re.sub(rf"(?:^|\s)#{re.escape(cat)}\b", " ", text, flags=re.IGNORECASE)
             break
             
     # Check for !important or trailing !
@@ -293,6 +294,9 @@ def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Tod
     elif text.strip().endswith("!"):
         explicit_prio_tag = True
         text = text.strip().rstrip("!")
+        
+    # Cleanup whitespace after tag removal
+    text = re.sub(r'\s+', ' ', text).strip()
 
     text_clean = text.strip()
     text_lower = text_clean.lower()

@@ -55,6 +55,7 @@ from taskflowmodel import (
     tasks_in_section,
     toggle_task_completed,
     add_task,
+    create_task_row_widget,
 )
 
 
@@ -437,6 +438,12 @@ class WidgetWindow(QWidget):
     # ────────────────────────────────────────────────────────────────────
 
     def _refresh_tasks(self) -> None:
+        scroll_pos = self.tasks_list.verticalScrollBar().value()
+        
+        selected_id = None
+        if self.tasks_list.currentItem():
+            selected_id = self.tasks_list.currentItem().data(Qt.ItemDataRole.UserRole)
+            
         self.tasks_list.clear()
 
         # Today tasks
@@ -468,110 +475,14 @@ class WidgetWindow(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-            row = QWidget()
-            row.setObjectName("WidgetTaskRow")
-            row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-            row.setStyleSheet(f"#WidgetTaskRow:hover {{ background-color: {HOVER_BG}; border-radius: 6px; }}")
-            hl = QHBoxLayout(row)
-            hl.setContentsMargins(2, 0, 2, 0)
-            hl.setSpacing(4)
-
-            chk = QPushButton("✔" if t.get("completed") else "")
-            chk.setCheckable(True)
-            chk.setChecked(t.get("completed"))
-            chk.setFixedSize(QSize(20, 20))
-
-            text = t.get("text", "")
-            lbl = QLabel(text)
-            lbl.setWordWrap(True)
-            
-            if is_showing_scheduled:
-                sched = t.get("schedule")
-                date_str = sched.get("date", "") if isinstance(sched, dict) else ""
-                if date_str:
-                    lbl.setText(f"<span style='color:{GOLD}; font-size:10px;'>{date_str}</span> {text}")
-                    lbl.setTextFormat(Qt.TextFormat.RichText)
-
-            if t.get("completed"):
-                lbl.setStyleSheet(
-                    f"color: {TEXT_GRAY}; text-decoration: line-through;"
-                )
-            elif t.get("important"):
-                lbl.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
-
-            hl.addWidget(chk)
-            hl.addWidget(lbl, 1)
-
-            self.tasks_list.addItem(item)
-            self.tasks_list.setItemWidget(item, row)
-
-            chk.clicked.connect(
-                lambda checked, tid=t.get("id"): self._on_toggle_task(tid)
-            )
-
-        # Update status line
-        counts = count_today_tasks(self.state)
-        if is_showing_scheduled:
-            self.status_label.setText("Today is clear. Upcoming:")
-        elif counts["total"] == 0:
-            self.status_label.setText("All clear for Today.")
-        else:
-            self.status_label.setText(f"{counts['completed']} of {counts['total']} done.")
-
-    def _on_toggle_task(self, task_id: str) -> None:
-        # Check if we are completing (not un-completing) to animate
-        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
-        if task and not task.get("completed"):
-            # Find the row widget to animate
-            row = None
-            for i in range(self.tasks_list.count()):
-                item = self.tasks_list.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == task_id:
-                    row = self.tasks_list.itemWidget(item)
-                    break
-            
-            if row:
-                self._animate_and_finalize_toggle(row, task_id)
-                return
-
-        self._finalize_toggle(task_id)
+            row = :._finalize_toggle(task_id)
 
     def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
         effect = QGraphicsOpacityEffect(row)
         row.setGraphicsEffect(effect)
         group = QParallelAnimationGroup(self)
-        
-        anim_fade = QPropertyAnimation(effect, b"opacity")
-        anim_fade.setDuration(ANIM_DURATION_MEDIUM)
-        anim_fade.setStartValue(1.0)
-        anim_fade.setEndValue(0.0)
-        anim_fade.setEasingCurve(QEasingCurve.Type.InQuad)
-        
-        anim_size = QPropertyAnimation(row, b"maximumHeight")
-        anim_size.setDuration(ANIM_DURATION_MEDIUM)
-        anim_size.setStartValue(row.height())
-        anim_size.setEndValue(0)
-        anim_size.setEasingCurve(QEasingCurve.Type.InCubic)
-        
-        group.addAnimation(anim_fade)
-        group.addAnimation(anim_size)
-        group.finished.connect(lambda: self._finalize_toggle(task_id))
-        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-
-    def _finalize_toggle(self, task_id: str):
-        toggle_task_completed(self.state, task_id)
-        
-        if winsound:
-            try: winsound.MessageBeep(winsound.MB_OK)
-            except: pass
-        self.confetti.burst()
-        
-        self._save_callback()
-        self._refresh_tasks()
-        self._restart_idle_timers()
-
-    # ────────────────────────────────────────────────────────────────────
-    # Collapse / dock / drag
+      e.Asae.lback()
+        self._refresh_tasks()se / dock / drag
     # ────────────────────────────────────────────────────────────────────
 
     def _restart_idle_timers(self) -> None:

@@ -13,6 +13,7 @@ import threading
 import webbrowser
 import re
 import math
+import ctypes
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Callable
 
@@ -96,6 +97,11 @@ except ImportError:
     QMediaPlayer = None
     QAudioOutput = None
 
+try:
+    import ctypes
+except ImportError:
+    ctypes = None
+
 
 # Shared model & theme (data model, colors, constants, helpers)
 from taskflowmodel import (
@@ -147,6 +153,9 @@ from taskflowmodel import (
     get_today_habit_checks,
     set_habit_checked,
     rollover_tasks,
+    create_task_row_widget,
+    log_activity,
+    delete_task,
     parse_version_tuple,
     is_newer_version,
     GITHUB_OWNER,
@@ -828,9 +837,15 @@ class ProfileWidget(QWidget):
 
     def refresh(self):
         p = self.state.get("userProfile", {})
-        self.name_input.setText(p.get("name", ""))
-        self.role_input.setText(p.get("role", ""))
-        self.style_combo.setCurrentText(p.get("style", "Gentle"))
+        
+        # Only update if changed to prevent typing loops
+        if self.name_input.text() != p.get("name", ""):
+            self.name_input.setText(p.get("name", ""))
+        if self.role_input.text() != p.get("role", ""):
+            self.role_input.setText(p.get("role", ""))
+        if self.style_combo.currentText() != p.get("style", "Gentle"):
+            self.style_combo.setCurrentText(p.get("style", "Gentle"))
+            
         self._update_style_desc(self.style_combo.currentText())
 
     def _update_style_desc(self, style):
@@ -942,8 +957,7 @@ class SomedayReviewDialog(QDialog):
         self._animate_remove(frame)
 
     def _delete_task(self, task, frame):
-        if task in self.state["tasks"]:
-            self.state["tasks"].remove(task)
+        delete_task(self.state, task.get("id"))
         self.save_callback()
         self._animate_remove(frame)
 
@@ -1269,103 +1283,6 @@ class HeatmapWidget(QWidget):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(x, y, cell_size, cell_size, 2, 2)
 
-# ============================================================================
-# SECTION 4.5: SHARED UI HELPERS
-# ============================================================================
-
-
-def animate_widget_entry(widget: QWidget):
-    """Fade in animation for newly added widgets."""
-    effect = QGraphicsOpacityEffect(widget)
-    widget.setGraphicsEffect(effect)
-    anim = QPropertyAnimation(effect, b"opacity", widget)
-    anim.setDuration(ANIM_DURATION_MEDIUM)
-    anim.setStartValue(0.0)
-    anim.setEndValue(1.0)
-    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-    anim.finished.connect(lambda: widget.setGraphicsEffect(None))
-    anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-
-class WeeklyReviewDialog(QDialog):
-    """
-    Weekly review summary and cleanup wizard.
-    """
-    def __init__(self, state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.state = state
-        self._save_callback = save_callback
-        self.setWindowTitle("Weekly Review 📅")
-        self.setModal(True)
-        self.resize(450, 550)
-        self._build_ui()
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
-
-        # Header
-        lbl_title = QLabel("Weekly Review")
-        lbl_title.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
-        layout.addWidget(lbl_title)
-
-        # Stats calculation
-        now = datetime.now()
-        week_ago = now - timedelta(days=7)
-        
-        completed_count = 0
-        archivable_count = 0
-        
-        for t in self.state.get("tasks", []):
-            if t.get("completed"):
-                # Check completion date
-                c_date = t.get("completedAt") or t.get("updatedAt")
-                try:
-                    if datetime.fromisoformat(c_date) >= week_ago:
-                        completed_count += 1
-                except:
-                    pass
-                
-                if t.get("section") != "Archived":
-                    archivable_count += 1
-
-        # Stats Display
-        stats_card = QFrame()
-        stats_card.setStyleSheet(f"background-color: rgba(255,255,255,0.05); border-radius: 12px; padding: 16px;")
-        sl = QVBoxLayout(stats_card)
-        
-        lbl_done = QLabel(f"✅ {completed_count} tasks completed this week")
-        lbl_done.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 16px;")
-        sl.addWidget(lbl_done)
-        
-        layout.addWidget(stats_card)
-
-        # Cleanup Section
-        lbl_cleanup = QLabel("Cleanup")
-        lbl_cleanup.setStyleSheet(f"color: {GOLD}; font-size: 18px; font-weight: bold;")
-        layout.addWidget(lbl_cleanup)
-        
-        lbl_info = QLabel(f"You have {archivable_count} completed tasks visible in your lists.")
-        lbl_info.setWordWrap(True)
-        lbl_info.setStyleSheet(f"color: {TEXT_GRAY};")
-        layout.addWidget(lbl_info)
-        
-        self.chk_archive = QCheckBox(f"Archive all completed tasks")
-        self.chk_archive.setChecked(True)
-        self.chk_archive.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 14px;")
-        layout.addWidget(self.chk_archive)
-
-        layout.addStretch()
-
-        # Buttons
-        btn_finish = QPushButton("Finish Review")
-        btn_finish.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_finish.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 8px; padding: 10px; font-weight: bold;")
-        btn_finish.clicked.connect(self.accept)
-        layout.addWidget(btn_finish)
-        
-        self.setStyleSheet(f"background-color: {CARD_BG};")
-
 class ConfettiOverlay(QWidget):
     """
     A transparent overlay that renders a particle burst effect.
@@ -1422,122 +1339,6 @@ class ConfettiOverlay(QWidget):
             painter.setBrush(p["color"])
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
-
-class ReorderableListWidget(QListWidget):
-    """
-    A QListWidget that emits a signal when items are dropped internally.
-    """
-    orderChanged = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
-        self.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-
-    def dropEvent(self, event):
-        super().dropEvent(event)
-        # The model is updated by super(), now we notify to update the state
-        self.orderChanged.emit()
-
-def create_task_row_widget(
-    task: Dict[str, Any],
-    on_toggle: Callable[[bool, str], None],
-    on_delete: Callable[[bool, str], None],
-    on_context_menu: Callable[[QPoint, str], None],
-    on_edit: Optional[Callable[[str], None]] = None
-) -> QWidget:
-    """
-    Creates a standardized task row widget used in multiple lists.
-    """
-    row = QWidget()
-    row.setObjectName("TaskRow")
-    row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-    row.setStyleSheet(f"""
-        #TaskRow {{
-            border-radius: 8px;
-            background-color: transparent;
-        }}
-        #TaskRow:hover {{ background-color: {HOVER_BG}; }}
-    """)
-    row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-    hl = QHBoxLayout(row)
-    hl.setContentsMargins(6, 2, 6, 2)
-    hl.setSpacing(6)
-
-    chk = QPushButton("✔" if task.get("completed") else "")
-    chk.setFixedSize(QSize(22, 22))
-    chk.setCheckable(True)
-    chk.setChecked(task.get("completed", False))
-    chk.setStyleSheet(
-        f"""
-        QPushButton {{
-            background-color: transparent;
-            border-radius: 11px;
-            border: 1px solid {HOVER_BG};
-            color: {GOLD};
-            font-weight: bold;
-        }}
-        QPushButton:checked {{
-            background-color: {GOLD};
-            color: {DARK_BG};
-        }}
-        """
-    )
-
-    # Build label with metadata (schedule/recurrence)
-    text_content = task.get("text", "")
-    meta_info = []
-    
-    sched = task.get("schedule")
-    if sched and isinstance(sched, dict) and sched.get("date"):
-        meta_info.append(f"📅 {sched['date']}")
-    
-    rec = task.get("recurrence")
-    if rec and isinstance(rec, dict) and rec.get("type"):
-        meta_info.append(f"↻ {rec['type']}")
-
-    cat = task.get("category")
-    if cat:
-        meta_info.append(f"🏷 {cat}")
-
-    lbl = QLabel()
-    lbl.setWordWrap(True)
-    if task.get("completed"):
-        lbl.setStyleSheet(f"color: {TEXT_GRAY}; text-decoration: line-through;")
-    elif task.get("important"):
-        lbl.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
-    else:
-        lbl.setStyleSheet(f"color: {TEXT_WHITE};")
-    
-    if meta_info:
-        safe_text = html.escape(text_content)
-        meta_html = f"<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>"
-        lbl.setText(safe_text + meta_html)
-    else:
-        lbl.setText(text_content)
-
-    del_btn = QPushButton("×")
-    del_btn.setFixedSize(QSize(24, 24))
-    del_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-weight: bold; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
-
-    hl.addWidget(chk)
-    hl.addWidget(lbl, 1)
-    hl.addWidget(del_btn)
-
-    tid = task.get("id")
-    chk.clicked.connect(lambda c: on_toggle(c, tid))
-    del_btn.clicked.connect(lambda c: on_delete(c, tid))
-    row.customContextMenuRequested.connect(lambda pos: on_context_menu(pos, tid))
-
-    # Enable double-click to edit
-    if on_edit:
-        def mouseDoubleClickEvent(event):
-            if event.button() == Qt.MouseButton.LeftButton:
-                on_edit(tid)
-        row.mouseDoubleClickEvent = mouseDoubleClickEvent
-
-    return row
 
 class ProjectListRow(QWidget):
     """
@@ -1763,6 +1564,13 @@ class TaskListWidget(QWidget):
 
     def refresh(self) -> None:
         """Rebuild the list for the current section."""
+        scroll_pos = self.tasks_list.verticalScrollBar().value()
+        
+        # Preserve selection
+        selected_id = None
+        if self.tasks_list.currentItem():
+            selected_id = self.tasks_list.currentItem().data(Qt.ItemDataRole.UserRole)
+            
         self.tasks_list.setUpdatesEnabled(False)
         self.tasks_list.clear()
 
@@ -1811,6 +1619,16 @@ class TaskListWidget(QWidget):
                 self.tasks_list.setItemWidget(item, row)
 
         self.tasks_list.setUpdatesEnabled(True)
+        
+        # Restore selection
+        if selected_id:
+            for i in range(self.tasks_list.count()):
+                item = self.tasks_list.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) == selected_id:
+                    self.tasks_list.setCurrentItem(item)
+                    break
+                    
+        self.tasks_list.verticalScrollBar().setValue(scroll_pos)
 
     def _on_reorder(self):
         """Update the order field in the state based on the new list order."""
@@ -2585,6 +2403,11 @@ class SearchWidget(QWidget):
         self.state = state
         self._save_callback = save_callback
         self._build_ui()
+        
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._execute_search)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -2606,8 +2429,11 @@ class SearchWidget(QWidget):
         layout.addWidget(self.results_list, 1)
 
     def _perform_search(self, text: str):
+        self._search_timer.start()
+
+    def _execute_search(self):
         self.results_list.clear()
-        text = text.strip().lower()
+        text = self.search_input.text().strip().lower()
         if not text: return
 
         tasks = self.state.get("tasks", [])
@@ -2620,11 +2446,11 @@ class SearchWidget(QWidget):
             # We reuse create_task_row_widget but disable some callbacks for simplicity in search view
             # or implement full functionality. Let's implement full functionality.
             row = create_task_row_widget(
-                t,
-                lambda c, tid: self._toggle_task(tid),
-                lambda c, tid: None, # Delete disabled in search for safety/simplicity
-                lambda pos, tid: None, # Context menu disabled
-                None # Edit disabled
+                task=t,
+                on_toggle=lambda c, tid: self._toggle_task(tid),
+                on_delete=None,
+                on_context_menu=None,
+                on_edit=None
             )
             
             self.results_list.addItem(item)
@@ -2751,7 +2577,10 @@ class JournalWidget(QWidget):
                 self.date_list.setCurrentItem(item)
         
         self.date_list.blockSignals(False)
-        self._load_entry(self._current_date)
+        
+        # Only reload editor if we are not currently typing in it
+        if not self.editor.hasFocus():
+            self._load_entry(self._current_date)
 
     def _on_date_selected(self) -> None:
         item = self.date_list.currentItem()
@@ -2963,6 +2792,24 @@ class HubWindow(QMainWindow):
             self.audio_output = QAudioOutput()
             self.media_player.setAudioOutput(self.audio_output)
             self.audio_output.setVolume(0.5)
+
+    def _prevent_sleep(self):
+        """Prevent the system from sleeping during a Zen session."""
+        if os.name == 'nt' and ctypes:
+            try:
+                # ES_CONTINUOUS | ES_SYSTEM_REQUIRED
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+            except Exception:
+                pass
+
+    def _allow_sleep(self):
+        """Allow the system to sleep again."""
+        if os.name == 'nt' and ctypes:
+            try:
+                # ES_CONTINUOUS
+                ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+            except Exception:
+                pass
 
     # ────────────────────────────────────────────────────────────────────
     # UI construction
@@ -3946,27 +3793,45 @@ class HubWindow(QMainWindow):
     def _start_zen_timer(self, minutes: int):
         self._play_soundscape()
         self._zen_seconds = minutes * 60
+        self._zen_session_duration = minutes
+        self._zen_end_time = datetime.now() + timedelta(seconds=self._zen_seconds)
+        self._prevent_sleep()
+
         if hasattr(self, "_zen_timer"):
             self._zen_timer.stop()
         self._zen_timer = QTimer(self)
         self._zen_timer.timeout.connect(self._update_zen_timer)
-        self._zen_timer.start(1000)
+        self._zen_timer.start(500) # More frequent updates
         self._update_zen_timer() # Update label immediately
 
     def _update_zen_timer(self):
-        m = self._zen_seconds // 60
-        s = self._zen_seconds % 60
-        self.zen_timer_lbl.setText(f"{m:02}:{s:02}")
-        
-        if self._zen_seconds <= 0:
+        if not hasattr(self, "_zen_end_time"):
+            return
+
+        remaining = (self._zen_end_time - datetime.now()).total_seconds()
+
+        if remaining > 0:
+            m = int(remaining) // 60
+            s = int(remaining) % 60
+            self.zen_timer_lbl.setText(f"{m:02}:{s:02}")
+        else:
+            self.zen_timer_lbl.setText("00:00")
             self._zen_timer.stop()
+            self._allow_sleep()
+            self._stop_soundscape()
+
             if winsound:
                 try: winsound.MessageBeep(winsound.MB_ICONASTERISK)
                 except: pass
-            self._stop_soundscape()
+            
             self.celebrate()
-        
-        self._zen_seconds -= 1
+
+            # Log the completed session
+            log_activity(self.state, "completed", "focusSession", self._zen_task_id, {"duration": self._zen_session_duration})
+            self.schedule_save()
+
+            # Suggest a break
+            QMessageBox.information(self, "Session Complete!", "Great focus session. Time for a short break?")
 
     def _on_zen_distraction(self):
         text = self.zen_distraction.text().strip()
@@ -4030,6 +3895,7 @@ class HubWindow(QMainWindow):
 
     def exit_zen_mode(self):
         self._stop_soundscape()
+        self._allow_sleep()
         self._zen_task_id = None
         if hasattr(self, "_zen_timer"):
             self._zen_timer.stop()
@@ -4354,10 +4220,13 @@ class HubWindow(QMainWindow):
         text = self.idea_input.text().strip()
         if not text:
             return
-        add_idea(self.state, text)
+        idea = add_idea(self.state, text)
         self.schedule_save()
         self.idea_input.clear()
-        self._refresh_home()  # To show the new idea in the list
+        
+        item = QListWidgetItem(idea.get("text", ""))
+        item.setData(Qt.ItemDataRole.UserRole, idea.get("id"))
+        self.ideas_list.insertItem(0, item)
 
     def _on_idea_menu(self, pos) -> None:
         item = self.ideas_list.itemAt(pos)
