@@ -2849,6 +2849,7 @@ class HubWindow(QMainWindow):
         self.state = state
         self.paths = paths
 
+        self._zen_task_id = None
         # Prevent app from exiting when window is closed (if tray is enabled)
         QApplication.setQuitOnLastWindowClosed(False)
 
@@ -3820,11 +3821,18 @@ class HubWindow(QMainWindow):
         self.zen_lbl_text = QLabel("Task")
         self.zen_lbl_text.setWordWrap(True)
         self.zen_lbl_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.zen_lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 24px; font-weight: bold; margin: 10px;")
+        self.zen_lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 28px; font-weight: bold; margin: 10px;")
         layout.addWidget(self.zen_lbl_text)
         
+        self.zen_lbl_note = QLabel("")
+        self.zen_lbl_note.setWordWrap(True)
+        self.zen_lbl_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zen_lbl_note.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px; font-style: italic; margin-bottom: 10px;")
+        self.zen_lbl_note.setVisible(False)
+        layout.addWidget(self.zen_lbl_note)
+        
         self.zen_timer_lbl = QLabel("25:00")
-        self.zen_timer_lbl.setStyleSheet(f"color: {GOLD}; font-size: 64px; font-weight: bold;")
+        self.zen_timer_lbl.setStyleSheet(f"color: {GOLD}; font-size: 80px; font-weight: bold;")
         self.zen_timer_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.zen_timer_lbl)
         
@@ -3854,6 +3862,32 @@ class HubWindow(QMainWindow):
         break_layout.addStretch()
         layout.addLayout(break_layout)
         
+        layout.addSpacing(30)
+
+        # Primary Actions
+        action_layout = QHBoxLayout()
+        action_layout.setSpacing(20)
+        
+        self.zen_btn_complete = QPushButton("✅ Complete Task")
+        self.zen_btn_complete.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.zen_btn_complete.setFixedSize(180, 50)
+        self.zen_btn_complete.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 25px; font-weight: bold; font-size: 16px;")
+        self.zen_btn_complete.clicked.connect(self._complete_zen_task)
+        
+        btn_exit = QPushButton("Exit Focus")
+        btn_exit.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_exit.setFixedSize(140, 50)
+        btn_exit.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 25px; border: 1px solid {GLASS_BORDER}; font-size: 14px;")
+        btn_exit.clicked.connect(self.exit_zen_mode)
+        
+        action_layout.addStretch()
+        action_layout.addWidget(self.zen_btn_complete)
+        action_layout.addWidget(btn_exit)
+        action_layout.addStretch()
+        layout.addLayout(action_layout)
+
+        layout.addSpacing(20)
+
         # Distraction Pad
         self.zen_distraction = QLineEdit()
         self.zen_distraction.setPlaceholderText("Distraction? Type it here to clear your mind...")
@@ -3881,20 +3915,21 @@ class HubWindow(QMainWindow):
         sound_layout.addStretch()
         layout.addLayout(sound_layout)
 
-        layout.addSpacing(20)
-        
-        btn_exit = QPushButton("Exit Focus Mode")
-        btn_exit.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_exit.setFixedSize(150, 40)
-        btn_exit.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 20px; border: 1px solid {GLASS_BORDER};")
-        btn_exit.clicked.connect(self.exit_zen_mode)
-        layout.addWidget(btn_exit)
-
     def enter_zen_mode(self, task_id: str):
         t = next((x for x in self.state["tasks"] if x["id"] == task_id), None)
         if not t: return
         
+        self._zen_task_id = task_id
         self.zen_lbl_text.setText(t.get("text", ""))
+        
+        # Show note if exists
+        note = t.get("note", "")
+        if note:
+            self.zen_lbl_note.setText(note)
+            self.zen_lbl_note.setVisible(True)
+        else:
+            self.zen_lbl_note.setVisible(False)
+
         # Hide sidebar for focus
         self.nav_frame.setVisible(False)
         self.btn_focus.setChecked(True)
@@ -3979,8 +4014,23 @@ class HubWindow(QMainWindow):
         if self.media_player:
             self.media_player.stop()
 
+    def _complete_zen_task(self):
+        if not self._zen_task_id:
+            return
+        
+        toggle_task_completed(self.state, self._zen_task_id)
+        
+        if winsound:
+            try: winsound.MessageBeep(winsound.MB_OK)
+            except: pass
+        self.celebrate()
+        
+        self.schedule_save()
+        self.exit_zen_mode()
+
     def exit_zen_mode(self):
         self._stop_soundscape()
+        self._zen_task_id = None
         if hasattr(self, "_zen_timer"):
             self._zen_timer.stop()
         self.nav_frame.setVisible(True)
