@@ -5,6 +5,7 @@
 import os
 import json
 import uuid
+import shutil
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -13,7 +14,7 @@ from typing import Any, Dict, List, Optional
 # ═══════════════════════════════════════════════════════════════════════════
 
 APP_NAME = "TaskFlow"
-APP_VERSION = "7.1"
+APP_VERSION = "8.0"
 DATA_DIR_NAME = "TaskFlowV7"
 
 # Theme colors
@@ -211,6 +212,7 @@ def default_state() -> Dict[str, Any]:
             "targetTasksToday": 0,
             "moodAtStart": None,
             "lastPlanningDate": None,
+            "lastWeeklyReviewDate": None,
             "weeklyFocus": [],
             "lastWeeklyReset": None,
             "focusSessions": {},
@@ -232,6 +234,9 @@ def default_state() -> Dict[str, Any]:
             "widgetDocked": True,
             "widgetPos": None,
             "widgetCollapsed": False,
+            "closeToTray": True,
+            "startWithWindows": False,
+            "zenSoundscape": "Silent",
         },
         "widgetCurrentProjectId": None,
     }
@@ -258,6 +263,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     stats.setdefault("targetTasksToday", 0)
     stats.setdefault("moodAtStart", None)
     stats.setdefault("lastPlanningDate", None)
+    stats.setdefault("lastWeeklyReviewDate", None)
     stats.setdefault("weeklyFocus", [])
     stats.setdefault("lastWeeklyReset", None)
     stats.setdefault("focusSessions", {})
@@ -290,6 +296,9 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     settings.setdefault("widgetDocked", True)
     settings.setdefault("widgetPos", None)
     settings.setdefault("widgetCollapsed", False)
+    settings.setdefault("closeToTray", True)
+    settings.setdefault("startWithWindows", False)
+    settings.setdefault("zenSoundscape", "Silent")
 
     # Validate widgetPos: must be [int, int] or None
     w_pos = settings.get("widgetPos")
@@ -728,5 +737,51 @@ def rollover_tasks(state: Dict[str, Any]) -> None:
             if d <= today and task.get("section") not in ("Today", "Archived"):
                 task["section"] = "Today"
                 task["updatedAt"] = now_iso()
+
+    state["lastOpened"] = today
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BACKUP SYSTEM
+# ═══════════════════════════════════════════════════════════════════════════
+
+def create_timestamped_backup(paths: Dict[str, str]) -> Optional[str]:
+    """Creates a copy of the current data file with a timestamp."""
+    try:
+        data_path = paths["data"]
+        if not os.path.exists(data_path):
+            return None
+        
+        backup_dir = os.path.join(paths["dir"], "backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"backup_{timestamp}.json"
+        dest = os.path.join(backup_dir, filename)
+        
+        shutil.copy2(data_path, dest)
+        return filename
+    except Exception:
+        return None
+
+def get_backups(paths: Dict[str, str]) -> List[str]:
+    """Returns a list of backup filenames sorted by date (newest first)."""
+    backup_dir = os.path.join(paths["dir"], "backups")
+    if not os.path.exists(backup_dir):
+        return []
+    files = [f for f in os.listdir(backup_dir) if f.endswith(".json") and f.startswith("backup_")]
+    files.sort(reverse=True)
+    return files
+
+def restore_backup(paths: Dict[str, str], filename: str) -> bool:
+    """Restores a backup file to the main data file."""
+    backup_path = os.path.join(paths["dir"], "backups", filename)
+    data_path = paths["data"]
+    if not os.path.exists(backup_path):
+        return False
+    try:
+        shutil.copy2(backup_path, data_path)
+        return True
+    except Exception:
+        return False
 
     state["lastOpened"] = today

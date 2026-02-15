@@ -4,6 +4,7 @@ import os
 import json
 import re
 import random
+import difflib
 from datetime import datetime
 from collections import Counter
 from typing import Any, Dict, List, Optional
@@ -39,15 +40,23 @@ DEFAULT_KNOWLEDGE_BASE = {
     "meta": {
         "name": "TaskFlowKnowledgeBase",
         "language": "en",
-        "updated_at": "2026-02-14",
-        "notes": "Default embedded KB."
+        "updated_at": "2026-02-15",
+        "notes": "Expanded embedded KB with fuzzy matching support."
     },
     "task_inference": {
-        "priority_keywords": ["urgent", "asap", "important", "deadline", "now", "🔥", "❗", "critical", "alert"],
+        "priority_keywords": ["urgent", "asap", "important", "deadline", "now", "🔥", "❗", "critical", "alert", "high", "top"],
         "section_keywords": {
             "Tomorrow": ["tomorrow", "tmrw"],
-            "This Week": ["next week", "this week", "weekend"],
+            "This Week": ["next week", "this week", "weekend", "mon", "tue", "wed", "thu", "fri", "sat", "sun", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
             "Someday": ["later", "someday", "eventually", "maybe", "idea"]
+        },
+        "verb_domains": {
+            "Work": ["submit", "review", "present", "email", "sync", "draft", "finalize", "approve", "schedule"],
+            "Dev": ["code", "debug", "push", "deploy", "commit", "merge", "refactor", "compile", "build", "test"],
+            "Personal": ["call", "text", "message", "visit", "invite", "meet", "plan"],
+            "Health": ["run", "jog", "walk", "lift", "train", "drink", "eat", "sleep", "stretch"],
+            "Chores": ["wash", "clean", "fix", "repair", "tidy", "organize", "buy", "purchase", "order", "pay", "cook", "bake", "make", "vacuum", "mop"],
+            "Learning": ["read", "study", "practice", "learn", "watch", "listen", "research"]
         },
         "keywords": {
             # Work - General
@@ -58,6 +67,12 @@ DEFAULT_KNOWLEDGE_BASE = {
             "presentation": {"category": "Work", "important": True},
             "report": {"category": "Work", "important": True},
             "client": {"category": "Work", "important": True},
+            "strategy": {"category": "Work", "important": True},
+            "roadmap": {"category": "Work", "important": True},
+            "sync": {"category": "Work", "important": False},
+            "jira": {"category": "Work", "important": False},
+            "zoom": {"category": "Work", "important": False},
+            "teams": {"category": "Work", "important": False},
             
             # Dev / Tech (Niche)
             "bug": {"category": "Dev", "important": True},
@@ -75,6 +90,19 @@ DEFAULT_KNOWLEDGE_BASE = {
             "css": {"category": "Dev", "important": False},
             "docker": {"category": "Dev", "important": False},
             "code": {"category": "Dev", "important": True},
+            "react": {"category": "Dev", "important": False},
+            "vue": {"category": "Dev", "important": False},
+            "node": {"category": "Dev", "important": False},
+            "aws": {"category": "Dev", "important": True},
+            "azure": {"category": "Dev", "important": True},
+            "git": {"category": "Dev", "important": False},
+            "github": {"category": "Dev", "important": False},
+            "sql": {"category": "Dev", "important": True},
+            "db": {"category": "Dev", "important": True},
+            "frontend": {"category": "Dev", "important": False},
+            "backend": {"category": "Dev", "important": False},
+            "ui": {"category": "Dev", "important": False},
+            "ux": {"category": "Dev", "important": False},
             
             # Creative (Niche)
             "design": {"category": "Creative", "important": False},
@@ -85,6 +113,8 @@ DEFAULT_KNOWLEDGE_BASE = {
             "photo": {"category": "Creative", "important": False},
             "write": {"category": "Creative", "important": False},
             "blog": {"category": "Creative", "important": False},
+            "draw": {"category": "Creative", "important": False},
+            "paint": {"category": "Creative", "important": False},
             
             # Household
             "groceries": {"category": "Personal", "important": False},
@@ -95,6 +125,12 @@ DEFAULT_KNOWLEDGE_BASE = {
             "dishes": {"category": "Personal", "important": False},
             "mom": {"category": "Personal", "important": True},
             "dad": {"category": "Personal", "important": True},
+            "trash": {"category": "Personal", "important": False},
+            "garbage": {"category": "Personal", "important": False},
+            "vacuum": {"category": "Personal", "important": False},
+            "dog": {"category": "Personal", "important": True},
+            "cat": {"category": "Personal", "important": True},
+            "vet": {"category": "Personal", "important": True},
             
             # Health
             "gym": {"category": "Health", "important": True},
@@ -106,6 +142,9 @@ DEFAULT_KNOWLEDGE_BASE = {
             "dentist": {"category": "Health", "important": True},
             "water": {"category": "Health", "important": False},
             "walk": {"category": "Health", "important": False},
+            "diet": {"category": "Health", "important": False},
+            "vitamin": {"category": "Health", "important": False},
+            "sleep": {"category": "Health", "important": True},
             
             # Finance
             "pay": {"category": "Finance", "important": True},
@@ -114,13 +153,25 @@ DEFAULT_KNOWLEDGE_BASE = {
             "tax": {"category": "Finance", "important": True},
             "budget": {"category": "Finance", "important": False},
             "invest": {"category": "Finance", "important": False},
+            "bank": {"category": "Finance", "important": True},
+            "transfer": {"category": "Finance", "important": True},
+            "rent": {"category": "Finance", "important": True},
+            "insurance": {"category": "Finance", "important": True},
+            "stock": {"category": "Finance", "important": False},
+            
+            # Social / Events
+            "party": {"category": "Personal", "important": False},
+            "birthday": {"category": "Personal", "important": True},
+            "dinner": {"category": "Personal", "important": False},
+            "date": {"category": "Personal", "important": True},
             
             # Learning
             "study": {"category": "Learning", "important": True},
             "read": {"category": "Learning", "important": False},
             "course": {"category": "Learning", "important": True},
             "practice": {"category": "Learning", "important": False},
-            "learn": {"category": "Learning", "important": False}
+            "learn": {"category": "Learning", "important": False},
+            "research": {"category": "Learning", "important": False}
         }
     },
     "advice": {
@@ -218,11 +269,33 @@ def load_user_model(path: str) -> None:
 # AI LOGIC
 # ============================================================================
 
-def _infer_metadata(text: str, state: Dict[str, Any]) -> Dict[str, Any]:
+def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Today") -> Dict[str, Any]:
     """
     Infers category and priority using a hybrid of user history and pre-trained data.
+    Also handles explicit tags like #Work or !important.
     """
-    text_lower = text.lower()
+    # 0. Explicit Overrides (Tags)
+    explicit_cat = None
+    explicit_prio_tag = False
+    
+    # Check for #Category
+    categories = state.get("categories", [])
+    for cat in categories:
+        if re.search(rf"\b#{re.escape(cat)}\b", text, re.IGNORECASE):
+            explicit_cat = cat
+            text = re.sub(rf"\b#{re.escape(cat)}\b", "", text, flags=re.IGNORECASE)
+            break
+            
+    # Check for !important or trailing !
+    if "!important" in text.lower():
+        explicit_prio_tag = True
+        text = re.sub(r"!important", "", text, flags=re.IGNORECASE)
+    elif text.strip().endswith("!"):
+        explicit_prio_tag = True
+        text = text.strip().rstrip("!")
+
+    text_clean = text.strip()
+    text_lower = text_clean.lower()
     words = [w for w in re.findall(r'\w+', text_lower) if w not in STOP_WORDS]
     
     # 1. User Model Learning (Personalized & Portable)
@@ -249,17 +322,34 @@ def _infer_metadata(text: str, state: Dict[str, Any]) -> Dict[str, Any]:
     inference_data = KNOWLEDGE_BASE.get("task_inference", {})
     kb_keywords = inference_data.get("keywords", {})
     
+    # Helper for fuzzy matching
+    def get_kb_data(word):
+        if word in kb_keywords:
+            return kb_keywords[word]
+        # Fuzzy match (expensive, so only if exact fails)
+        matches = difflib.get_close_matches(word, kb_keywords.keys(), n=1, cutoff=0.85)
+        if matches:
+            return kb_keywords[matches[0]]
+        return None
+
     for w in words:
-        if w in kb_keywords:
-            data = kb_keywords[w]
+        data = get_kb_data(w)
+        if data:
             # Base weight for KB matches
             kb_cat_scores[data["category"]] += 2 
             if data.get("important", False):
                 kb_prio_scores += 2
+    
+    # 2.5 Verb Inference (Action-based guessing)
+    verb_domains = inference_data.get("verb_domains", {})
+    for w in words:
+        for dom, verbs in verb_domains.items():
+            if w in verbs:
+                kb_cat_scores[dom] += 1 # Weaker signal than a noun keyword
 
     # 3. Priority Keywords (Explicit)
     prio_kws = inference_data.get("priority_keywords", ["urgent", "asap", "important", "deadline", "now", "🔥", "❗"])
-    explicit_prio = any(x in text_lower for x in prio_kws)
+    explicit_prio = explicit_prio_tag or any(x in text_lower for x in prio_kws)
     
     # 4. Decision Logic
     # Merge scores (User history is additive to KB)
@@ -269,12 +359,15 @@ def _infer_metadata(text: str, state: Dict[str, Any]) -> Dict[str, Any]:
     if final_cat_scores:
         category = final_cat_scores.most_common(1)[0][0]
         
+    if explicit_cat:
+        category = explicit_cat
+        
     # Priority threshold
     # If explicit keyword found OR combined score is high enough
     is_important = explicit_prio or (user_prio_scores + kb_prio_scores >= 2)
     
     # 5. Section Inference
-    section = "Today"
+    section = default_section
     section_kws = inference_data.get("section_keywords", {})
     found_section = False
     for sec_name, kws in section_kws.items():
@@ -288,7 +381,11 @@ def _infer_metadata(text: str, state: Dict[str, Any]) -> Dict[str, Any]:
         elif "next week" in text_lower: section = "This Week"
         elif any(x in text_lower for x in ["later", "someday", "eventually"]): section = "Someday"
     
-    return {"category": category, "important": is_important, "section": section}
+    return {"category": category, "important": is_important, "section": section, "clean_text": text_clean}
+
+def strip_html(text: str) -> str:
+    """Removes HTML tags from a string."""
+    return re.sub('<[^<]+?>', '', text)
 
 def analyze_brain_dump(text: str, state: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
@@ -307,9 +404,9 @@ def analyze_brain_dump(text: str, state: Dict[str, Any]) -> List[Dict[str, Any]]
              parts = re.split(r'(?<=[.!?])\s+', clean)
              for p in parts:
                  if p.strip():
-                     meta = _infer_metadata(p.strip(), state)
+                     meta = infer_metadata(p.strip(), state)
                      results.append({
-                         "text": p.strip(),
+                         "text": meta["clean_text"],
                          "category": meta["category"],
                          "important": meta["important"],
                          "section": meta["section"]
@@ -319,9 +416,9 @@ def analyze_brain_dump(text: str, state: Dict[str, Any]) -> List[Dict[str, Any]]
             clean = re.sub(r'^[-*•\d\.]+\s+', '', clean)
             if not clean: continue
             
-            meta = _infer_metadata(clean, state)
+            meta = infer_metadata(clean, state)
             results.append({
-                "text": clean,
+                "text": meta["clean_text"],
                 "category": meta["category"],
                 "important": meta["important"],
                 "section": meta["section"]
@@ -384,6 +481,36 @@ def save_user_training(state: Dict[str, Any], path: str) -> None:
     except Exception:
         pass
 
+def analyze_journal_context(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Analyzes the most recent journal entry for sentiment and topics.
+    """
+    journal = state.get("journal", [])
+    if not journal:
+        return {"sentiment": "Neutral", "topics": []}
+    
+    # Look at the latest entry
+    latest = journal[0]
+    text = strip_html(latest.get("text", "")).lower()
+    
+    # Simple sentiment keywords
+    pos_words = {"good", "great", "happy", "excited", "proud", "love", "awesome", "win", "done", "productive"}
+    neg_words = {"bad", "sad", "tired", "stressed", "angry", "hate", "fail", "hard", "difficult", "stuck", "anxious"}
+    
+    words = set(re.findall(r'\w+', text))
+    pos_score = len(words.intersection(pos_words))
+    neg_score = len(words.intersection(neg_words))
+    
+    sentiment = "Neutral"
+    if pos_score > neg_score: sentiment = "Positive"
+    elif neg_score > pos_score: sentiment = "Negative"
+    
+    # Topic detection using KB
+    kb_keywords = KNOWLEDGE_BASE.get("task_inference", {}).get("keywords", {})
+    topics = {kb_keywords[w]["category"] for w in words if w in kb_keywords}
+    
+    return {"sentiment": sentiment, "topics": list(topics)}
+
 def estimate_duration(text: str) -> int:
     """
     Estimates task duration in minutes based on keywords.
@@ -445,6 +572,7 @@ def generate_insights(state: Dict[str, Any]) -> Dict[str, str]:
     now = datetime.now()
     hour = now.hour
     today_str = now.date().isoformat()
+    journal_context = analyze_journal_context(state)
     
     # --- Data Gathering ---
     tasks = state.get("tasks") or []
@@ -476,8 +604,18 @@ def generate_insights(state: Dict[str, Any]) -> Dict[str, str]:
     advice = ""
     suggestion = ""
     
-    # 1. New User Detection
-    if len(tasks) < 5:
+    # 1. Journal-based Context (High Priority)
+    if journal_context["sentiment"] == "Negative":
+        advice = f"{name}, I noticed some heavy thoughts in your journal. Be gentle with yourself today."
+        mood_guess = "Reflective"
+    elif journal_context["sentiment"] == "Positive":
+        advice = f"Your journal sounds positive, {name}! Keep that momentum going."
+        mood_guess = "Optimistic"
+    elif "Dev" in journal_context["topics"]:
+        advice = "Deep work mode detected. Stay in the flow."
+    
+    # 2. New User Detection
+    elif len(tasks) < 5:
         advice = random.choice(generic_advice.get("new_user", ["Welcome!"]))
         mood_guess = "Fresh Start"
     

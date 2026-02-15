@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
-
+import math
+import random
 import sys
 from typing import Any, Dict, Optional, Callable
 
@@ -12,8 +13,9 @@ from PyQt6.QtCore import (
     QPropertyAnimation,
     QEasingCurve,
     QParallelAnimationGroup,
+    QPointF,
 )
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtGui import QMouseEvent, QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -28,6 +30,13 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QGraphicsOpacityEffect,
 )
+
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
+import taskflowai
 
 from taskflowmodel import (
     APP_NAME,
@@ -57,6 +66,62 @@ SNAP_THRESHOLD = 24
 AUTO_COLLAPSE_MS = 4000  # auto collapse after 4s idle when docked
 LONG_IDLE_MS = 10 * 60 * 1000  # after 10 minutes, require click to open
 
+class ConfettiOverlay(QWidget):
+    """
+    A transparent overlay that renders a particle burst effect.
+    """
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.particles = []
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._update)
+
+    def burst(self):
+        self.particles.clear()
+        cx = self.width() / 2
+        cy = self.height() / 2
+        for _ in range(60):
+            angle = random.uniform(0, 2 * math.pi)
+            speed = random.uniform(5, 12)
+            self.particles.append({
+                "x": cx, "y": cy,
+                "vx": math.cos(angle) * speed,
+                "vy": math.sin(angle) * speed - 4, # Upward bias
+                "color": QColor.fromHsv(random.randint(0, 359), 200, 255),
+                "size": random.randint(4, 8),
+                "decay": random.uniform(0.92, 0.96)
+            })
+        self.timer.start(16)
+        self.show()
+        self.raise_()
+
+    def _update(self):
+        if not self.particles:
+            self.timer.stop()
+            self.hide()
+            return
+        
+        for p in self.particles:
+            p["x"] += p["vx"]
+            p["y"] += p["vy"]
+            p["vy"] += 0.5 # Gravity
+            p["vx"] *= p["decay"] # Air resistance
+            
+        # Remove particles off screen
+        self.particles = [p for p in self.particles if p["y"] < self.height() + 10]
+        self.update()
+
+    def paintEvent(self, event):
+        if not self.particles:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        for p in self.particles:
+            painter.setBrush(p["color"])
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
 
 class WidgetWindow(QWidget):
     """
@@ -114,6 +179,10 @@ class WidgetWindow(QWidget):
         self._refresh_tasks()
         self._restore_position()
         self._restart_idle_timers()
+
+        # Confetti Overlay
+        self.confetti = ConfettiOverlay(self)
+        self.confetti.resize(self.size())
 
     # ────────────────────────────────────────────────────────────────────
     # Geometry & Positioning Helpers
@@ -334,7 +403,17 @@ class WidgetWindow(QWidget):
         text = self.quick_add_input.text().strip()
         if not text:
             return
-        add_task(self.state, text=text, section="Today")
+            
+        # Use AI to infer metadata (Smart Input)
+        meta = taskflowai.infer_metadata(text, self.state, default_section="Today")
+        
+        add_task(
+            self.state, 
+            text=meta["clean_text"], 
+            section=meta["section"],
+            category=meta["category"],
+            important=meta["important"]
+        )
         
         # Visual feedback: Flash input
         self.quick_add_input.setStyleSheet(f"background-color: rgba(255, 215, 0, 0.2); border: 1px solid {GOLD}; border-radius: 8px; color: {TEXT_WHITE};")
@@ -343,7 +422,14 @@ class WidgetWindow(QWidget):
         self._save_callback()
         
         # Delay hiding slightly to show the flash
-        QTimer.singleShot(250, lambda: (self.quick_add_input.clear(), self.quick_add_input.setVisible(False), self._refresh_tasks()))
+        def finalize():
+            self.quick_add_input.clear()
+            self.quick_add_input.setVisible(False)
+            self._refresh_tasks()
+            if meta["section"] != "Today":
+                self.status_label.setText(f"Added to {meta['section']}")
+                
+        QTimer.singleShot(250, finalize)
         self._refresh_tasks()
 
     # ────────────────────────────────────────────────────────────────────
@@ -474,6 +560,12 @@ class WidgetWindow(QWidget):
 
     def _finalize_toggle(self, task_id: str):
         toggle_task_completed(self.state, task_id)
+        
+        if winsound:
+            try: winsound.MessageBeep(winsound.MB_OK)
+            except: pass
+        self.confetti.burst()
+        
         self._save_callback()
         self._refresh_tasks()
         self._restart_idle_timers()
@@ -671,6 +763,8 @@ class WidgetWindow(QWidget):
     def resizeEvent(self, event) -> None:
         if self._highlight_overlay and hasattr(self, "card"):
             self._highlight_overlay.resize(self.card.size())
+        if hasattr(self, "confetti"):
+            self.confetti.resize(self.size())
         super().resizeEvent(event)
 
     # ────────────────────────────────────────────────────────────────────

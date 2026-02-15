@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "TaskFlow"
-#define MyAppVersion "7.1"
+#define MyAppVersion "8.0"
 #define MyAppPublisher "Dyvorn"
 #define MyAppURL "https://github.com/Dyvorn/TaskFlow"
 #define MyAppExeName "TaskFlow.exe"
