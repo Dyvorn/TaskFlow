@@ -475,14 +475,25 @@ class WidgetWindow(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-            row = :._finalize_toggle(task_id)
+            row = self._create_task_row(t)
+            self.tasks_list.addItem(item)
+            self.tasks_list.setItemWidget(item, row)
 
     def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
         effect = QGraphicsOpacityEffect(row)
         row.setGraphicsEffect(effect)
         group = QParallelAnimationGroup(self)
-      e.Asae.lback()
-        self._refresh_tasks()se / dock / drag
+        anim = QPropertyAnimation(effect, b"opacity")
+        anim.setDuration(200)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        group.addAnimation(anim)
+        group.finished.connect(lambda: self._finalize_toggle(task_id))
+        group.start()
+
+    def _finalize_toggle(self, task_id: str):
+        self._refresh_tasks()
+
     # ────────────────────────────────────────────────────────────────────
 
     def _restart_idle_timers(self) -> None:

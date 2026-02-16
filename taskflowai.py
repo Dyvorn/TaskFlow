@@ -5,7 +5,7 @@ import json
 import re
 import random
 import difflib
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from collections import Counter
 from typing import Any, Dict, List, Optional
 import taskflowanalytics
@@ -40,7 +40,7 @@ DEFAULT_KNOWLEDGE_BASE = {
     "meta": {
         "name": "TaskFlowKnowledgeBase",
         "language": "en",
-        "updated_at": "2026-02-15",
+        "updated_at": "2026-02-16",
         "notes": "Expanded embedded KB with fuzzy matching support."
     },
     "task_inference": {
@@ -67,6 +67,7 @@ DEFAULT_KNOWLEDGE_BASE = {
             "presentation": {"category": "Work", "important": True},
             "report": {"category": "Work", "important": True},
             "client": {"category": "Work", "important": True},
+            "boss": {"category": "Work", "important": True},
             "strategy": {"category": "Work", "important": True},
             "roadmap": {"category": "Work", "important": True},
             "sync": {"category": "Work", "important": False},
@@ -103,6 +104,7 @@ DEFAULT_KNOWLEDGE_BASE = {
             "backend": {"category": "Dev", "important": False},
             "ui": {"category": "Dev", "important": False},
             "ux": {"category": "Dev", "important": False},
+            "pr": {"category": "Dev", "important": True},
             
             # Creative (Niche)
             "design": {"category": "Creative", "important": False},
@@ -125,12 +127,16 @@ DEFAULT_KNOWLEDGE_BASE = {
             "dishes": {"category": "Personal", "important": False},
             "mom": {"category": "Personal", "important": True},
             "dad": {"category": "Personal", "important": True},
+            "kids": {"category": "Personal", "important": True},
+            "dad": {"category": "Personal", "important": True},
             "trash": {"category": "Personal", "important": False},
             "garbage": {"category": "Personal", "important": False},
             "vacuum": {"category": "Personal", "important": False},
             "dog": {"category": "Personal", "important": True},
             "cat": {"category": "Personal", "important": True},
             "vet": {"category": "Personal", "important": True},
+            "gift": {"category": "Personal", "important": False},
+            "shop": {"category": "Personal", "important": False},
             
             # Health
             "gym": {"category": "Health", "important": True},
@@ -145,6 +151,8 @@ DEFAULT_KNOWLEDGE_BASE = {
             "diet": {"category": "Health", "important": False},
             "vitamin": {"category": "Health", "important": False},
             "sleep": {"category": "Health", "important": True},
+            "meds": {"category": "Health", "important": True},
+            "therapy": {"category": "Health", "important": True},
             
             # Finance
             "pay": {"category": "Finance", "important": True},
@@ -158,6 +166,9 @@ DEFAULT_KNOWLEDGE_BASE = {
             "rent": {"category": "Finance", "important": True},
             "insurance": {"category": "Finance", "important": True},
             "stock": {"category": "Finance", "important": False},
+            "refund": {"category": "Finance", "important": True},
+            "subscription": {"category": "Finance", "important": False},
+            "salary": {"category": "Finance", "important": True},
             
             # Social / Events
             "party": {"category": "Personal", "important": False},
@@ -171,7 +182,9 @@ DEFAULT_KNOWLEDGE_BASE = {
             "course": {"category": "Learning", "important": True},
             "practice": {"category": "Learning", "important": False},
             "learn": {"category": "Learning", "important": False},
-            "research": {"category": "Learning", "important": False}
+            "research": {"category": "Learning", "important": False},
+            "tutorial": {"category": "Learning", "important": False},
+            "article": {"category": "Learning", "important": False}
         }
     },
     "advice": {
@@ -218,7 +231,8 @@ KNOWLEDGE_BASE = DEFAULT_KNOWLEDGE_BASE.copy()
 # This is loaded from user_training.json and updated dynamically
 USER_MODEL = {
     "word_associations": {},    # "word": {"Work": 5, "Personal": 1}
-    "category_preferences": {}  # "Work": 10
+    "category_preferences": {},  # "Work": 10
+    "time_preferences": {}      # "Work": {"morning": 5, "evening": 1}
 }
 
 def init_knowledge_base(path: str) -> None:
@@ -262,8 +276,59 @@ def load_user_model(path: str) -> None:
                 data = json.load(f)
                 USER_MODEL["word_associations"] = data.get("word_associations", {})
                 USER_MODEL["category_preferences"] = data.get("category_preferences", {})
+                USER_MODEL["time_preferences"] = data.get("time_preferences", {})
         except Exception:
             pass
+
+def extract_datetime_info(text: str) -> tuple[Optional[str], Optional[str], str]:
+    """
+    Extracts date (YYYY-MM-DD) and time (HH:MM) from text.
+    Returns (date_str, time_str, cleaned_text).
+    """
+    text_lower = text.lower()
+    today = date.today()
+    target_date = None
+    target_time = None
+
+    # 1. Date Parsing
+    if "tomorrow" in text_lower or "tmrw" in text_lower:
+        target_date = today + timedelta(days=1)
+        text = re.sub(r"\b(tomorrow|tmrw)\b", "", text, flags=re.IGNORECASE)
+    elif "today" in text_lower:
+        target_date = today
+        text = re.sub(r"\btoday\b", "", text, flags=re.IGNORECASE)
+    elif "next week" in text_lower:
+        target_date = today + timedelta(days=7)
+        text = re.sub(r"\bnext week\b", "", text, flags=re.IGNORECASE)
+    else:
+        # Check for weekdays "on Friday" or just "Friday"
+        weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        for i, day in enumerate(weekdays):
+            if day in text_lower:
+                days_ahead = (i - today.weekday() + 7) % 7
+                if days_ahead == 0: days_ahead = 7
+                target_date = today + timedelta(days=days_ahead)
+                text = re.sub(rf"\b(?:on\s+)?{day}\b", "", text, flags=re.IGNORECASE)
+                break
+
+    # 2. Time Parsing (e.g., "at 5pm", "14:00", "at 5:30 pm")
+    # Regex for 12h or 24h time
+    time_match = re.search(r"\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", text, re.IGNORECASE)
+    if time_match:
+        h_str, m_str, ampm = time_match.groups()
+        try:
+            h = int(h_str)
+            m = int(m_str) if m_str else 0
+            if ampm:
+                if ampm.lower() == "pm" and h < 12: h += 12
+                if ampm.lower() == "am" and h == 12: h = 0
+            target_time = f"{h:02}:{m:02}"
+            text = text[:time_match.start()] + text[time_match.end():] # Remove time string
+        except ValueError:
+            pass
+
+    date_str = target_date.isoformat() if target_date else None
+    return date_str, target_time, " ".join(text.split())
 
 # ============================================================================
 # AI LOGIC
@@ -287,6 +352,14 @@ def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Tod
             text = re.sub(rf"(?:^|\s)#{re.escape(cat)}\b", " ", text, flags=re.IGNORECASE)
             break
             
+    # Clean up conversational prefixes
+    prefixes = ["remind me to", "don't forget to", "i need to", "please", "add task", "new task", "todo"]
+    lower_check = text.lower()
+    for p in prefixes:
+        if lower_check.startswith(p):
+            text = text[len(p):].strip()
+            break
+
     # Check for !important or trailing !
     if "!important" in text.lower():
         explicit_prio_tag = True
@@ -294,6 +367,9 @@ def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Tod
     elif text.strip().endswith("!"):
         explicit_prio_tag = True
         text = text.strip().rstrip("!")
+
+    # Extract Date/Time (Natural Language)
+    sched_date, sched_time, text = extract_datetime_info(text)
         
     # Cleanup whitespace after tag removal
     text = re.sub(r'\s+', ' ', text).strip()
@@ -381,11 +457,22 @@ def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Tod
             break
             
     if not found_section:
-        if "tomorrow" in text_lower: section = "Tomorrow"
-        elif "next week" in text_lower: section = "This Week"
-        elif any(x in text_lower for x in ["later", "someday", "eventually"]): section = "Someday"
+        # If we found a specific date, decide section based on that
+        if sched_date:
+            today_str = date.today().isoformat()
+            if sched_date == today_str:
+                section = "Today"
+            elif sched_date > today_str:
+                section = "Scheduled" # Put future dated tasks in Scheduled
+        elif any(x in text_lower for x in ["later", "someday", "eventually"]): 
+            section = "Someday"
     
-    return {"category": category, "important": is_important, "section": section, "clean_text": text_clean}
+    schedule = {}
+    if sched_date: schedule["date"] = sched_date
+    if sched_time: schedule["time"] = sched_time
+    if not schedule: schedule = None
+
+    return {"category": category, "important": is_important, "section": section, "clean_text": text_clean, "schedule": schedule}
 
 def strip_html(text: str) -> str:
     """Removes HTML tags from a string."""
@@ -462,12 +549,29 @@ def generate_user_training_data(state: Dict[str, Any]) -> Dict[str, Any]:
     for t in tasks:
         if t.get("category"):
             cat_counts[t["category"]] += 1
+
+    # 3. Learn Time Preferences (When do you complete certain categories?)
+    # "Health": {"morning": 5, "evening": 1}
+    time_prefs = {}
+    for t in tasks:
+        if t.get("completed") and t.get("completedAt"):
+            cat = t.get("category")
+            if not cat: continue
+            try:
+                dt = datetime.fromisoformat(t["completedAt"])
+                hour = dt.hour
+                period = "morning" if hour < 12 else ("afternoon" if hour < 18 else "evening")
+                
+                if cat not in time_prefs: time_prefs[cat] = Counter()
+                time_prefs[cat][period] += 1
+            except: pass
             
     return {
         "generated_at": datetime.now().isoformat(),
         "user_profile": state.get("userProfile", {}),
         "word_associations": word_associations,
-        "category_preferences": dict(cat_counts)
+        "category_preferences": dict(cat_counts),
+        "time_preferences": {k: dict(v) for k, v in time_prefs.items()}
     }
 
 def save_user_training(state: Dict[str, Any], path: str) -> None:
@@ -478,6 +582,7 @@ def save_user_training(state: Dict[str, Any], path: str) -> None:
     global USER_MODEL
     USER_MODEL["word_associations"] = data.get("word_associations", {})
     USER_MODEL["category_preferences"] = data.get("category_preferences", {})
+    USER_MODEL["time_preferences"] = data.get("time_preferences", {})
     
     try:
         with open(path, 'w', encoding='utf-8') as f:
@@ -568,6 +673,42 @@ def suggest_task_by_time(state: Dict[str, Any], minutes: int) -> Optional[Dict[s
     ))
     
     return candidates[0]
+
+def rank_tasks_smart(tasks: List[Dict[str, Any]], state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Reorders a list of tasks based on:
+    1. Importance (High)
+    2. Time of Day fit (Does user usually do this category now?)
+    3. Original Order (Stability)
+    """
+    now = datetime.now()
+    hour = now.hour
+    period = "morning" if hour < 12 else ("afternoon" if hour < 18 else "evening")
+    
+    time_prefs = USER_MODEL.get("time_preferences", {})
+    
+    def score_task(t):
+        score = 0
+        
+        # 1. Importance
+        if t.get("important"): score += 10
+        
+        # 2. Category Time Fit
+        cat = t.get("category")
+        if cat and cat in time_prefs:
+            # How often is this category done in this period?
+            period_count = time_prefs[cat].get(period, 0)
+            total_count = sum(time_prefs[cat].values())
+            if total_count > 0:
+                affinity = period_count / total_count
+                score += (affinity * 5) # Up to +5 points for perfect time match
+        
+        # 3. Negate score slightly by order to preserve relative stability for ties
+        order_penalty = t.get("order", 0) * 0.001
+        return score - order_penalty
+
+    # Sort descending by score
+    return sorted(tasks, key=score_task, reverse=True)
 
 def generate_insights(state: Dict[str, Any]) -> Dict[str, str]:
     """

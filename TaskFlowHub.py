@@ -153,7 +153,6 @@ from taskflowmodel import (
     get_today_habit_checks,
     set_habit_checked,
     rollover_tasks,
-    create_task_row_widget,
     log_activity,
     delete_task,
     parse_version_tuple,
@@ -377,6 +376,18 @@ def open_url_safe(url: str) -> None:
     except Exception:
         pass
 
+def animate_widget_entry(widget: QWidget) -> None:
+    """Fade in animation for a widget."""
+    effect = QGraphicsOpacityEffect(widget)
+    widget.setGraphicsEffect(effect)
+    
+    anim = QPropertyAnimation(effect, b"opacity", widget)
+    anim.setDuration(ANIM_DURATION_MEDIUM)
+    anim.setStartValue(0.0)
+    anim.setEndValue(1.0)
+    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+    anim.finished.connect(lambda: widget.setGraphicsEffect(None))
+    anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
 class WelcomeDialog(QDialog):
     """
@@ -979,6 +990,69 @@ class SomedayReviewDialog(QDialog):
         frame.hide()
         frame.deleteLater()
 
+class WeeklyReviewDialog(QDialog):
+    """
+    Dialog for weekly review (Mondays).
+    Shows stats and offers to archive completed tasks.
+    """
+    def __init__(self, state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self._save_callback = save_callback
+        self.setWindowTitle("Weekly Review")
+        self.setModal(True)
+        self.resize(400, 300)
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        lbl_title = QLabel("Weekly Review 📅")
+        lbl_title.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
+        layout.addWidget(lbl_title)
+
+        # Stats
+        now = datetime.now()
+        week_ago = now - timedelta(days=7)
+        week_ago_iso = week_ago.isoformat()
+        
+        completed_count = 0
+        for t in self.state.get("tasks", []):
+            if t.get("completed") and t.get("updatedAt", "") >= week_ago_iso:
+                completed_count += 1
+        
+        lbl_info = QLabel(f"You completed {completed_count} tasks in the last 7 days.\nReady for a fresh start?")
+        lbl_info.setWordWrap(True)
+        lbl_info.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 14px;")
+        layout.addWidget(lbl_info)
+
+        # Mood summary
+        layout.addWidget(QLabel("Mood Trend:"))
+        mood_graph = MoodGraphWidget(self.state)
+        mood_graph.setFixedHeight(60)
+        layout.addWidget(mood_graph)
+
+        self.chk_archive = QCheckBox("Archive completed tasks")
+        self.chk_archive.setChecked(True)
+        self.chk_archive.setStyleSheet(f"color: {TEXT_WHITE};")
+        layout.addWidget(self.chk_archive)
+
+        layout.addStretch()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        
+        # Style buttons
+        for btn in buttons.buttons():
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 16px; border: 1px solid {GLASS_BORDER};")
+            
+        layout.addWidget(buttons)
+        self.setStyleSheet(f"background-color: {CARD_BG};")
+
 class MoodGraphWidget(QWidget):
     """
     Simple 14‑day mood history bar graph.
@@ -1385,6 +1459,112 @@ class ProjectListRow(QWidget):
 # SECTION 5: TASK LIST WIDGETS (TODAY / WEEK / SOMEDAY / PROJECTS)
 # ============================================================================
 
+def create_task_row_widget(
+    task: Dict[str, Any],
+    on_toggle: Callable[[bool, str], None],
+    on_delete: Optional[Callable[[bool, str], None]] = None,
+    on_context_menu: Optional[Callable[[QPoint, str], None]] = None,
+    on_edit: Optional[Callable[[str], None]] = None,
+    show_delete_button: bool = True
+) -> QWidget:
+    """
+    Creates a standardized task row widget used in multiple lists.
+    """
+    row = QWidget()
+    row.setObjectName("TaskRow")
+    row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    row.setStyleSheet(f"""
+        #TaskRow {{
+            border-radius: 8px;
+            background-color: transparent;
+        }}
+        #TaskRow:hover {{ background-color: {HOVER_BG}; }}
+    """)
+    
+    hl = QHBoxLayout(row)
+    hl.setContentsMargins(6, 2, 6, 2)
+    hl.setSpacing(6)
+
+    chk = QPushButton("✔" if task.get("completed") else "")
+    chk.setFixedSize(QSize(22, 22))
+    chk.setCheckable(True)
+    chk.setChecked(task.get("completed", False))
+    chk.setStyleSheet(
+        f"""
+        QPushButton {{
+            background-color: transparent;
+            border-radius: 11px;
+            border: 1px solid {HOVER_BG};
+            color: {GOLD};
+            font-weight: bold;
+        }}
+        QPushButton:checked {{
+            background-color: {GOLD};
+            color: {DARK_BG};
+        }}
+        """
+    )
+
+    # Build label with metadata
+    text_content = task.get("text", "")
+    meta_info = []
+    if sched := task.get("schedule"):
+        if isinstance(sched, dict) and sched.get("date"):
+            date_str = sched['date']
+            if sched.get("time"):
+                date_str += f" @ {sched['time']}"
+            meta_info.append(f"📅 {date_str}")
+    if rec := task.get("recurrence"):
+        if isinstance(rec, dict) and rec.get("type"):
+            meta_info.append(f"↻ {rec['type']}")
+    if cat := task.get("category"):
+        meta_info.append(f"🏷 {cat}")
+
+    lbl = QLabel()
+    lbl.setWordWrap(True)
+    lbl.setStyleSheet(f"color: {TEXT_GRAY if task.get('completed') else (GOLD if task.get('important') else TEXT_WHITE)};" + ("text-decoration: line-through;" if task.get("completed") else ""))
+    
+    lbl.setText(f"{html.escape(text_content)}<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>" if meta_info else text_content)
+
+    del_btn = QPushButton("×")
+    del_btn.setFixedSize(QSize(24, 24))
+    del_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-weight: bold; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
+    del_btn.setVisible(show_delete_button and on_delete is not None)
+
+    hl.addWidget(chk)
+    hl.addWidget(lbl, 1)
+    hl.addWidget(del_btn)
+
+    tid = task.get("id")
+    chk.clicked.connect(lambda c, t=tid: on_toggle(c, t))
+    if on_delete: del_btn.clicked.connect(lambda c, t=tid: on_delete(c, t))
+    if on_context_menu:
+        row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        row.customContextMenuRequested.connect(lambda pos, t=tid: on_context_menu(pos, t))
+    if on_edit:
+        def mouseDoubleClickEvent(event, t=tid):
+            if event.button() == Qt.MouseButton.LeftButton: on_edit(t)
+        row.mouseDoubleClickEvent = mouseDoubleClickEvent
+
+    return row
+
+class ReorderableListWidget(QListWidget):
+    """
+    A QListWidget that supports internal drag-and-drop reordering.
+    """
+    orderChanged = pyqtSignal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDropIndicatorShown(True)
+
+    def dropEvent(self, event) -> None:
+        super().dropEvent(event)
+        self.orderChanged.emit()
 
 class TaskListWidget(QWidget):
     """
@@ -1468,6 +1648,25 @@ class TaskListWidget(QWidget):
             self.btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
             self.btn_next.clicked.connect(self._suggest_next_task)
             header.addWidget(self.btn_next)
+
+            # Magic Sort Button (Today only)
+            self.btn_sort = QPushButton("✨")
+            self.btn_sort.setFixedSize(28, 28)
+            self.btn_sort.setToolTip("Magic Sort: Reorder based on your habits & time of day")
+            self.btn_sort.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.btn_sort.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background-color: transparent;
+                    border-radius: 14px;
+                    color: {GOLD};
+                    font-size: 14px;
+                }}
+                QPushButton:hover {{ background-color: {HOVER_BG}; }}
+                """
+            )
+            self.btn_sort.clicked.connect(self._magic_sort)
+            header.addWidget(self.btn_sort)
 
         # Someday review button
         if self.section == "Someday":
@@ -1662,7 +1861,8 @@ class TaskListWidget(QWidget):
             text=meta["clean_text"], 
             section=target_section, 
             category=meta["category"], 
-            important=meta["important"]
+            important=meta["important"],
+            schedule=meta.get("schedule")
         )
         
         # Dopamine: Flash input success
@@ -1981,13 +2181,8 @@ class TaskListWidget(QWidget):
             )
             return
 
-        # Prefer important tasks, then lowest order
-        candidates.sort(
-            key=lambda t: (
-                0 if t.get("important") else 1,
-                t.get("order", 0),
-            )
-        )
+        # Use AI ranking
+        candidates = taskflowai.rank_tasks_smart(candidates, self.state)
         target = candidates[0]
         target_id = target.get("id")
 
@@ -2000,6 +2195,26 @@ class TaskListWidget(QWidget):
                 if row:
                     self._flash_row(row)
                 break
+
+    def _magic_sort(self) -> None:
+        """Reorders the Today list using AI logic."""
+        tasks = tasks_in_section(self.state, "Today")
+        incomplete = [t for t in tasks if not t.get("completed")]
+        completed = [t for t in tasks if t.get("completed")]
+        
+        # Rank incomplete tasks
+        ranked = taskflowai.rank_tasks_smart(incomplete, self.state)
+        
+        # Apply new order (0, 1, 2...)
+        for i, t in enumerate(ranked + completed):
+            t["order"] = i
+        
+        self._save_callback()
+        self.refresh()
+        
+        # Visual feedback
+        self.btn_sort.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 14px;")
+        QTimer.singleShot(400, lambda: self.btn_sort.setStyleSheet(f"background-color: transparent; border-radius: 14px; color: {GOLD};"))
 
     def _flash_row(self, row: QWidget) -> None:
         """Temporarily highlight a row to draw attention."""
