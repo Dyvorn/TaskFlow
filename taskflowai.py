@@ -290,8 +290,42 @@ def extract_datetime_info(text: str) -> tuple[Optional[str], Optional[str], str]
     target_date = None
     target_time = None
 
+    # 0. Relative Delta Parsing ("in 5 mins", "in 2 days")
+    # Regex: \bin\s+(\d+)\s*(m|min|minute|h|hour|d|day|week)s?\b
+    delta_match = re.search(r"\bin\s+(\d+)\s*(m|min|minute|h|hour|d|day|week)s?\b", text, re.IGNORECASE)
+    if delta_match:
+        val = int(delta_match.group(1))
+        unit = delta_match.group(2).lower()
+        
+        delta = timedelta()
+        now = datetime.now()
+        if unit.startswith('m'): delta = timedelta(minutes=val)
+        elif unit.startswith('h'): delta = timedelta(hours=val)
+        elif unit.startswith('d'): delta = timedelta(days=val)
+        elif unit.startswith('w'): delta = timedelta(weeks=val)
+        
+        future = now + delta
+        target_date = future.date()
+        # Only set time if it's minutes/hours
+        if unit.startswith('m') or unit.startswith('h'):
+            target_time = future.strftime("%H:%M")
+            
+        text = text[:delta_match.start()] + text[delta_match.end():]
+
     # 1. Date Parsing
-    if "tomorrow" in text_lower or "tmrw" in text_lower:
+    if target_date:
+        pass # Already found via delta
+    elif "tonight" in text_lower:
+        target_date = today
+        target_time = "20:00"
+        text = re.sub(r"\btonight\b", "", text, flags=re.IGNORECASE)
+    elif "weekend" in text_lower:
+        # Find next Saturday
+        days_ahead = (5 - today.weekday() + 7) % 7
+        if days_ahead == 0: days_ahead = 7 # If today is Saturday, next Saturday
+        target_date = today + timedelta(days=days_ahead)
+        text = re.sub(r"\b(this )?weekend\b", "", text, flags=re.IGNORECASE)
+    elif "tomorrow" in text_lower or "tmrw" in text_lower:
         target_date = today + timedelta(days=1)
         text = re.sub(r"\b(tomorrow|tmrw)\b", "", text, flags=re.IGNORECASE)
     elif "today" in text_lower:

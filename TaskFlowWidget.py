@@ -475,9 +475,23 @@ class WidgetWindow(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-            row = self._create_task_row(t)
+            row = create_task_row_widget(
+                task=t,
+                on_toggle=lambda c, tid: self._on_widget_task_toggle(tid),
+                show_delete_button=False
+            )
+            
             self.tasks_list.addItem(item)
             self.tasks_list.setItemWidget(item, row)
+
+    def _on_widget_task_toggle(self, task_id: str):
+        for i in range(self.tasks_list.count()):
+            item = self.tasks_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == task_id:
+                row = self.tasks_list.itemWidget(item)
+                if row:
+                    self._animate_and_finalize_toggle(row, task_id)
+                break
 
     def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
         effect = QGraphicsOpacityEffect(row)

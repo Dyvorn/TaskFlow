@@ -29,6 +29,7 @@ from PyQt6.QtCore import (
     QPointF,
     pyqtSignal, 
     QUrl,
+    QMimeData,
 )
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtGui import (
@@ -42,6 +43,7 @@ from PyQt6.QtGui import (
     QTextCursor,
     QTextListFormat,
     QTextCharFormat,
+    QDrag,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -163,6 +165,7 @@ from taskflowmodel import (
     create_timestamped_backup,
     get_backups,
     restore_backup,
+    create_task_row_widget,
 )
 
 # Import new analytics engine
@@ -1459,94 +1462,93 @@ class ProjectListRow(QWidget):
 # SECTION 5: TASK LIST WIDGETS (TODAY / WEEK / SOMEDAY / PROJECTS)
 # ============================================================================
 
-def create_task_row_widget(
-    task: Dict[str, Any],
-    on_toggle: Callable[[bool, str], None],
-    on_delete: Optional[Callable[[bool, str], None]] = None,
-    on_context_menu: Optional[Callable[[QPoint, str], None]] = None,
-    on_edit: Optional[Callable[[str], None]] = None,
-    show_delete_button: bool = True
-) -> QWidget:
+class TaskCalendarWidget(QCalendarWidget):
     """
-    Creates a standardized task row widget used in multiple lists.
+    Custom calendar that paints dots for tasks.
     """
-    row = QWidget()
-    row.setObjectName("TaskRow")
-    row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-    row.setStyleSheet(f"""
-        #TaskRow {{
-            border-radius: 8px;
-            background-color: transparent;
-        }}
-        #TaskRow:hover {{ background-color: {HOVER_BG}; }}
-    """)
-    
-    hl = QHBoxLayout(row)
-    hl.setContentsMargins(6, 2, 6, 2)
-    hl.setSpacing(6)
+    taskDropped = pyqtSignal(str, object) # task_id, date
 
-    chk = QPushButton("✔" if task.get("completed") else "")
-    chk.setFixedSize(QSize(22, 22))
-    chk.setCheckable(True)
-    chk.setChecked(task.get("completed", False))
-    chk.setStyleSheet(
-        f"""
-        QPushButton {{
-            background-color: transparent;
-            border-radius: 11px;
-            border: 1px solid {HOVER_BG};
-            color: {GOLD};
-            font-weight: bold;
-        }}
-        QPushButton:checked {{
-            background-color: {GOLD};
-            color: {DARK_BG};
-        }}
-        """
-    )
+    def __init__(self, state: Dict[str, Any], parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.state = state
+        self.setGridVisible(False)
+        self.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        self.setNavigationBarVisible(True)
+        self.setMouseTracking(True)
+        self.setAcceptDrops(True)
+        
+        # Styling
+        self.setStyleSheet(f"""
+            QCalendarWidget QWidget {{ alternate-background-color: {CARD_BG}; }}
+            QCalendarWidget QAbstractItemView:enabled {{
+                color: {TEXT_WHITE};
+                background-color: transparent;
+                selection-background-color: {HOVER_BG};
+                selection-color: {GOLD};
+                border-radius: 6px;
+            }}
+            QCalendarWidget QMenu {{ color: {TEXT_WHITE}; background-color: {CARD_BG}; }}
+            QCalendarWidget QSpinBox {{ color: {TEXT_WHITE}; background-color: {DARK_BG}; selection-background-color: {GOLD}; selection-color: {DARK_BG}; }}
+            QCalendarWidget QToolButton {{ color: {TEXT_WHITE}; background-color: transparent; icon-size: 24px; border-radius: 4px; }}
+            QCalendarWidget QToolButton:hover {{ background-color: {HOVER_BG}; }}
+            QCalendarWidget QToolButton#qt_calendar_prevmonth {{ qproperty-icon: url(left_arrow.png); }} 
+            QCalendarWidget QToolButton#qt_calendar_nextmonth {{ qproperty-icon: url(right_arrow.png); }}
+        """)
 
-    # Build label with metadata
-    text_content = task.get("text", "")
-    meta_info = []
-    if sched := task.get("schedule"):
-        if isinstance(sched, dict) and sched.get("date"):
-            date_str = sched['date']
-            if sched.get("time"):
-                date_str += f" @ {sched['time']}"
-            meta_info.append(f"📅 {date_str}")
-    if rec := task.get("recurrence"):
-        if isinstance(rec, dict) and rec.get("type"):
-            meta_info.append(f"↻ {rec['type']}")
-    if cat := task.get("category"):
-        meta_info.append(f"🏷 {cat}")
+    def paintCell(self, painter, rect, date):
+        super().paintCell(painter, rect, date)
+        
+        date_str = date.toString(Qt.DateFormat.ISODate)
+        tasks = [t for t in self.state.get("tasks", []) if (t.get("schedule") or {}).get("date") == date_str and not t.get("completed")]
+        
+        if tasks:
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            dot_size = 4
+            spacing = 3
+            total_width = min(len(tasks), 5) * dot_size + (min(len(tasks), 5) - 1) * spacing
+            start_x = rect.center().x() - total_width / 2
+            y = rect.bottom() - 6
+            
+            for i, t in enumerate(tasks):
+                if i >= 5: break
+                color = QColor("#ff6b6b") if t.get("important") else (QColor("#4ECDC4") if t.get("category") == "Work" else QColor(GOLD))
+                painter.setBrush(color)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPointF(start_x + i * (dot_size + spacing) + dot_size/2, y), dot_size/2, dot_size/2)
+            painter.restore()
 
-    lbl = QLabel()
-    lbl.setWordWrap(True)
-    lbl.setStyleSheet(f"color: {TEXT_GRAY if task.get('completed') else (GOLD if task.get('important') else TEXT_WHITE)};" + ("text-decoration: line-through;" if task.get("completed") else ""))
-    
-    lbl.setText(f"{html.escape(text_content)}<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>" if meta_info else text_content)
+    def mouseMoveEvent(self, event):
+        # Show tooltip with task count
+        # Note: QCalendarWidget structure is complex, this is a best-effort mapping
+        super().mouseMoveEvent(event)
+        # We can't easily map pixel to date without internal access, 
+        # but we can show a general tooltip if hovering a cell with tasks?
+        # For now, let's rely on the visual dots.
+        pass
 
-    del_btn = QPushButton("×")
-    del_btn.setFixedSize(QSize(24, 24))
-    del_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-weight: bold; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
-    del_btn.setVisible(show_delete_button and on_delete is not None)
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/taskflow-task"):
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
 
-    hl.addWidget(chk)
-    hl.addWidget(lbl, 1)
-    hl.addWidget(del_btn)
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/taskflow-task"):
+            event.accept()
+        else:
+            super().dragMoveEvent(event)
 
-    tid = task.get("id")
-    chk.clicked.connect(lambda c, t=tid: on_toggle(c, t))
-    if on_delete: del_btn.clicked.connect(lambda c, t=tid: on_delete(c, t))
-    if on_context_menu:
-        row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        row.customContextMenuRequested.connect(lambda pos, t=tid: on_context_menu(pos, t))
-    if on_edit:
-        def mouseDoubleClickEvent(event, t=tid):
-            if event.button() == Qt.MouseButton.LeftButton: on_edit(t)
-        row.mouseDoubleClickEvent = mouseDoubleClickEvent
-
-    return row
+    def dropEvent(self, event):
+        if event.mimeData().hasFormat("application/taskflow-task"):
+            task_id = event.mimeData().text()
+            # Drop on the calendar sets it to the currently selected date (simplest reliable interaction)
+            # Enhancing to drop on specific cell requires internal QTableView access which is fragile in PyQt6
+            self.taskDropped.emit(task_id, self.selectedDate())
+            event.accept()
+        else:
+            super().dropEvent(event)
 
 class ReorderableListWidget(QListWidget):
     """
@@ -1556,11 +1558,21 @@ class ReorderableListWidget(QListWidget):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        # Allow both internal move and dragging out
+        self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.setAcceptDrops(True)
         self.setDragEnabled(True)
         self.setDropIndicatorShown(True)
+
+    def mimeData(self, items):
+        mime = super().mimeData(items)
+        if items:
+            tid = items[0].data(Qt.ItemDataRole.UserRole)
+            mime.setData("application/taskflow-task", tid.encode())
+            mime.setText(tid)
+        return mime
 
     def dropEvent(self, event) -> None:
         super().dropEvent(event)
@@ -1576,6 +1588,7 @@ class TaskListWidget(QWidget):
     - Section-wide actions (mark all done, clear completed, send completed to Someday)
     - Optional "What should I do next?" / focus suggestion for Today
     """
+    requestFocus = pyqtSignal(str)
 
     def __init__(
         self,
@@ -1811,7 +1824,8 @@ class TaskListWidget(QWidget):
                     lambda _, tid: self._on_toggle_task(tid),
                     lambda _, tid: self._on_delete_task(tid),
                     lambda pos, tid: self._show_task_menu(tid, row.mapToGlobal(pos)),
-                    lambda tid: self._rename_task(tid)
+                    lambda tid: self._rename_task(tid),
+                    lambda tid: self.requestFocus.emit(tid)
                 )
 
                 self.tasks_list.addItem(item)
@@ -2399,7 +2413,8 @@ class ProjectTaskListWidget(QWidget):
                 lambda _, tid: self._on_toggle_task(tid),
                 lambda _, tid: self._on_delete_task(tid),
                 lambda pos, tid: self._show_task_menu(tid, row.mapToGlobal(pos)),
-                lambda tid: self._rename_task(tid)
+                lambda tid: self._rename_task(tid),
+                None # No focus in project view for now, or add signal if needed
             )
 
             self.tasks_list.addItem(item)
@@ -2665,7 +2680,8 @@ class SearchWidget(QWidget):
                 on_toggle=lambda c, tid: self._toggle_task(tid),
                 on_delete=None,
                 on_context_menu=None,
-                on_edit=None
+                on_edit=None,
+                on_focus=None
             )
             
             self.results_list.addItem(item)
@@ -2983,6 +2999,9 @@ class HubWindow(QMainWindow):
         act_show.triggered.connect(self.showNormal)
         act_show.triggered.connect(self.activateWindow)
         
+        act_quick = tray_menu.addAction("Quick Add Task")
+        act_quick.triggered.connect(self._tray_quick_add)
+        
         tray_menu.addSeparator()
         
         act_quit = tray_menu.addAction("Quit")
@@ -2991,6 +3010,13 @@ class HubWindow(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         self.tray_icon.show()
+
+    def _tray_quick_add(self):
+        """Open the window and focus the Today input field."""
+        self.showNormal()
+        self.activateWindow()
+        self._switch_page(self.page_today)
+        self.page_today.quick_add_input.setFocus()
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -3226,6 +3252,7 @@ class HubWindow(QMainWindow):
         self._build_task_pages()
         self._build_projects_page()
         self._build_stats_page()
+        self._build_scheduled_page()
         self._build_settings_page()
         self._build_zen_page()
         self.page_search = SearchWidget(self.state, self.schedule_save)
@@ -3451,9 +3478,175 @@ class HubWindow(QMainWindow):
     def _build_task_pages(self) -> None:
         self.page_today = TaskListWidget(self.state, "Today", self.schedule_save)
         self.page_week = TaskListWidget(self.state, "This Week", self.schedule_save)
-        self.page_scheduled = TaskListWidget(self.state, "Scheduled", self.schedule_save)
         self.page_someday = TaskListWidget(self.state, "Someday", self.schedule_save)
         self.page_journal = JournalWidget(self.state, self.schedule_save)
+        
+        # Connect Focus Signals
+        for page in (self.page_today, self.page_week, self.page_someday):
+            page.requestFocus.connect(self.enter_zen_mode)
+
+    def _build_scheduled_page(self) -> None:
+        self.page_scheduled = QWidget()
+        main_layout = QVBoxLayout(self.page_scheduled)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(10)
+
+        # Header with Toggle
+        header = QHBoxLayout()
+        self.btn_sched_toggle = QPushButton("Show List View")
+        self.btn_sched_toggle.setCheckable(True)
+        self.btn_sched_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_sched_toggle.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 12px; border: 1px solid {GLASS_BORDER};")
+        self.btn_sched_toggle.toggled.connect(self._toggle_scheduled_view)
+        header.addStretch()
+        header.addWidget(self.btn_sched_toggle)
+        main_layout.addLayout(header)
+
+        self.sched_stack = QStackedWidget()
+        main_layout.addWidget(self.sched_stack)
+
+        # --- View 1: Calendar Split View ---
+        self.view_calendar = QWidget()
+        cal_layout = QHBoxLayout(self.view_calendar)
+        cal_layout.setContentsMargins(0, 0, 0, 0)
+        
+        cal_container = QFrame()
+        cal_container.setObjectName("GlassCard")
+        cal_frame_layout = QVBoxLayout(cal_container)
+        
+        self.calendar = TaskCalendarWidget(self.state)
+        self.calendar.selectionChanged.connect(self._on_calendar_date_changed)
+        self.calendar.taskDropped.connect(self._on_calendar_drop)
+        cal_frame_layout.addWidget(self.calendar)
+        
+        # Legend
+        legend = QHBoxLayout()
+        for col, label in [(GOLD, "Task"), ("#ff6b6b", "Important"), ("#4ECDC4", "Work")]:
+            l = QLabel(f"● {label}")
+            l.setStyleSheet(f"color: {col}; font-size: 10px;")
+            legend.addWidget(l)
+        legend.addStretch()
+        cal_frame_layout.addLayout(legend)
+        
+        cal_layout.addWidget(cal_container, 1)
+        
+        # Right: Task List for Date
+        list_container = QFrame()
+        list_container.setObjectName("GlassCard")
+        list_container.setFixedWidth(300)
+        list_layout = QVBoxLayout(list_container)
+        
+        self.lbl_cal_date = QLabel("Selected Date")
+        self.lbl_cal_date.setObjectName("PageHeader")
+        list_layout.addWidget(self.lbl_cal_date)
+        
+        self.cal_task_list = QListWidget()
+        self.cal_task_list.setStyleSheet("background: transparent; border: none;")
+        list_layout.addWidget(self.cal_task_list)
+        
+        # Quick add for this date
+        self.cal_quick_add = QLineEdit()
+        self.cal_quick_add.setPlaceholderText("Add task to this date...")
+        self.cal_quick_add.returnPressed.connect(self._on_cal_quick_add)
+        self.cal_quick_add.setStyleSheet(f"background-color: rgba(0,0,0,0.3); border: 1px solid {HOVER_BG}; border-radius: 6px; padding: 6px; color: {TEXT_WHITE};")
+        list_layout.addWidget(self.cal_quick_add)
+        
+        cal_layout.addWidget(list_container)
+        self.sched_stack.addWidget(self.view_calendar)
+
+        # --- View 2: Full List View ---
+        self.view_list = QWidget()
+        list_view_layout = QVBoxLayout(self.view_list)
+        list_view_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # We reuse TaskListWidget but for "Scheduled" section
+        self.scheduled_list_widget = TaskListWidget(self.state, "Scheduled", self.schedule_save)
+        list_view_layout.addWidget(self.scheduled_list_widget)
+        
+        self.sched_stack.addWidget(self.view_list)
+        
+        # Initialize
+        self._on_calendar_date_changed()
+
+    def _toggle_scheduled_view(self, checked: bool):
+        if checked:
+            self.btn_sched_toggle.setText("Show Calendar View")
+            self.sched_stack.setCurrentWidget(self.view_list)
+            self.scheduled_list_widget.refresh()
+        else:
+            self.btn_sched_toggle.setText("Show List View")
+            self.sched_stack.setCurrentWidget(self.view_calendar)
+            self._on_calendar_date_changed()
+
+    def _on_calendar_drop(self, task_id, qdate):
+        date_str = qdate.toString(Qt.DateFormat.ISODate)
+        self._set_task_schedule(task_id, date_str)
+
+    def _on_calendar_date_changed(self):
+        date = self.calendar.selectedDate()
+        date_str = date.toString(Qt.DateFormat.ISODate)
+        self.lbl_cal_date.setText(date.toString("dddd, MMMM d"))
+        
+        self.cal_task_list.clear()
+        tasks = [t for t in self.state.get("tasks", []) if (t.get("schedule") or {}).get("date") == date_str]
+        tasks.sort(key=lambda t: (t.get("completed", False), t.get("order", 0)))
+        
+        for t in tasks:
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
+            row = create_task_row_widget(
+                t,
+                lambda c, tid: self._on_toggle_task_calendar(tid),
+                lambda c, tid: self._on_delete_task_calendar(tid),
+                lambda pos, tid: self._show_calendar_task_menu(tid, self.cal_task_list.mapToGlobal(pos)),
+                None,
+                lambda tid: self.enter_zen_mode(tid)
+            )
+            item.setSizeHint(row.sizeHint())
+            self.cal_task_list.addItem(item)
+            self.cal_task_list.setItemWidget(item, row)
+
+    def _show_calendar_task_menu(self, task_id, global_pos):
+        menu = QMenu(self)
+        act_del = menu.addAction("Delete")
+        if menu.exec(global_pos) == act_del:
+            self._on_delete_task_calendar(task_id)
+
+    def _on_toggle_task_calendar(self, task_id):
+        toggle_task_completed(self.state, task_id)
+        self.schedule_save()
+        self._on_calendar_date_changed()
+        self.calendar.update()
+
+    def _on_delete_task_calendar(self, task_id):
+        delete_task(self.state, task_id)
+        self.schedule_save()
+        self._on_calendar_date_changed()
+        self.calendar.update()
+
+    def _on_cal_quick_add(self):
+        text = self.cal_quick_add.text().strip()
+        if not text: return
+        
+        date_str = self.calendar.selectedDate().toString(Qt.DateFormat.ISODate)
+        meta = taskflowai.infer_metadata(text, self.state)
+        
+        add_task(
+            self.state,
+            text=meta["clean_text"],
+            section="Scheduled",
+            category=meta["category"],
+            important=meta["important"],
+            schedule={"date": date_str}
+        )
+        
+        if date_str == today_str():
+            self.state["tasks"][-1]["section"] = "Today"
+            
+        self.schedule_save()
+        self.cal_quick_add.clear()
+        self._on_calendar_date_changed()
+        self.calendar.update()
 
     def _build_projects_page(self) -> None:
         self.page_projects = QWidget()
@@ -3800,6 +3993,7 @@ class HubWindow(QMainWindow):
         page_map = {
             "home": self.page_home,
             "today": self.page_today,
+            "calendar": self.page_scheduled,
             "week": self.page_week,
             "scheduled": self.page_scheduled,
             "someday": self.page_someday,
@@ -3833,7 +4027,8 @@ class HubWindow(QMainWindow):
         elif page is self.page_week:
             self.page_week.refresh()
         elif page is self.page_scheduled:
-            self.page_scheduled.refresh()
+            self._on_calendar_date_changed()
+            self.calendar.update()
         elif page is self.page_someday:
             self.page_someday.refresh()
         elif page is self.page_journal:
@@ -4639,7 +4834,8 @@ class HubWindow(QMainWindow):
         elif current is self.page_week:
             self.page_week.refresh()
         elif current is self.page_scheduled:
-            self.page_scheduled.refresh()
+            self._on_calendar_date_changed()
+            self.calendar.update()
         elif current is self.page_someday:
             self.page_someday.refresh()
         elif current is self.page_projects:

@@ -9,6 +9,15 @@ import shutil
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Callable
 
+# UI Imports (Guarded for non-GUI contexts)
+try:
+    from PyQt6.QtCore import Qt, QSize, QPoint
+    from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel
+    import html
+    UI_LIBS_AVAILABLE = True
+except ImportError:
+    UI_LIBS_AVAILABLE = False
+
 # ═══════════════════════════════════════════════════════════════════════════
 # CONSTANTS & CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
@@ -787,3 +796,109 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
         return True
     except Exception:
         return False
+
+if UI_LIBS_AVAILABLE:
+    def create_task_row_widget(
+        task: Dict[str, Any],
+        on_toggle: Callable[[bool, str], None],
+        on_delete: Optional[Callable[[bool, str], None]] = None,
+        on_context_menu: Optional[Callable[[QPoint, str], None]] = None,
+        on_edit: Optional[Callable[[str], None]] = None,
+        on_focus: Optional[Callable[[str], None]] = None,
+        show_delete_button: bool = True
+    ) -> QWidget:
+        """
+        Creates a standardized task row widget used in multiple lists.
+        """
+        row = QWidget()
+        row.setObjectName("TaskRow")
+        row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        
+        important_style = f"border-left: 3px solid {GOLD};" if task.get("important") else "border-left: 3px solid transparent;"
+        row.setStyleSheet(f"""
+            #TaskRow {{
+                border-radius: 8px;
+                background-color: rgba(255, 255, 255, 0.02);
+                {important_style}
+            }}
+            #TaskRow:hover {{ background-color: {HOVER_BG}; }}
+        """)
+        
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(6, 2, 6, 2)
+        hl.setSpacing(6)
+
+        chk = QPushButton("✔" if task.get("completed") else "")
+        chk.setFixedSize(QSize(22, 22))
+        chk.setCheckable(True)
+        chk.setChecked(task.get("completed", False))
+        chk.setStyleSheet(
+            f"""
+            QPushButton {{
+                background-color: transparent;
+                border-radius: 11px;
+                border: 1px solid {HOVER_BG};
+                color: {GOLD};
+                font-weight: bold;
+            }}
+            QPushButton:checked {{
+                background-color: {GOLD};
+                color: {DARK_BG};
+            }}
+            """
+        )
+
+        # Build label with metadata
+        text_content = task.get("text", "")
+        meta_info = []
+        if sched := task.get("schedule"):
+            if isinstance(sched, dict) and sched.get("date"):
+                date_str = sched['date']
+                if sched.get("time"):
+                    date_str += f" @ {sched['time']}"
+                meta_info.append(f"📅 {date_str}")
+        if rec := task.get("recurrence"):
+            if isinstance(rec, dict) and rec.get("type"):
+                meta_info.append(f"↻ {rec['type']}")
+        if cat := task.get("category"):
+            meta_info.append(f"🏷 {cat}")
+
+        lbl = QLabel()
+        lbl.setWordWrap(True)
+        lbl.setStyleSheet(f"color: {TEXT_GRAY if task.get('completed') else (GOLD if task.get('important') else TEXT_WHITE)};" + ("text-decoration: line-through;" if task.get("completed") else ""))
+        lbl.setToolTip(text_content)
+        
+        lbl.setText(f"{html.escape(text_content)}<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>" if meta_info else text_content)
+
+        # Focus Button (Zen Mode)
+        focus_btn = QPushButton("👁")
+        focus_btn.setFixedSize(QSize(24, 24))
+        focus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        focus_btn.setToolTip("Focus on this task (Zen Mode)")
+        focus_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
+        focus_btn.setVisible(not task.get("completed") and on_focus is not None)
+
+        del_btn = QPushButton("×")
+        del_btn.setFixedSize(QSize(24, 24))
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-weight: bold; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
+        del_btn.setVisible(show_delete_button and on_delete is not None)
+
+        hl.addWidget(chk)
+        hl.addWidget(lbl, 1)
+        hl.addWidget(focus_btn)
+        hl.addWidget(del_btn)
+
+        tid = task.get("id")
+        chk.clicked.connect(lambda c, t=tid: on_toggle(c, t))
+        if on_focus: focus_btn.clicked.connect(lambda c, t=tid: on_focus(t))
+        if on_delete: del_btn.clicked.connect(lambda c, t=tid: on_delete(c, t))
+        if on_context_menu:
+            row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            row.customContextMenuRequested.connect(lambda pos, t=tid: on_context_menu(pos, t))
+        if on_edit:
+            def mouseDoubleClickEvent(event, t=tid):
+                if event.button() == Qt.MouseButton.LeftButton: on_edit(t)
+            row.mouseDoubleClickEvent = mouseDoubleClickEvent
+
+        return row
