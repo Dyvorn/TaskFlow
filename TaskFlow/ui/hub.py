@@ -2106,9 +2106,14 @@ class TaskListWidget(QWidget):
             )
             return
 
-        # Use AI ranking
-        # candidates = taskflowai.rank_tasks_smart(candidates, self.state) # TODO: Port ranking logic
-        target = candidates[0]
+        # Simple scoring for suggestion
+        def score_task(t):
+            s = 0
+            if t.get("important"): s += 10
+            if t.get("due_time"): s += 5
+            return s
+            
+        target = max(candidates, key=score_task)
         target_id = target.get("id")
 
         # Find the corresponding item
@@ -4558,11 +4563,13 @@ class HubWindow(QMainWindow):
     # ────────────────────────────────────────────────────────────────────
 
     def _refresh_stats_and_habits(self) -> None:
-        # Get intelligent insights
-        # insights = taskflowai.generate_insights(self.state) # TODO: Port insights
+        # Generate insights using analytics engine
+        rate = taskflowanalytics.get_completion_rate(self.state)
+        hour = taskflowanalytics.get_most_productive_hour(self.state)
         
         summary_html = (
-            f"<p style='font-size:16px; margin-bottom:4px;'><b>Current Vibe:</b> <span style='color:{GOLD}'>Focus</span></p>"
+            f"<p style='font-size:16px; margin-bottom:4px;'><b>Completion Rate:</b> <span style='color:{GOLD}'>{int(rate)}%</span></p>"
+            f"<p style='font-size:14px; color:{TEXT_GRAY};'>Most productive around {hour}:00</p>"
         )
 
         self.stats_summary_label.setText(summary_html)
@@ -4607,66 +4614,78 @@ class HubWindow(QMainWindow):
         self.schedule_save()
         self._refresh_home()
 
+    def _parse_task_input(self, text: str):
+        """Helper to extract section, priority, and category from text."""
+        text = text.strip()
+        section = None 
+        important = False
+        category = None
+        
+        # Priority
+        if "!" in text or "urgent" in text.lower():
+            important = True
+            text = text.replace("!", "").replace("urgent", "", 1).strip()
+            
+        # Category hashtags
+        match = re.search(r"#(\w+)", text)
+        if match:
+            category = match.group(1)
+            text = text.replace(match.group(0), "").strip()
+            
+        # Section keywords (simple check)
+        lower = text.lower()
+        if "today" in lower: section = "Today"
+        elif "tomorrow" in lower: section = "Tomorrow"
+        elif "week" in lower: section = "This Week"
+        elif "someday" in lower: section = "Someday"
+            
+        return text, section, category, important
+
     def _on_brain_dump(self, onboarding: bool = False) -> None:
         dlg = BrainDumpDialog(self)
         if onboarding:
             dlg.setWindowTitle("Welcome! Let's start with a Brain Dump 🧠")
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            text = dlg.get_text().strip()
+            text = dlg.text_edit.toPlainText().strip()
             if not text: return
             
             created_ids = []
+            use_ai = dlg.chk_ai.isChecked()
             
-            if dlg.use_ai():
-                # Use the new analytics function
-                # suggestions = taskflowai.analyze_brain_dump(text, self.state) # TODO: Port brain dump
-                # counts = {"Today": 0, "Tomorrow": 0, "This Week": 0, "Someday": 0}
+            lines = [l.strip() for l in text.split('\n') if l.strip()]
+            
+            for line in lines:
+                # Parse text
+                p_text, p_section, p_cat, p_imp = self._parse_task_input(line)
                 
-                # for s in suggestions:
-                #     sec = s.get("section", "Today")
-                #     t = add_task(
-                #         self.state, 
-                #         text=s["text"], 
-                #         section=sec, 
-                #         category=s["category"], 
-                #         important=s["important"]
-                #     )
-                #     created_ids.append(t["id"])
-                #     counts[sec] = counts.get(sec, 0) + 1
+                # AI Category Prediction
+                if use_ai and self.ai_engine and not p_cat:
+                    p_cat = self.ai_engine.predict_category(p_text)
                 
-                # parts = [f"{k}: {v}" for k, v in counts.items() if v > 0]
-                msg = "AI Brain Dump not yet ported."
-                QMessageBox.information(self, "Brain Dump Sorted", msg)
+                # Default section logic
+                section = p_section if p_section else "Someday"
                 
-            else:
-                # Simple split by newline -> Someday
-                lines = [l.strip() for l in text.split('\n') if l.strip()]
-                for l in lines:
-                    t = add_task(self.state, text=l, section="Someday")
-                    created_ids.append(t["id"])
-                
-                if created_ids:
-                    # Prompt to move to Today
-                    plan_dlg = DailyPlanningDialog(0, self)
-                    plan_dlg.setWindowTitle("Pick Focus")
-                    if plan_dlg.exec() == QDialog.DialogCode.Accepted:
-                        count_to_move = plan_dlg.planned_tasks()
-                        moved_count = 0
-                        for i in range(min(count_to_move, len(created_ids))):
-                            tid = created_ids[i]
-                            for t in self.state["tasks"]:
-                                if t["id"] == tid:
-                                    t["section"] = "Today"
-                                    t["updatedAt"] = now_iso()
-                                    moved_count += 1
-                                    break
-                        QMessageBox.information(self, "Brain Dump", f"Captured {len(created_ids)} items to Someday.\nMoved {moved_count} to Today.")
-                    else:
-                        QMessageBox.information(self, "Brain Dump", f"Captured {len(created_ids)} items to Someday.")
+                t = add_task(
+                    self.state, 
+                    text=p_text, 
+                    section=section, 
+                    category=p_cat, 
+                    important=p_imp
+                )
+                created_ids.append(t["id"])
             
             self.schedule_save()
-            self._switch_page(self.page_today)
+            
+            if created_ids:
+                self.confetti.burst()
+                QMessageBox.information(self, "Brain Dump", f"Captured {len(created_ids)} items.")
+                
+                # Navigate to where tasks went
+                if any(t["section"] == "Today" for t in self.state["tasks"] if t["id"] in created_ids):
+                    self._switch_page(self.page_today)
+                else:
+                    self._switch_page(self.page_someday)
 
     # ────────────────────────────────────────────────────────────────────
     # Updates, saving & close
