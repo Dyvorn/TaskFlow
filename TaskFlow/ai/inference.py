@@ -1,6 +1,6 @@
 import torch
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 
 from core.user_manager import UserManager
 from .architect import TaskBrain
@@ -46,7 +46,7 @@ class InferenceEngine:
         # Set model to evaluation mode for inference
         self.model.eval()
 
-    def predict(self, text: str) -> Optional[str]:
+    def predict(self, text: str) -> Tuple[Optional[str], float]:
         """
         Predicts the category for a given text input.
 
@@ -54,14 +54,16 @@ class InferenceEngine:
             text (str): The input text (e.g., a task description).
 
         Returns:
-            Optional[str]: The predicted category name, or None if prediction fails.
+            Tuple[Optional[str], float]: The predicted category and confidence score (0.0-1.0).
         """
         if self.model is None:
-            return None
+            return None, 0.0
             
         with torch.no_grad():
             text_indices, offsets = self.pipeline.process_input(text)
             
             output = self.model(text_indices, offsets)
-            predicted_index = output.argmax(1).item()
-            return self.pipeline.get_category_name(predicted_index)
+            probs = torch.softmax(output, dim=1)
+            confidence, predicted_index = torch.max(probs, dim=1)
+            
+            return self.pipeline.get_category_name(predicted_index.item()), confidence.item()

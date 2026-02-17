@@ -170,7 +170,7 @@ from core.model import (
 
 # Import new analytics engine
 import core.analytics as taskflowanalytics
-from ai import engine as taskflowai
+from .coach import CoachWidget
 
 # ============================================================================
 # SECTION 2: APP CONFIGURATION & MODES
@@ -787,141 +787,6 @@ class BrainDumpDialog(QDialog):
         layout.addWidget(buttons)
         
         self.setStyleSheet(f"background-color: {CARD_BG};")
-
-    def get_text(self) -> str:
-        return self.text_edit.toPlainText()
-        
-    def use_ai(self) -> bool:
-        return self.chk_ai.isChecked()
-
-class ProfileWidget(QWidget):
-    """
-    Page to configure the AI persona and user details.
-    """
-    def __init__(self, state: Dict[str, Any], save_callback, paths: Dict[str, str], parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.state = state
-        self._save_callback = save_callback
-        self.paths = paths
-        self._build_ui()
-        self.refresh()
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
-
-        header = QLabel("AI Coach Settings")
-        header.setObjectName("PageHeader")
-        layout.addWidget(header)
-
-        # Form
-        form_card = QFrame()
-        form_card.setObjectName("GlassCard")
-        f_layout = QVBoxLayout(form_card)
-        f_layout.setContentsMargins(24, 24, 24, 24)
-        f_layout.setSpacing(15)
-
-        f_layout.addWidget(QLabel("What should I call you?"))
-        self.name_input = QLineEdit()
-        self.name_input.textChanged.connect(self._save)
-        f_layout.addWidget(self.name_input)
-
-        f_layout.addWidget(QLabel("What is your primary role? (e.g. Student, Developer)"))
-        self.role_input = QLineEdit()
-        self.role_input.textChanged.connect(self._save)
-        f_layout.addWidget(self.role_input)
-
-        f_layout.addWidget(QLabel("Coaching Style"))
-        self.style_combo = QComboBox()
-        self.style_combo.addItems(["Gentle", "Direct", "Stoic", "Hype"])
-        self.style_combo.currentTextChanged.connect(self._save)
-        f_layout.addWidget(self.style_combo)
-        
-        # Style descriptions
-        self.lbl_style_desc = QLabel()
-        self.lbl_style_desc.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 12px; font-style: italic; margin-top: 4px;")
-        self.lbl_style_desc.setWordWrap(True)
-        f_layout.addWidget(self.lbl_style_desc)
-        
-        # Update description when combo changes
-        self.style_combo.currentTextChanged.connect(self._update_style_desc)
-
-        # --- AI Brain Stats ---
-        stats_card = QFrame()
-        stats_card.setObjectName("GlassCard")
-        s_layout = QVBoxLayout(stats_card)
-        s_layout.setContentsMargins(24, 24, 24, 24)
-        s_layout.setSpacing(10)
-
-        s_layout.addWidget(QLabel("🧠 Neural Network Status"))
-        
-        self.lbl_nn_stats = QLabel("Loading...")
-        self.lbl_nn_stats.setStyleSheet(f"color: {TEXT_GRAY}; font-family: monospace;")
-        s_layout.addWidget(self.lbl_nn_stats)
-
-        self.btn_retrain = QPushButton("Force Retrain Brain")
-        self.btn_retrain.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_retrain.setStyleSheet(f"""
-            QPushButton {{ background-color: {HOVER_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 6px; padding: 8px; }}
-            QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; border: none; }}
-        """)
-        self.btn_retrain.clicked.connect(self._retrain_brain)
-        s_layout.addWidget(self.btn_retrain)
-
-        layout.addWidget(stats_card)
-
-        layout.addWidget(form_card)
-        layout.addStretch(1)
-
-    def refresh(self):
-        p = self.state.get("userProfile", {})
-        
-        # Only update if changed to prevent typing loops
-        if self.name_input.text() != p.get("name", ""):
-            self.name_input.setText(p.get("name", ""))
-        if self.role_input.text() != p.get("role", ""):
-            self.role_input.setText(p.get("role", ""))
-        if self.style_combo.currentText() != p.get("style", "Gentle"):
-            self.style_combo.setCurrentText(p.get("style", "Gentle"))
-            
-        self._update_style_desc(self.style_combo.currentText())
-        
-        # Update NN Stats
-        stats = taskflowai.get_model_stats()
-        self.lbl_nn_stats.setText(
-            f"Status:     {stats['status']}\n"
-            f"Vocabulary: {stats['vocab_size']} words\n"
-            f"Structure:  {stats['layers']}"
-        )
-
-    def _update_style_desc(self, style):
-        descs = {
-            "Gentle": "Kind, encouraging, and patient. Focuses on small steps and well-being.",
-            "Direct": "No-nonsense, efficient, and results-oriented. Focuses on execution.",
-            "Stoic": "Calm, rational, and disciplined. Focuses on what you can control.",
-            "Hype": "High energy, enthusiastic, and aggressive. Focuses on winning and crushing goals."
-        }
-        self.lbl_style_desc.setText(descs.get(style, ""))
-
-    def _save(self):
-        p = self.state.setdefault("userProfile", {})
-        p["name"] = self.name_input.text()
-        p["role"] = self.role_input.text()
-        p["style"] = self.style_combo.currentText()
-        self._save_callback()
-
-    def _retrain_brain(self):
-        self.btn_retrain.setText("Training...")
-        self.btn_retrain.setEnabled(False)
-        QApplication.processEvents()
-        
-        # Force immediate training
-        taskflowai.save_user_training(self.state, self.paths["training"])
-        
-        self.refresh()
-        self.btn_retrain.setText("Force Retrain Brain")
-        self.btn_retrain.setEnabled(True)
 
 class SomedayReviewDialog(QDialog):
     """
@@ -1635,17 +1500,12 @@ class TaskListWidget(QWidget):
     """
     requestFocus = pyqtSignal(str)
 
-    def __init__(
-        self,
-        state: Dict[str, Any],
-        section: str,
-        save_callback,
-        parent: Optional[QWidget] = None,
-    ):
+    def __init__(self, state: Dict[str, Any], section: str, save_callback, ai_engine=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.state = state
         self.section = section
         self._save_callback = save_callback
+        self.ai_engine = ai_engine
 
         self._build_ui()
         self.refresh()
@@ -1909,19 +1769,23 @@ class TaskListWidget(QWidget):
         if not text:
             return
             
-        # Use AI to infer metadata (Smart Input)
-        meta = taskflowai.infer_metadata(text, self.state, default_section=self.section)
+        # Use AI to infer category
+        category = "Personal" # Default
+        if self.ai_engine:
+            pred_cat = self.ai_engine.predict_category(text)
+            if pred_cat:
+                category = pred_cat
         
-        # If AI suggests a different section (e.g. user typed "tomorrow"), use it
-        target_section = meta["section"]
+        # Simple section logic for now (can be expanded)
+        target_section = self.section
         
         task = add_task(
             self.state, 
-            text=meta["clean_text"], 
+            text=text, 
             section=target_section, 
-            category=meta["category"], 
-            important=meta["important"],
-            schedule=meta.get("schedule")
+            category=category, 
+            important=False,
+            schedule=None
         )
         
         # Dopamine: Flash input success
@@ -2241,7 +2105,7 @@ class TaskListWidget(QWidget):
             return
 
         # Use AI ranking
-        candidates = taskflowai.rank_tasks_smart(candidates, self.state)
+        # candidates = taskflowai.rank_tasks_smart(candidates, self.state) # TODO: Port ranking logic
         target = candidates[0]
         target_id = target.get("id")
 
@@ -2262,7 +2126,7 @@ class TaskListWidget(QWidget):
         completed = [t for t in tasks if t.get("completed")]
         
         # Rank incomplete tasks
-        ranked = taskflowai.rank_tasks_smart(incomplete, self.state)
+        ranked = incomplete # taskflowai.rank_tasks_smart(incomplete, self.state) # TODO: Port ranking logic
         
         # Apply new order (0, 1, 2...)
         for i, t in enumerate(ranked + completed):
@@ -2949,10 +2813,11 @@ class HubWindow(QMainWindow):
     data_changed = pyqtSignal()
     """Main TaskFlow Hub window: planning + mental health workspace."""
 
-    def __init__(self, state: Dict[str, Any], paths: Dict[str, str]):
+    def __init__(self, state: Dict[str, Any], paths: Dict[str, str], ai_engine=None):
         super().__init__()
         self.state = state
         self.paths = paths
+        self.ai_engine = ai_engine
 
         self._zen_task_id = None
         # Prevent app from exiting when window is closed (if tray is enabled)
@@ -2961,16 +2826,6 @@ class HubWindow(QMainWindow):
         # Confetti Overlay
         self.confetti = ConfettiOverlay(self)
         self.confetti.resize(self.size())
-
-        # Initialize AI with external Knowledge Base ("Life JSON")
-        taskflowai.init_knowledge_base(self.paths["kb"])
-        
-        # Load User Model ("User JSON") - The Portable Brain
-        taskflowai.load_user_model(self.paths["training"])
-        
-        # If model is empty but we have history (e.g. first run after update), train immediately
-        if not taskflowai.USER_MODEL["word_associations"] and self.state.get("tasks"):
-            taskflowai.save_user_training(self.state, self.paths["training"])
 
         # Geometry
         geom = self.state.get("uiGeometry")
@@ -3036,7 +2891,19 @@ class HubWindow(QMainWindow):
     def _setup_tray(self):
         """Initialize the system tray icon."""
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon("icon.ico"))
+        
+        # Robust icon loading
+        icon_path = "icon.ico"
+        if not os.path.exists(icon_path):
+             # Try relative to script location
+             script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+             icon_path = os.path.join(script_dir, "icon.ico")
+             
+        if os.path.exists(icon_path):
+            self.tray_icon.setIcon(QIcon(icon_path))
+        else:
+            # Fallback icon to prevent warning
+            self.tray_icon.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon))
         
         tray_menu = QMenu()
         
@@ -3279,7 +3146,7 @@ class HubWindow(QMainWindow):
         self._build_settings_page()
         self._build_zen_page()
         self.page_search = SearchWidget(self.state, self.schedule_save)
-        self.page_profile = ProfileWidget(self.state, self.schedule_save, self.paths)
+        self.page_profile = CoachWidget(self.ai_engine)
 
         # Add pages to stack
         self.stack.addWidget(self.page_home)
@@ -3590,7 +3457,7 @@ class HubWindow(QMainWindow):
         list_view_layout.setContentsMargins(0, 0, 0, 0)
         
         # We reuse TaskListWidget but for "Scheduled" section
-        self.scheduled_list_widget = TaskListWidget(self.state, "Scheduled", self.schedule_save)
+        self.scheduled_list_widget = TaskListWidget(self.state, "Scheduled", self.schedule_save, self.ai_engine)
         list_view_layout.addWidget(self.scheduled_list_widget)
         
         self.sched_stack.addWidget(self.view_list)
@@ -3659,14 +3526,18 @@ class HubWindow(QMainWindow):
         if not text: return
         
         date_str = self.calendar.selectedDate().toString(Qt.DateFormat.ISODate)
-        meta = taskflowai.infer_metadata(text, self.state)
+        # meta = taskflowai.infer_metadata(text, self.state) # TODO: Port metadata inference
+        
+        # Defaults to prevent crash
+        category = "Personal"
+        important = False
         
         add_task(
             self.state,
-            text=meta["clean_text"],
+            text=text,
             section="Scheduled",
-            category=meta["category"],
-            important=meta["important"],
+            category=category,
+            important=important,
             schedule={"date": date_str}
         )
         
@@ -4410,9 +4281,9 @@ class HubWindow(QMainWindow):
             self.btn_up_next.clicked.connect(lambda: self.enter_zen_mode(top_task["id"]))
 
         # Use AI for the home suggestion to keep the persona consistent
-        insights = taskflowai.generate_insights(self.state)
-        suggestion = insights["advice"]
-        self.suggestion_label.setText(f"<i>{suggestion}</i>")
+        # insights = taskflowai.generate_insights(self.state) # TODO: Port insights
+        # suggestion = insights["advice"]
+        self.suggestion_label.setText(f"<i>AI Coach is ready.</i>")
 
         # Card 3: Ideas list
         self.ideas_list.clear()
@@ -4632,12 +4503,10 @@ class HubWindow(QMainWindow):
 
     def _refresh_stats_and_habits(self) -> None:
         # Get intelligent insights
-        insights = taskflowai.generate_insights(self.state)
+        # insights = taskflowai.generate_insights(self.state) # TODO: Port insights
         
         summary_html = (
-            f"<p style='font-size:16px; margin-bottom:4px;'><b>Current Vibe:</b> <span style='color:{GOLD}'>{insights['mood_guess']}</span></p>"
-            f"<p style='font-size:14px; margin-bottom:8px;'>{insights['advice']}</p>"
-            f"<p style='font-size:12px; color:{TEXT_GRAY}; font-style:italic;'>💡 Suggestion: {insights['task_suggestion']}</p>"
+            f"<p style='font-size:16px; margin-bottom:4px;'><b>Current Vibe:</b> <span style='color:{GOLD}'>Focus</span></p>"
         )
 
         self.stats_summary_label.setText(summary_html)
@@ -4695,23 +4564,23 @@ class HubWindow(QMainWindow):
             
             if dlg.use_ai():
                 # Use the new analytics function
-                suggestions = taskflowai.analyze_brain_dump(text, self.state)
-                counts = {"Today": 0, "Tomorrow": 0, "This Week": 0, "Someday": 0}
+                # suggestions = taskflowai.analyze_brain_dump(text, self.state) # TODO: Port brain dump
+                # counts = {"Today": 0, "Tomorrow": 0, "This Week": 0, "Someday": 0}
                 
-                for s in suggestions:
-                    sec = s.get("section", "Today")
-                    t = add_task(
-                        self.state, 
-                        text=s["text"], 
-                        section=sec, 
-                        category=s["category"], 
-                        important=s["important"]
-                    )
-                    created_ids.append(t["id"])
-                    counts[sec] = counts.get(sec, 0) + 1
+                # for s in suggestions:
+                #     sec = s.get("section", "Today")
+                #     t = add_task(
+                #         self.state, 
+                #         text=s["text"], 
+                #         section=sec, 
+                #         category=s["category"], 
+                #         important=s["important"]
+                #     )
+                #     created_ids.append(t["id"])
+                #     counts[sec] = counts.get(sec, 0) + 1
                 
-                parts = [f"{k}: {v}" for k, v in counts.items() if v > 0]
-                msg = "Sorted into: " + ", ".join(parts) if parts else "No tasks created."
+                # parts = [f"{k}: {v}" for k, v in counts.items() if v > 0]
+                msg = "AI Brain Dump not yet ported."
                 QMessageBox.information(self, "Brain Dump Sorted", msg)
                 
             else:
@@ -4831,30 +4700,7 @@ class HubWindow(QMainWindow):
         self._refresh_stats_and_habits()
 
     def _on_suggest_by_time(self) -> None:
-        minutes, ok = QInputDialog.getInt(self, "Available Time", "How many minutes do you have?", 30, 5, 480, 5)
-        if not ok: return
-        
-        task = taskflowai.suggest_task_by_time(self.state, minutes)
-        if task:
-            est = task.get("estimated_duration") or taskflowai.estimate_duration(task["text"])
-            msg = f"You have time for:\n\n<b>{task['text']}</b>\n\n(Estimated: {est} mins)"
-            
-            box = QMessageBox(self)
-            box.setWindowTitle("Suggestion")
-            box.setText(msg)
-            box.setTextFormat(Qt.TextFormat.RichText)
-            btn_do = box.addButton("Do it now", QMessageBox.ButtonRole.AcceptRole)
-            box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-            box.exec()
-            
-            if box.clickedButton() == btn_do:
-                if task["section"] != "Today":
-                    task["section"] = "Today"
-                    task["updatedAt"] = now_iso()
-                    self.schedule_save()
-                self._switch_page(self.page_today)
-        else:
-            QMessageBox.information(self, "No match", "Couldn't find a short enough task. Maybe take a break?")
+        pass # TODO: Port time suggestion
 
     def _on_data_changed(self) -> None:
         """Refresh the currently visible page when data changes."""
@@ -4956,7 +4802,6 @@ class HubWindow(QMainWindow):
         self.state["uiGeometry"] = [g.x(), g.y(), g.width(), g.height()]
         save_state(self.paths, self.state)
         # Generate and save the User Training JSON ("User JSON")
-        taskflowai.save_user_training(self.state, self.paths["training"])
 
     def _force_quit(self):
         """Really quit the application."""
