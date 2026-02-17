@@ -54,6 +54,7 @@ from taskflowmodel import (
     count_today_tasks,
     tasks_in_section,
     toggle_task_completed,
+    ConfettiOverlay,
     add_task,
     create_task_row_widget,
 )
@@ -66,63 +67,6 @@ SNAP_THRESHOLD = 24
 
 AUTO_COLLAPSE_MS = 4000  # auto collapse after 4s idle when docked
 LONG_IDLE_MS = 10 * 60 * 1000  # after 10 minutes, require click to open
-
-class ConfettiOverlay(QWidget):
-    """
-    A transparent overlay that renders a particle burst effect.
-    """
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.particles = []
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update)
-
-    def burst(self):
-        self.particles.clear()
-        cx = self.width() / 2
-        cy = self.height() / 2
-        for _ in range(60):
-            angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(5, 12)
-            self.particles.append({
-                "x": cx, "y": cy,
-                "vx": math.cos(angle) * speed,
-                "vy": math.sin(angle) * speed - 4, # Upward bias
-                "color": QColor.fromHsv(random.randint(0, 359), 200, 255),
-                "size": random.randint(4, 8),
-                "decay": random.uniform(0.92, 0.96)
-            })
-        self.timer.start(16)
-        self.show()
-        self.raise_()
-
-    def _update(self):
-        if not self.particles:
-            self.timer.stop()
-            self.hide()
-            return
-        
-        for p in self.particles:
-            p["x"] += p["vx"]
-            p["y"] += p["vy"]
-            p["vy"] += 0.5 # Gravity
-            p["vx"] *= p["decay"] # Air resistance
-            
-        # Remove particles off screen
-        self.particles = [p for p in self.particles if p["y"] < self.height() + 10]
-        self.update()
-
-    def paintEvent(self, event):
-        if not self.particles:
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        for p in self.particles:
-            painter.setBrush(p["color"])
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
 
 class WidgetWindow(QWidget):
     """

@@ -6,12 +6,15 @@ import os
 import json
 import uuid
 import shutil
+import math
+import random
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Callable
 
 # UI Imports (Guarded for non-GUI contexts)
 try:
-    from PyQt6.QtCore import Qt, QSize, QPoint
+    from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF
+    from PyQt6.QtGui import QPainter, QColor
     from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel
     import html
     UI_LIBS_AVAILABLE = True
@@ -252,6 +255,12 @@ def default_state() -> Dict[str, Any]:
     }
 
 
+def _ensure_nested_defaults(data_dict: Dict[str, Any], default_dict: Dict[str, Any]) -> None:
+    """Recursively ensures default keys exist in a nested dictionary."""
+    for key, value in default_dict.items():
+        data_dict.setdefault(key, value)
+
+
 def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """Ensure all expected keys exist; repair tasks if needed."""
     base = default_state()
@@ -263,62 +272,29 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if not isinstance(state.get("stats"), dict):
         state["stats"] = {}
-    stats = state["stats"]
-    stats.setdefault("currentStreak", 0)
-    stats.setdefault("lastActivityDate", None)
-    stats.setdefault("xp", 0)
-    stats.setdefault("level", 1)
-    stats.setdefault("tasksCompletedToday", 0)
-    stats.setdefault("plannedTasksToday", 0)
-    stats.setdefault("targetTasksToday", 0)
-    stats.setdefault("moodAtStart", None)
-    stats.setdefault("lastPlanningDate", None)
-    stats.setdefault("lastWeeklyReviewDate", None)
-    stats.setdefault("weeklyFocus", [])
-    stats.setdefault("lastWeeklyReset", None)
-    stats.setdefault("focusSessions", {})
-    stats.setdefault("lastIgnoredVersion", None)
-    stats.setdefault("tasksCompletedByProject", {})
-    stats.setdefault("habitsCompletedByDay", {})
-    stats.setdefault("moodsByDate", {})
-    stats.setdefault("dailyLogs", {})
-    stats.setdefault("didShowBrainDumpOnboarding", False)
+    _ensure_nested_defaults(state["stats"], base["stats"])
 
     if not isinstance(state.get("userProfile"), dict):
-        state["userProfile"] = {"name": "Friend", "role": "Generalist", "style": "Gentle"}
-    state["userProfile"].setdefault("style", "Gentle")
-    state["userProfile"].setdefault("name", "Friend")
+        state["userProfile"] = {}
+    _ensure_nested_defaults(state["userProfile"], base["userProfile"])
 
     if not isinstance(state.get("activityLog"), list): state["activityLog"] = []
     if not isinstance(state.get("categories"), list): state["categories"] = ["Work", "Personal", "Health", "Learning", "Finance", "Dev", "Creative"]
     if not isinstance(state.get("ideas"), list): state["ideas"] = []
     if not isinstance(state.get("tasks"), list): state["tasks"] = []
-    if not isinstance(state.get("notes"), list): state["notes"] = []
-    if not isinstance(state.get("journal"), list): state["journal"] = []
-    if not isinstance(state.get("habitChecks"), dict): state["habitChecks"] = {}
-    if not isinstance(state.get("dayQuality"), dict): state["dayQuality"] = {}
-    state.setdefault("widgetCurrentProjectId", None)
 
-    settings = state.setdefault("settings", {})
-    settings.setdefault("widgetEnabled", True)
-    settings.setdefault("widgetTaskCount", 5)
-    settings.setdefault("widgetDockSide", "right")
-    settings.setdefault("startWithHubMaximized", True)
-    settings.setdefault("widgetDocked", True)
-    settings.setdefault("widgetPos", None)
-    settings.setdefault("widgetCollapsed", False)
-    settings.setdefault("closeToTray", True)
-    settings.setdefault("startWithWindows", False)
-    settings.setdefault("zenSoundscape", "Silent")
+    if not isinstance(state.get("settings"), dict):
+        state["settings"] = {}
+    _ensure_nested_defaults(state["settings"], base["settings"])
 
     # Validate widgetPos: must be [int, int] or None
-    w_pos = settings.get("widgetPos")
+    w_pos = state["settings"].get("widgetPos")
     if w_pos is not None and (not isinstance(w_pos, list) or len(w_pos) != 2 or not all(isinstance(x, (int, float)) for x in w_pos)):
-        settings["widgetPos"] = None
+        state["settings"]["widgetPos"] = None
 
     # Validate widgetDockSide: must be 'left' or 'right'
-    if settings.get("widgetDockSide") not in ("left", "right"):
-        settings["widgetDockSide"] = "right"
+    if state["settings"].get("widgetDockSide") not in ("left", "right"):
+        state["settings"]["widgetDockSide"] = "right"
 
     state.setdefault("uiGeometry", None)
 
@@ -902,3 +878,58 @@ if UI_LIBS_AVAILABLE:
             row.mouseDoubleClickEvent = mouseDoubleClickEvent
 
         return row
+
+    class ConfettiOverlay(QWidget):
+        """
+        A transparent overlay that renders a particle burst effect.
+        """
+        def __init__(self, parent: Optional[QWidget] = None):
+            super().__init__(parent)
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            self.particles = []
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self._update)
+
+        def burst(self):
+            self.particles.clear()
+            cx = self.width() / 2
+            cy = self.height() / 2
+            for _ in range(60):
+                angle = random.uniform(0, 2 * math.pi)
+                speed = random.uniform(5, 12)
+                self.particles.append({
+                    "x": cx, "y": cy,
+                    "vx": math.cos(angle) * speed,
+                    "vy": math.sin(angle) * speed - 4, # Upward bias
+                    "color": QColor.fromHsv(random.randint(0, 359), 200, 255),
+                    "size": random.randint(4, 8),
+                    "decay": random.uniform(0.92, 0.96)
+                })
+            self.timer.start(16)
+            self.show()
+            self.raise_()
+
+        def _update(self):
+            if not self.particles:
+                self.timer.stop()
+                self.hide()
+                return
+            
+            for p in self.particles:
+                p["x"] += p["vx"]
+                p["y"] += p["vy"]
+                p["vy"] += 0.5 # Gravity
+                p["vx"] *= p["decay"] # Air resistance
+                
+            self.particles = [p for p in self.particles if p["y"] < self.height() + 10]
+            self.update()
+
+        def paintEvent(self, event):
+            if not self.particles: return
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            for p in self.particles:
+                painter.setBrush(p["color"])
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)

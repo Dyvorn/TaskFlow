@@ -3,11 +3,19 @@ import sys
 import subprocess
 import shutil
 
+# Import from the source of truth to ensure consistency
+try:
+    from taskflowmodel import APP_NAME, APP_VERSION
+except ImportError:
+    print("Error: Could not import from taskflowmodel.py. Make sure it's in the path.")
+    # Fallback for safety
+    APP_NAME = "TaskFlow"
+    APP_VERSION = "8.0"
+
 # --- Configuration ---
-APP_NAME = "TaskFlow"
 MAIN_SCRIPT = "TaskFlowHub.py"
-ICON_FILE = "icon.ico" # Assumes icon is in an assets folder
-ISS_FILE = "TaskFlow.iss"
+ICON_FILE = "icon.ico"
+ISS_FILE = f"{APP_NAME}.iss"
 
 
 def build():
@@ -35,6 +43,7 @@ def build():
         "--name", APP_NAME,
         "--hidden-import", "requests", # Ensure requests is included if available
         "--hidden-import", "taskflowanalytics",
+        "--hidden-import", "taskflowai",
     ]
 
     if os.path.exists(ICON_FILE):
@@ -54,8 +63,14 @@ def build():
     if os.path.exists(ISS_FILE):
         print(f"3. Compiling Installer with Inno Setup...")
         try:
+            # Pass the version to the installer script
+            iscc_cmd = [
+                "iscc",
+                f'/DMyAppVersion="{APP_VERSION}"',
+                ISS_FILE
+            ]
             # Assumes ISCC is in PATH. If not, add it or use full path.
-            subprocess.check_call(["iscc", ISS_FILE])
+            subprocess.check_call(iscc_cmd)
             print(f"--- Installer created successfully! ---")
         except FileNotFoundError:
             print("Error: 'iscc' command not found. Is Inno Setup installed and in your PATH?")

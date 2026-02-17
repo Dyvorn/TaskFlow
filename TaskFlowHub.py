@@ -798,10 +798,11 @@ class ProfileWidget(QWidget):
     """
     Page to configure the AI persona and user details.
     """
-    def __init__(self, state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
+    def __init__(self, state: Dict[str, Any], save_callback, paths: Dict[str, str], parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.state = state
         self._save_callback = save_callback
+        self.paths = paths
         self._build_ui()
         self.refresh()
 
@@ -846,6 +847,30 @@ class ProfileWidget(QWidget):
         # Update description when combo changes
         self.style_combo.currentTextChanged.connect(self._update_style_desc)
 
+        # --- AI Brain Stats ---
+        stats_card = QFrame()
+        stats_card.setObjectName("GlassCard")
+        s_layout = QVBoxLayout(stats_card)
+        s_layout.setContentsMargins(24, 24, 24, 24)
+        s_layout.setSpacing(10)
+
+        s_layout.addWidget(QLabel("🧠 Neural Network Status"))
+        
+        self.lbl_nn_stats = QLabel("Loading...")
+        self.lbl_nn_stats.setStyleSheet(f"color: {TEXT_GRAY}; font-family: monospace;")
+        s_layout.addWidget(self.lbl_nn_stats)
+
+        self.btn_retrain = QPushButton("Force Retrain Brain")
+        self.btn_retrain.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_retrain.setStyleSheet(f"""
+            QPushButton {{ background-color: {HOVER_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 6px; padding: 8px; }}
+            QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; border: none; }}
+        """)
+        self.btn_retrain.clicked.connect(self._retrain_brain)
+        s_layout.addWidget(self.btn_retrain)
+
+        layout.addWidget(stats_card)
+
         layout.addWidget(form_card)
         layout.addStretch(1)
 
@@ -861,6 +886,14 @@ class ProfileWidget(QWidget):
             self.style_combo.setCurrentText(p.get("style", "Gentle"))
             
         self._update_style_desc(self.style_combo.currentText())
+        
+        # Update NN Stats
+        stats = taskflowai.get_model_stats()
+        self.lbl_nn_stats.setText(
+            f"Status:     {stats['status']}\n"
+            f"Vocabulary: {stats['vocab_size']} words\n"
+            f"Structure:  {stats['layers']}"
+        )
 
     def _update_style_desc(self, style):
         descs = {
@@ -877,6 +910,18 @@ class ProfileWidget(QWidget):
         p["role"] = self.role_input.text()
         p["style"] = self.style_combo.currentText()
         self._save_callback()
+
+    def _retrain_brain(self):
+        self.btn_retrain.setText("Training...")
+        self.btn_retrain.setEnabled(False)
+        QApplication.processEvents()
+        
+        # Force immediate training
+        taskflowai.save_user_training(self.state, self.paths["training"])
+        
+        self.refresh()
+        self.btn_retrain.setText("Force Retrain Brain")
+        self.btn_retrain.setEnabled(True)
 
 class SomedayReviewDialog(QDialog):
     """
@@ -3056,6 +3101,17 @@ class HubWindow(QMainWindow):
     # UI construction
     # ────────────────────────────────────────────────────────────────────
 
+    def _create_nav_group(self, nav_layout: QVBoxLayout, title: str, buttons: List[QPushButton]) -> None:
+        """Helper to create a titled group of navigation buttons."""
+        lbl = QLabel(title)
+        lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px; font-weight: bold; margin-top: 16px; margin-bottom: 4px; letter-spacing: 1px;")
+        nav_layout.addWidget(lbl)
+        for btn in buttons:
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setCheckable(True)
+            btn.setMinimumHeight(34)
+            nav_layout.addWidget(btn)
+
     def _build_ui(self) -> None:
         self.setStyleSheet(
             f"""
@@ -3167,58 +3223,25 @@ class HubWindow(QMainWindow):
         nav_layout.addSpacing(6)
 
         # --- Navigation Groups ---
-        def add_header(text):
-            lbl = QLabel(text)
-            lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px; font-weight: bold; margin-top: 16px; margin-bottom: 4px; letter-spacing: 1px;")
-            nav_layout.addWidget(lbl)
-
-        # Group 1: Dashboard
-        add_header("DASHBOARD")
         self.btn_home = QPushButton("🏠 Home")
         self.btn_stats = QPushButton("📊 Stats")
         self.btn_profile = QPushButton("🤖 AI Coach")
-        
-        for btn in (self.btn_home, self.btn_stats, self.btn_profile):
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setCheckable(True)
-            btn.setMinimumHeight(34)
-            nav_layout.addWidget(btn)
+        self._create_nav_group(nav_layout, "DASHBOARD", [self.btn_home, self.btn_stats, self.btn_profile])
 
-        # Group 2: Tasks
-        add_header("TASKS")
         self.btn_today = QPushButton("☀️ Today")
         self.btn_scheduled = QPushButton("📅 Scheduled")
         self.btn_week = QPushButton("🗓️ This Week")
         self.btn_someday = QPushButton("💡 Someday")
-        
-        for btn in (self.btn_today, self.btn_scheduled, self.btn_week, self.btn_someday):
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setCheckable(True)
-            btn.setMinimumHeight(34)
-            nav_layout.addWidget(btn)
+        self._create_nav_group(nav_layout, "TASKS", [self.btn_today, self.btn_scheduled, self.btn_week, self.btn_someday])
 
-        # Group 3: Organize
-        add_header("ORGANIZE")
         self.btn_projects = QPushButton("📂 Projects")
         self.btn_journal = QPushButton("📓 Journal")
-        
-        for btn in (self.btn_projects, self.btn_journal):
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setCheckable(True)
-            btn.setMinimumHeight(34)
-            nav_layout.addWidget(btn)
+        self._create_nav_group(nav_layout, "ORGANIZE", [self.btn_projects, self.btn_journal])
 
-        # Group 4: Tools
-        add_header("TOOLS")
         self.btn_search = QPushButton("🔍 Search")
         self.btn_tips = QPushButton("💡 Tips")
         self.btn_focus = QPushButton("🧘 Focus Mode")
-        
-        for btn in (self.btn_search, self.btn_tips, self.btn_focus):
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setCheckable(True)
-            btn.setMinimumHeight(34)
-            nav_layout.addWidget(btn)
+        self._create_nav_group(nav_layout, "TOOLS", [self.btn_search, self.btn_tips, self.btn_focus])
 
         nav_layout.addStretch(1)
 
@@ -3256,7 +3279,7 @@ class HubWindow(QMainWindow):
         self._build_settings_page()
         self._build_zen_page()
         self.page_search = SearchWidget(self.state, self.schedule_save)
-        self.page_profile = ProfileWidget(self.state, self.schedule_save)
+        self.page_profile = ProfileWidget(self.state, self.schedule_save, self.paths)
 
         # Add pages to stack
         self.stack.addWidget(self.page_home)
@@ -3308,14 +3331,9 @@ class HubWindow(QMainWindow):
     # ────────────────────────────────────────────────────────────────────
     # Page builders
     # ────────────────────────────────────────────────────────────────────
-
-    def _build_home_page(self) -> None:
-        self.page_home = QWidget()
-        layout = QVBoxLayout(self.page_home)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
-
-        # 1. Header Section
+    
+    def _build_home_header(self, layout: QVBoxLayout) -> None:
+        """Builds the header section of the home page."""
         header_layout = QHBoxLayout()
         
         self.lbl_greeting = QLabel("Hello.")
@@ -3342,43 +3360,55 @@ class HubWindow(QMainWindow):
         
         layout.addLayout(header_layout)
 
-        # 2. Main Dashboard Grid
-        grid = QGridLayout()
-        grid.setSpacing(20)
+    def _build_home_focus_card(self) -> QFrame:
+        """Builds the 'Today's Focus' card for the home page."""
+        card = QFrame()
+        card.setObjectName("GlassCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        # --- Card 1: Focus (Top Left) ---
-        card_focus = QFrame()
-        card_focus.setObjectName("GlassCard")
-        l_focus = QVBoxLayout(card_focus)
-        l_focus.setContentsMargins(20, 20, 20, 20)
-        
-        l_focus.addWidget(QLabel("🎯 Today's Focus"))
+        layout.addWidget(QLabel("🎯 Today's Focus"))
         
         self.btn_primary_goal = QPushButton("No main goal set.")
         self.btn_primary_goal.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_primary_goal.setStyleSheet(f"color: {GOLD}; font-size: 18px; font-weight: bold; margin-top: 5px; text-align: left; background: transparent; border: none;")
         self.btn_primary_goal.clicked.connect(self._edit_primary_goal)
-        l_focus.addWidget(self.btn_primary_goal)
+        layout.addWidget(self.btn_primary_goal)
         
         self.today_summary_line = QLabel("Loading...")
         self.today_summary_line.setStyleSheet(f"color: {TEXT_GRAY}; margin-top: 5px;")
-        l_focus.addWidget(self.today_summary_line)
+        layout.addWidget(self.today_summary_line)
         
-        l_focus.addSpacing(15)
-        l_focus.addWidget(QLabel("Up Next:"))
+        layout.addSpacing(15)
+        layout.addWidget(QLabel("Up Next:"))
         self.btn_up_next = QPushButton("No tasks.")
         self.btn_up_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_up_next.setStyleSheet(f"text-align: left; color: {TEXT_WHITE}; background: transparent; border: none;")
-        l_focus.addWidget(self.btn_up_next)
+        layout.addWidget(self.btn_up_next)
         
-        l_focus.addStretch()
+        layout.addStretch()
         
         btn_open_today = QPushButton("Open Today View →")
         btn_open_today.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_open_today.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 8px; border: 1px solid {GLASS_BORDER};")
         btn_open_today.clicked.connect(lambda: self._switch_page(self.page_today))
-        l_focus.addWidget(btn_open_today)
+        layout.addWidget(btn_open_today)
+        return card
+
+    def _build_home_page(self) -> None:
+        self.page_home = QWidget()
+        layout = QVBoxLayout(self.page_home)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(20)
+
+        self._build_home_header(layout)
+
+        # 2. Main Dashboard Grid
+        grid = QGridLayout()
+        grid.setSpacing(20)
         
+        # --- Card 1: Focus (Top Left) ---
+        card_focus = self._build_home_focus_card()
         grid.addWidget(card_focus, 0, 0)
         
         # --- Card 2: Insights & Wellness (Top Right) ---
@@ -4845,51 +4875,55 @@ class HubWindow(QMainWindow):
         elif current is self.page_home:
             self._refresh_home()
 
-    def _run_start_of_day_flow(self) -> None:
-        """Check if we need to show the Welcome Screen or Daily Planning."""
-        today = today_str()
+    def _run_onboarding_flow(self) -> None:
+        """Show the brain dump dialog on first launch if no tasks exist."""
         stats = self.state.setdefault("stats", {})
-        daily_logs = stats.setdefault("dailyLogs", {})
-
-        # 0. Brain Dump Onboarding
         if not stats.get("didShowBrainDumpOnboarding", False):
-            total_tasks = len(self.state.get("tasks", []))
-            if total_tasks == 0:
+            if not self.state.get("tasks"):
                 self._on_brain_dump(onboarding=True)
                 stats["didShowBrainDumpOnboarding"] = True
                 self.schedule_save()
-                # Proceed to normal flow
 
-        # 1. Welcome Flow (Once per day)
+    def _run_welcome_flow(self) -> None:
+        """Show the welcome dialog once per day to set mood and primary goal."""
+        today = today_str()
+        daily_logs = self.state.setdefault("stats", {}).setdefault("dailyLogs", {})
         if today not in daily_logs:
             dlg = WelcomeDialog(self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 data = dlg.get_data()
                 daily_logs[today] = data
-                # Sync mood to existing mood system
                 if data.get("mood"):
                     set_today_mood(self.state, data["mood"])
                 self.schedule_save()
                 self._refresh_home()
 
-        # 2. Gentle Planning Check
+    def _run_weekly_review_flow(self) -> None:
+        """On Mondays, show the weekly review dialog if it hasn't been shown today."""
+        if datetime.now().weekday() != 0:  # 0 is Monday
+            return
+
+        today = today_str()
+        stats = self.state.setdefault("stats", {})
+        if stats.get("lastWeeklyReviewDate") != today:
+            dlg = WeeklyReviewDialog(self.state, self.schedule_save, self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                stats["lastWeeklyReviewDate"] = today
+                if dlg.chk_archive.isChecked():
+                    for t in self.state.get("tasks", []):
+                        if t.get("completed") and t.get("section") != "Archived":
+                            t["section"] = "Archived"
+                            t["updatedAt"] = now_iso()
+                self.schedule_save()
+                self._refresh_home()
+
+    def _run_start_of_day_flow(self) -> None:
+        """Check if we need to show the Welcome Screen or Daily Planning."""
+        # The order of these flows is intentional.
+        self._run_onboarding_flow()
+        self._run_welcome_flow()
         self._run_daily_planning()
-        
-        # 3. Weekly Review (Mondays)
-        if datetime.now().weekday() == 0: # Monday
-            last_review = stats.get("lastWeeklyReviewDate")
-            if last_review != today:
-                dlg = WeeklyReviewDialog(self.state, self.schedule_save, self)
-                if dlg.exec() == QDialog.DialogCode.Accepted:
-                    stats["lastWeeklyReviewDate"] = today
-                    # Archive if requested
-                    if dlg.chk_archive.isChecked():
-                        for t in self.state.get("tasks", []):
-                            if t.get("completed") and t.get("section") != "Archived":
-                                t["section"] = "Archived"
-                                t["updatedAt"] = now_iso()
-                    self.schedule_save()
-                    self._refresh_home()
+        self._run_weekly_review_flow()
 
     def _run_daily_planning(self, force: bool = False) -> None:
         stats = self.state.setdefault("stats", {})

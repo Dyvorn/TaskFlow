@@ -4,6 +4,7 @@ import os
 import json
 import re
 import random
+import math
 import difflib
 from datetime import datetime, timedelta, date
 from collections import Counter
@@ -230,10 +231,98 @@ KNOWLEDGE_BASE = DEFAULT_KNOWLEDGE_BASE.copy()
 # The active user model (Personalized Brain)
 # This is loaded from user_training.json and updated dynamically
 USER_MODEL = {
-    "word_associations": {},    # "word": {"Work": 5, "Personal": 1}
+    "word_associations": {},     # Legacy counter-based
     "category_preferences": {},  # "Work": 10
-    "time_preferences": {}      # "Work": {"morning": 5, "evening": 1}
+    "time_preferences": {},      # "Work": {"morning": 5, "evening": 1}
+    "neural_net": None           # New: {"vocab": {}, "weights": {...}, "categories": []}
 }
+
+class MicroNeuralNet:
+    """
+    A lightweight 2-layer neural network (Input -> Hidden -> Output)
+    implemented in pure Python.
+    """
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, state: Optional[Dict] = None):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        
+        if state:
+            self.W1 = state["W1"]
+            self.B1 = state["B1"]
+            self.W2 = state["W2"]
+            self.B2 = state["B2"]
+        else:
+            # Xavier-like initialization
+            scale = 1.0 / math.sqrt(max(1, input_size))
+            self.W1 = [[random.uniform(-scale, scale) for _ in range(hidden_size)] for _ in range(input_size)]
+            self.B1 = [0.0] * hidden_size
+            self.W2 = [[random.uniform(-0.5, 0.5) for _ in range(output_size)] for _ in range(hidden_size)]
+            self.B2 = [0.0] * output_size
+
+    def forward(self, x_indices: List[int]) -> List[float]:
+        # Hidden Layer (Linear + Sigmoid)
+        # Start with bias
+        h = list(self.B1)
+        # Sparse input multiplication (sum rows for active words)
+        for idx in x_indices:
+            if 0 <= idx < self.input_size:
+                for i in range(self.hidden_size):
+                    h[i] += self.W1[idx][i]
+        
+        # Activation (Sigmoid with clamp to prevent overflow)
+        self.h_act = [1.0 / (1.0 + math.exp(-max(min(v, 15), -15))) for v in h]
+        
+        # Output Layer (Linear)
+        o = list(self.B2)
+        for i in range(self.hidden_size):
+            val = self.h_act[i]
+            for j in range(self.output_size):
+                o[j] += val * self.W2[i][j]
+        
+        # Softmax
+        max_o = max(o) if o else 0
+        exp_o = [math.exp(v - max_o) for v in o] # Stability shift
+        sum_exp = sum(exp_o)
+        return [e / sum_exp for e in exp_o]
+
+    def train_step(self, x_indices: List[int], y_index: int, lr: float = 0.1):
+        probs = self.forward(x_indices)
+        
+        # Backprop (Cross Entropy Loss)
+        # dL/dz2 = probs - y_one_hot
+        d_o = list(probs)
+        d_o[y_index] -= 1.0
+        
+        # Gradients for Hidden Layer
+        d_h_act = [0.0] * self.hidden_size
+        for j in range(self.output_size):
+            grad = d_o[j]
+            for i in range(self.hidden_size):
+                d_h_act[i] += grad * self.W2[i][j]
+                
+        # dL/dz1 = d_h_act * sigmoid'(h)
+        d_h = [d * a * (1.0 - a) for d, a in zip(d_h_act, self.h_act)]
+        
+        # Update Output Weights (W2, B2)
+        for i in range(self.hidden_size):
+            for j in range(self.output_size):
+                self.W2[i][j] -= lr * self.h_act[i] * d_o[j]
+        for j in range(self.output_size):
+            self.B2[j] -= lr * d_o[j]
+            
+        # Update Hidden Weights (W1, B1) - Sparse update
+        for idx in x_indices:
+            if 0 <= idx < self.input_size:
+                for i in range(self.hidden_size):
+                    self.W1[idx][i] -= lr * d_h[i]
+        for i in range(self.hidden_size):
+            self.B1[i] -= lr * d_h[i]
+
+    def export(self) -> Dict[str, Any]:
+        return {
+            "W1": self.W1, "B1": self.B1, "W2": self.W2, "B2": self.B2
+        }
 
 def init_knowledge_base(path: str) -> None:
     """
@@ -277,6 +366,7 @@ def load_user_model(path: str) -> None:
                 USER_MODEL["word_associations"] = data.get("word_associations", {})
                 USER_MODEL["category_preferences"] = data.get("category_preferences", {})
                 USER_MODEL["time_preferences"] = data.get("time_preferences", {})
+                USER_MODEL["neural_net"] = data.get("neural_net", None)
         except Exception:
             pass
 
@@ -368,39 +458,48 @@ def extract_datetime_info(text: str) -> tuple[Optional[str], Optional[str], str]
 # AI LOGIC
 # ============================================================================
 
-def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Today") -> Dict[str, Any]:
-    """
-    Infers category and priority using a hybrid of user history and pre-trained data.
-    Also handles explicit tags like #Work or !important.
-    """
-    # 0. Explicit Overrides (Tags)
+def _parse_explicit_tags_and_clean(text: str, categories: List[str]) -> Dict[str, Any]:
+    """Parses #category, !important, and conversational prefixes from text."""
     explicit_cat = None
     explicit_prio_tag = False
-    
+
     # Check for #Category
-    categories = state.get("categories", [])
     for cat in categories:
         # Match #Category at start, end, or surrounded by whitespace
         if re.search(rf"(?:^|\s)#{re.escape(cat)}\b", text, re.IGNORECASE):
             explicit_cat = cat
             text = re.sub(rf"(?:^|\s)#{re.escape(cat)}\b", " ", text, flags=re.IGNORECASE)
             break
-            
+
     # Clean up conversational prefixes
     prefixes = ["remind me to", "don't forget to", "i need to", "please", "add task", "new task", "todo"]
     lower_check = text.lower()
     for p in prefixes:
         if lower_check.startswith(p):
             text = text[len(p):].strip()
+            # Re-run lower check after stripping prefix
+            lower_check = text.lower()
             break
 
     # Check for !important or trailing !
-    if "!important" in text.lower():
+    if "!important" in lower_check:
         explicit_prio_tag = True
         text = re.sub(r"!important", "", text, flags=re.IGNORECASE)
     elif text.strip().endswith("!"):
         explicit_prio_tag = True
         text = text.strip().rstrip("!")
+
+    return {"text": text, "category": explicit_cat, "important": explicit_prio_tag}
+
+
+def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Today") -> Dict[str, Any]:
+    """
+    Infers category and priority using a hybrid of user history and pre-trained data.
+    Also handles explicit tags like #Work or !important.
+    """
+    # 0. Parse explicit tags and clean text first
+    tag_results = _parse_explicit_tags_and_clean(text, state.get("categories", []))
+    text, explicit_cat, explicit_prio_tag = tag_results["text"], tag_results["category"], tag_results["important"]
 
     # Extract Date/Time (Natural Language)
     sched_date, sched_time, text = extract_datetime_info(text)
@@ -427,6 +526,26 @@ def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Tod
                 # Add the learned score for this category
                 user_cat_scores[cat] += score
                 # (Priority inference could be added here if we stored it in associations)
+
+    # 1.5 Real Neural Network Inference
+    nn_cat = None
+    nn_conf = 0.0
+    
+    if USER_MODEL.get("neural_net"):
+        nd = USER_MODEL["neural_net"]
+        vocab = nd.get("vocab", {})
+        cats = nd.get("categories", [])
+        weights = nd.get("weights")
+        
+        if weights and cats:
+            indices = [vocab[w] for w in words if w in vocab]
+            if indices:
+                nn = MicroNeuralNet(len(vocab), 24, len(cats), state=weights)
+                probs = nn.forward(indices)
+                max_p = max(probs)
+                if max_p > 0.35: # Confidence threshold
+                    nn_cat = cats[probs.index(max_p)]
+                    nn_conf = max_p
 
     # 2. Pre-trained Knowledge Base (General)
     kb_cat_scores = Counter()
@@ -472,6 +591,10 @@ def infer_metadata(text: str, state: Dict[str, Any], default_section: str = "Tod
     category = None
     if final_cat_scores:
         category = final_cat_scores.most_common(1)[0][0]
+        
+    # Neural Network Override/Boost
+    if nn_cat and nn_conf > 0.5:
+        category = nn_cat
         
     if explicit_cat:
         category = explicit_cat
@@ -599,13 +722,50 @@ def generate_user_training_data(state: Dict[str, Any]) -> Dict[str, Any]:
                 if cat not in time_prefs: time_prefs[cat] = Counter()
                 time_prefs[cat][period] += 1
             except: pass
+
+    # 4. Train Neural Network (Real AI)
+    # Prepare training data
+    vocab = {}
+    vocab_size = 0
+    categories = sorted(list(state.get("categories", ["Work", "Personal"])))
+    cat_to_idx = {c: i for i, c in enumerate(categories)}
+    
+    training_samples = []
+    
+    # Build vocab and samples
+    for t in tasks:
+        if not t.get("category") or t["category"] not in cat_to_idx: continue
+        txt = t.get("text", "").lower()
+        tokens = [w for w in re.findall(r'\w+', txt) if w not in STOP_WORDS]
+        if not tokens: continue
+        
+        indices = []
+        for w in tokens:
+            if w not in vocab:
+                vocab[w] = vocab_size
+                vocab_size += 1
+            indices.append(vocab[w])
+        training_samples.append((indices, cat_to_idx[t["category"]]))
+
+    neural_data = None
+    if vocab_size > 0 and training_samples:
+        # Initialize and train
+        nn = MicroNeuralNet(vocab_size, 24, len(categories)) # 24 hidden neurons
+        # Train for 5 epochs
+        for _ in range(5):
+            random.shuffle(training_samples)
+            for x, y in training_samples:
+                nn.train_step(x, y, lr=0.1)
+        
+        neural_data = {"vocab": vocab, "categories": categories, "weights": nn.export()}
             
     return {
         "generated_at": datetime.now().isoformat(),
         "user_profile": state.get("userProfile", {}),
         "word_associations": word_associations,
         "category_preferences": dict(cat_counts),
-        "time_preferences": {k: dict(v) for k, v in time_prefs.items()}
+        "time_preferences": {k: dict(v) for k, v in time_prefs.items()},
+        "neural_net": neural_data
     }
 
 def save_user_training(state: Dict[str, Any], path: str) -> None:
@@ -617,12 +777,26 @@ def save_user_training(state: Dict[str, Any], path: str) -> None:
     USER_MODEL["word_associations"] = data.get("word_associations", {})
     USER_MODEL["category_preferences"] = data.get("category_preferences", {})
     USER_MODEL["time_preferences"] = data.get("time_preferences", {})
+    USER_MODEL["neural_net"] = data.get("neural_net", None)
     
     try:
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
     except Exception:
         pass
+
+def get_model_stats() -> Dict[str, Any]:
+    """Returns statistics about the active neural network for the UI."""
+    nn = USER_MODEL.get("neural_net")
+    if not nn:
+        return {"status": "Not trained", "vocab_size": 0, "categories": 0, "layers": "N/A"}
+    
+    return {
+        "status": "Active",
+        "vocab_size": len(nn.get("vocab", {})),
+        "categories": len(nn.get("categories", [])),
+        "layers": f"Input({len(nn.get('vocab', {}))}) → Hidden(24) → Output({len(nn.get('categories', []))})"
+    }
 
 def analyze_journal_context(state: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -744,45 +918,47 @@ def rank_tasks_smart(tasks: List[Dict[str, Any]], state: Dict[str, Any]) -> List
     # Sort descending by score
     return sorted(tasks, key=score_task, reverse=True)
 
-def generate_insights(state: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Generates context-aware advice using the AI engine.
-    """
+def _gather_insight_context(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Gathers all data points required for generating insights."""
     now = datetime.now()
-    hour = now.hour
     today_str = now.date().isoformat()
-    journal_context = analyze_journal_context(state)
-    
-    # --- Data Gathering ---
     tasks = state.get("tasks") or []
     today_tasks = [t for t in tasks if isinstance(t, dict) and t.get("section") == "Today"]
-    done_today = [t for t in today_tasks if t.get("completed")]
-    incomplete_today = [t for t in today_tasks if not t.get("completed")]
-    
-    # User History Stats
-    weekday_avgs = taskflowanalytics.get_weekday_averages(state)
-    current_weekday = now.weekday()
-    avg_for_today = weekday_avgs.get(current_weekday, 0)
-    
+
     # Mood
-    mood_log = state.get("moods") or []
+    mood_log = state.get("moods", [])
     today_mood_entry = next((m for m in mood_log if isinstance(m, dict) and m.get("date") == today_str), None)
-    mood_guess = today_mood_entry.get("value", "Neutral") if today_mood_entry else "Neutral"
-    
-    # User Profile
+
     profile = state.get("userProfile", {})
-    name = profile.get("name", "Friend")
-    style = profile.get("style", "Gentle")
-    
-    # Access advice structure (v1.1)
-    advice_data = KNOWLEDGE_BASE.get("advice", {})
+
+    return {
+        "now": now,
+        "hour": now.hour,
+        "tasks": tasks,
+        "today_tasks": today_tasks,
+        "done_today": [t for t in today_tasks if t.get("completed")],
+        "incomplete_today": [t for t in today_tasks if not t.get("completed")],
+        "journal_context": analyze_journal_context(state),
+        "mood_guess": today_mood_entry.get("value", "Neutral") if today_mood_entry else "Neutral",
+        "name": profile.get("name", "Friend"),
+        "style": profile.get("style", "Gentle"),
+        "advice_data": KNOWLEDGE_BASE.get("advice", {}),
+    }
+
+def _determine_advice(context: Dict[str, Any]) -> tuple[str, str]:
+    """Determines the primary advice string and mood guess based on context."""
+    # Unpack context
+    name, style = context["name"], context["style"]
+    hour, tasks, done_today = context["hour"], context["tasks"], context["done_today"]
+    journal_context, mood_guess = context["journal_context"], context["mood_guess"]
+    incomplete_today = context["incomplete_today"]
+
+    advice_data = context["advice_data"]
     generic_advice = advice_data.get("generic", {})
     styles = advice_data.get("styles", {})
-    
-    # --- AI "Thinking" ---
+
     advice = ""
-    suggestion = ""
-    
+
     # 1. Journal-based Context (High Priority)
     if journal_context["sentiment"] == "Negative":
         advice = f"{name}, I noticed some heavy thoughts in your journal. Be gentle with yourself today."
@@ -792,86 +968,83 @@ def generate_insights(state: Dict[str, Any]) -> Dict[str, str]:
         mood_guess = "Optimistic"
     elif "Dev" in journal_context["topics"]:
         advice = "Deep work mode detected. Stay in the flow."
-    
+
     # 2. New User Detection
     elif len(tasks) < 5:
         advice = random.choice(generic_advice.get("new_user", ["Welcome!"]))
         mood_guess = "Fresh Start"
-    
-    # 2. Detect Burnout Risk (High activity + Low Mood) or Recovery Mode
+
+    # 3. Detect Burnout Risk or Recovery Mode
     elif len(done_today) > 5 and mood_guess in ("Stressed", "Low energy"):
         style_pool = styles.get(style, styles.get("Gentle", {}))
         pool = style_pool.get("burnout", generic_advice.get("burnout", ["Rest."]))
         advice = random.choice(pool)
     elif mood_guess in ("Stressed", "Low energy") and len(done_today) < 2:
-        # Recovery Mode
         style_pool = styles.get(style, styles.get("Gentle", {}))
         pool = style_pool.get("burnout", generic_advice.get("burnout", ["Rest."]))
         advice = random.choice(pool)
-        
-    # 3. Wrap-up Mode (Evening + Good Progress)
+
+    # 4. Wrap-up Mode (Evening + Good Progress)
     elif hour >= 18 and len(done_today) >= 3:
         style_pool = styles.get(style, styles.get("Gentle", {}))
         pool = style_pool.get("evening", generic_advice.get("evening", ["Rest."]))
         advice = random.choice(pool)
         mood_guess = "Wrapping Up"
-    
-    # 4. Specific Task Suggestion (Focus Mode)
+
+    # 5. Specific Task Suggestion (Focus Mode)
     elif incomplete_today and random.random() < 0.7:
-        # Prioritize important tasks
         important_tasks = [t for t in incomplete_today if t.get("important")]
         target_task = random.choice(important_tasks) if important_tasks else random.choice(incomplete_today)
-        
         task_text = target_task.get("text", "your task")
-        
-        # Style-based templates
-        if style == "Direct":
-            templates = [f"Do '{task_text}' now.", f"Focus on '{task_text}'.", f"Next up: '{task_text}'."]
-        elif style == "Hype":
-            templates = [f"Crush '{task_text}'!", f"You can destroy '{task_text}' right now!", f"Let's go! '{task_text}' is waiting."]
-        elif style == "Stoic":
-            templates = [f"The work is '{task_text}'.", f"Focus your attention on '{task_text}'.", f"Do what must be done: '{task_text}'."]
-        else: # Gentle
-            templates = [f"Maybe try '{task_text}' next?", f"How about working on '{task_text}'?", f"A small step on '{task_text}' would be good."]
-            
-        advice = random.choice(templates)
 
-    # 5. Time-based Advice (if no specific condition met)
+        templates = {
+            "Direct": [f"Do '{task_text}' now.", f"Focus on '{task_text}'.", f"Next up: '{task_text}'."],
+            "Hype": [f"Crush '{task_text}'!", f"You can destroy '{task_text}' right now!", f"Let's go! '{task_text}' is waiting."],
+            "Stoic": [f"The work is '{task_text}'.", f"Focus your attention on '{task_text}'.", f"Do what must be done: '{task_text}'."],
+            "Gentle": [f"Maybe try '{task_text}' next?", f"How about working on '{task_text}'?", f"A small step on '{task_text}' would be good."]
+        }
+        advice = random.choice(templates.get(style, templates["Gentle"]))
+
+    # 6. Time-based Advice (if no specific condition met)
     else:
-        pool_key = "morning"
-        if hour < 11:
-            pool_key = "morning"
-        elif 11 <= hour < 17:
-            pool_key = "afternoon"
-        else:
-            pool_key = "evening"
-            
-        # Try to get styled advice, fallback to generic KB
+        pool_key = "morning" if hour < 11 else ("afternoon" if 11 <= hour < 17 else "evening")
         style_pool = styles.get(style, styles.get("Gentle", {}))
         pool = style_pool.get(pool_key, generic_advice.get(pool_key, ["Keep going."]))
         advice = random.choice(pool)
-            
-    # 4. Task Suggestion
-    # If Someday list has items, suggest one
+
+    return advice, mood_guess
+
+def _determine_suggestion(context: Dict[str, Any]) -> str:
+    """Determines the secondary task suggestion."""
+    tasks, today_tasks, hour = context["tasks"], context["today_tasks"], context["hour"]
+
     someday_tasks = [t for t in tasks if isinstance(t, dict) and t.get("section") == "Someday" and not t.get("completed")]
     if someday_tasks:
         pick = random.choice(someday_tasks)
-        suggestion = f"From your Someday list: '{pick.get('text')}'"
-    else:
-        # Suggest a category based on what's missing today
-        cats_today = {t.get("category") for t in today_tasks if t.get("category")}
-        if "Health" not in cats_today:
-            suggestion = "You haven't planned any Health tasks. Maybe a walk?"
-        elif "Personal" not in cats_today and hour > 17:
-            suggestion = "Time for a Personal task?"
-        else:
-            suggestion = "Review your goals for the week."
+        return f"From your Someday list: '{pick.get('text')}'"
+
+    # Suggest a category based on what's missing today
+    cats_today = {t.get("category") for t in today_tasks if t.get("category")}
+    if "Health" not in cats_today:
+        return "You haven't planned any Health tasks. Maybe a walk?"
+    elif "Personal" not in cats_today and hour > 17:
+        return "Time for a Personal task?"
+
+    return "Review your goals for the week."
+
+def generate_insights(state: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Generates context-aware advice using the AI engine.
+    """
+    context = _gather_insight_context(state)
+    advice, mood_guess = _determine_advice(context)
+    suggestion = _determine_suggestion(context)
 
     # Personalize
     if "{name}" in advice:
-        advice = advice.replace("{name}", name)
+        advice = advice.replace("{name}", context["name"])
     elif random.random() < 0.3: # Occasionally prepend name
-        advice = f"{name}, {advice.lower()}"
+        advice = f"{context['name']}, {advice.lower()}"
 
     return {
         "mood_guess": mood_guess,
