@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QLabel,
+    QLabel, QMenu,
     QPushButton,
     QFrame,
     QListWidget,
@@ -57,6 +57,7 @@ from core.model import (
     ConfettiOverlay,
     add_task,
     create_task_row_widget,
+    delete_task,
 )
 
 
@@ -251,6 +252,7 @@ class WidgetWindow(QWidget):
         self.bump.setObjectName("Bump")
         self.bump.setStyleSheet(f"background-color: rgba(255, 255, 255, 0.1); border: 1px solid {GLASS_BORDER}; border-radius: 16px;")
         self.bump.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.bump.setToolTip("Click or hover to expand")
         self.bump.hide()
         
         # Add a visual handle to the bump
@@ -277,6 +279,7 @@ class WidgetWindow(QWidget):
         self.btn_collapse = QPushButton("›")
         self.btn_collapse.setFixedSize(24, 24)
         self.btn_collapse.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_collapse.setToolTip("Collapse/Expand")
         self.btn_collapse.clicked.connect(lambda: self._set_expanded(False))
         header_row.addWidget(self.btn_collapse)
 
@@ -284,6 +287,8 @@ class WidgetWindow(QWidget):
 
         # Task List
         self.tasks_list = QListWidget()
+        self.tasks_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tasks_list.customContextMenuRequested.connect(self._on_context_menu)
         self.content_layout.addWidget(self.tasks_list, 1)
 
         # Quick Add Input (initially hidden)
@@ -404,6 +409,7 @@ class WidgetWindow(QWidget):
 
         if incomplete_tasks:
             visible_tasks = incomplete_tasks[:max_visible]
+            self.header_label.setText(f"{APP_NAME} Today")
         else:
             # If Today is empty, look for Scheduled
             scheduled = tasks_in_section(self.state, "Scheduled")
@@ -414,6 +420,9 @@ class WidgetWindow(QWidget):
             if scheduled:
                 visible_tasks = scheduled[:max_visible]
                 is_showing_scheduled = True
+                self.header_label.setText(f"{APP_NAME} Upcoming")
+            else:
+                self.header_label.setText(f"{APP_NAME} Today")
 
         for t in visible_tasks:
             item = QListWidgetItem()
@@ -451,6 +460,42 @@ class WidgetWindow(QWidget):
 
     def _finalize_toggle(self, task_id: str):
         self._refresh_tasks()
+
+    def _on_context_menu(self, pos):
+        item = self.tasks_list.itemAt(pos)
+        
+        menu = QMenu(self)
+        menu.setStyleSheet(f"QMenu {{ background-color: {GLASS_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; }} QMenu::item:selected {{ background-color: {HOVER_BG}; }}")
+        
+        if item:
+            task_id = item.data(Qt.ItemDataRole.UserRole)
+            task = next((t for t in self.state["tasks"] if t["id"] == task_id), None)
+            if not task: return
+
+            act_imp = menu.addAction("Unmark Important" if task.get("important") else "Mark Important")
+            act_del = menu.addAction("Delete")
+            
+            action = menu.exec(self.tasks_list.mapToGlobal(pos))
+            
+            if action == act_imp:
+                task["important"] = not task.get("important")
+                self._save_callback()
+                self._refresh_tasks()
+            elif action == act_del:
+                delete_task(self.state, task_id)
+                self._save_callback()
+                self._refresh_tasks()
+        else:
+            # Background context menu
+            act_add = menu.addAction("Quick Add")
+            act_hub = menu.addAction("Open Hub")
+            
+            action = menu.exec(self.tasks_list.mapToGlobal(pos))
+            
+            if action == act_add:
+                self._toggle_quick_add()
+            elif action == act_hub:
+                self._open_hub_page("home")
 
     # ────────────────────────────────────────────────────────────────────
 
@@ -551,6 +596,14 @@ class WidgetWindow(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            # If collapsed and docked, a single click should expand it
+            if self._docked and not self._expanded:
+                self._long_idle_mode = False # Reset idle mode
+                self._set_expanded(True)
+                self._restart_idle_timers()
+                event.accept()
+                return
+
             self._drag_active = True
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()

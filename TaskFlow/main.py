@@ -44,6 +44,7 @@ def main():
     # 4. Splash Screen
     splash = SplashWindow()
     splash.show()
+    app.processEvents() # Ensure splash paints before AI load
     
     # Create the AI Engine instance for the current user
     ai_engine = AIEngine(user_id="user_123")

@@ -26,7 +26,7 @@ except ImportError:
 # ═══════════════════════════════════════════════════════════════════════════
 
 APP_NAME = "TaskFlow"
-APP_VERSION = "8.0"
+APP_VERSION = "9.0"
 DATA_DIR_NAME = "TaskFlowV7"
 
 # Theme colors
@@ -118,6 +118,10 @@ def current_time_of_day() -> str:
         return "afternoon"
     return "evening"
 
+
+def get_user_name(state: Dict[str, Any]) -> str:
+    """Safely retrieve the user's name from the profile."""
+    return state.get("userProfile", {}).get("name", "Friend")
 
 def determine_today_mode(
     mood_value: Optional[str],
@@ -247,9 +251,11 @@ def default_state() -> Dict[str, Any]:
             "widgetDocked": True,
             "widgetPos": None,
             "widgetCollapsed": False,
+            "startInFocusMode": False,
             "closeToTray": True,
             "startWithWindows": False,
             "zenSoundscape": "Silent",
+            "zenVolume": 0.5,
         },
         "widgetCurrentProjectId": None,
     }

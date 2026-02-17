@@ -1,9 +1,9 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar
+    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QInputDialog
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QCursor
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import QCursor
 
 # Theme constants (matching hub.py)
 TEXT_WHITE = "#ffffff"
@@ -11,6 +11,22 @@ TEXT_GRAY = "#a0a0a0"
 GOLD = "#ffd700"
 HOVER_BG = "rgba(255, 255, 255, 0.1)"
 GLASS_BORDER = "rgba(255, 255, 255, 0.15)"
+
+class TrainingWorker(QThread):
+    """Runs AI training in a separate thread to avoid freezing the UI."""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
+
+    def __init__(self, ai_engine):
+        super().__init__()
+        self.ai_engine = ai_engine
+
+    def run(self):
+        # In a real scenario, the engine itself would emit progress signals.
+        # For now, we just run the blocking training call.
+        self.ai_engine.train_model()
+        self.finished.emit("Training complete!")
+
 
 class CoachWidget(QWidget):
     """
@@ -56,6 +72,13 @@ class CoachWidget(QWidget):
         s_layout.addWidget(self.lbl_samples)
 
         s_layout.addSpacing(10)
+        
+        self.train_progress = QProgressBar()
+        self.train_progress.setTextVisible(False)
+        self.train_progress.setFixedHeight(8)
+        self.train_progress.setStyleSheet(f"QProgressBar {{ border: none; background-color: {HOVER_BG}; border-radius: 4px; }} QProgressBar::chunk {{ background-color: {GOLD}; border-radius: 4px; }}")
+        self.train_progress.hide()
+        s_layout.addWidget(self.train_progress)
         
         self.btn_train = QPushButton("Train Brain Now")
         self.btn_train.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -113,13 +136,20 @@ class CoachWidget(QWidget):
     def _run_training(self):
         self.btn_train.setText("Training... (Please wait)")
         self.btn_train.setEnabled(False)
-        QTimer.singleShot(100, self._execute_training)
+        self.train_progress.setValue(0)
+        self.train_progress.show()
+        
+        # Use a worker thread to prevent UI freezing
+        self.worker = TrainingWorker(self.ai_engine)
+        # self.worker.progress.connect(self.train_progress.setValue) # Progress signal not implemented in engine
+        self.worker.finished.connect(self._on_training_finished)
+        self.worker.start()
 
-    def _execute_training(self):
-        self.ai_engine.train_model()
+    def _on_training_finished(self, message: str):
         self.refresh()
         self.btn_train.setText("Train Brain Now")
         self.btn_train.setEnabled(True)
+        self.train_progress.hide()
         QMessageBox.information(self, "Training Complete", "The AI has learned from your latest data!")
 
     def _confirm_prediction(self):
@@ -132,5 +162,23 @@ class CoachWidget(QWidget):
         self.refresh()
 
     def _correct_prediction(self):
-        # For now, just confirm. In a real app, pop up a dialog to pick the category.
-        self._confirm_prediction() 
+        item = self.review_list.currentItem()
+        if not item: return
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data: return
+
+        # Assumes AIEngine can provide a list of all known categories
+        categories = self.ai_engine.get_all_categories()
+        if not categories:
+            QMessageBox.warning(self, "Correction", "No categories available to choose from.")
+            return
+
+        current_index = categories.index(data['predicted_category']) if data['predicted_category'] in categories else 0
+        
+        new_cat, ok = QInputDialog.getItem(self, "Correct Prediction", 
+                                           f"What is the correct category for:\n'{data['text']}'?",
+                                           categories, current_index, False)
+        
+        if ok and new_cat:
+            self.ai_engine.learn_task(data['text'], new_cat)
+            self.refresh()

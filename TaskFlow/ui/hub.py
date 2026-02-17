@@ -72,6 +72,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QLineEdit,
     QGraphicsDropShadowEffect,
+    QSlider,
     QCalendarWidget,
     QScrollArea,
     QProgressBar,
@@ -137,6 +138,7 @@ from core.model import (
     save_state,
     get_today_mood,
     set_today_mood,
+    get_user_name,
     add_idea,
     delete_idea,
     get_today_widget_note,
@@ -2560,23 +2562,38 @@ class SearchWidget(QWidget):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search tasks...")
         self.search_input.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {HOVER_BG}; border-radius: 6px; padding: 8px;")
+        self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._perform_search)
         layout.addWidget(self.search_input)
 
         self.results_list = QListWidget()
         self.results_list.setStyleSheet(f"QListWidget {{ background: transparent; border: none; }} QListWidget::item:selected {{ background-color: {HOVER_BG}; border-radius: 8px; }}")
         layout.addWidget(self.results_list, 1)
+        
+        self.lbl_no_results = QLabel("No matching tasks found.")
+        self.lbl_no_results.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_no_results.setStyleSheet(f"color: {TEXT_GRAY}; font-style: italic; margin-top: 20px;")
+        self.lbl_no_results.hide()
+        layout.addWidget(self.lbl_no_results)
 
     def _perform_search(self, text: str):
         self._search_timer.start()
 
     def _execute_search(self):
         self.results_list.clear()
+        self.lbl_no_results.hide()
+        self.results_list.show()
+        
         text = self.search_input.text().strip().lower()
         if not text: return
 
         tasks = self.state.get("tasks", [])
         matches = [t for t in tasks if text in t.get("text", "").lower()]
+        
+        if not matches:
+            self.results_list.hide()
+            self.lbl_no_results.show()
+            return
         
         for t in matches:
             item = QListWidgetItem()
@@ -2869,6 +2886,11 @@ class HubWindow(QMainWindow):
         # Listen for data changes to refresh UI (e.g. from Widget)
         self.data_changed.connect(self._on_data_changed)
         
+        # Apply startup settings
+        settings = self.state.get("settings", {})
+        if settings.get("startInFocusMode", False):
+            self._toggle_focus_mode()
+
     def resizeEvent(self, event):
         if hasattr(self, "confetti"):
             self.confetti.resize(self.size())
@@ -2944,7 +2966,13 @@ class HubWindow(QMainWindow):
             self.media_player = QMediaPlayer()
             self.audio_output = QAudioOutput()
             self.media_player.setAudioOutput(self.audio_output)
-            self.audio_output.setVolume(0.5)
+            
+            # Load saved volume
+            saved_volume = self.state.get("settings", {}).get("zenVolume", 0.5)
+            self.audio_output.setVolume(saved_volume)
+            
+            if hasattr(self, "slider_volume"):
+                self.slider_volume.setValue(int(saved_volume * 100))
 
     def _prevent_sleep(self):
         """Prevent the system from sleeping during a Zen session."""
@@ -3759,6 +3787,11 @@ class HubWindow(QMainWindow):
         self.setting_hub_maximized.toggled.connect(self._on_settings_changed)
         l_card.addWidget(self.setting_hub_maximized)
 
+        self.setting_start_focus = QCheckBox("Start in Focus Mode (Sidebar hidden)")
+        self.setting_start_focus.toggled.connect(self._on_settings_changed)
+        self.setting_start_focus.setToolTip("Automatically hide the sidebar when the app starts for a cleaner look.")
+        l_card.addWidget(self.setting_start_focus)
+
         # --- System Settings ---
         l_card.addSpacing(10)
         lbl_sys = QLabel("System")
@@ -3813,6 +3846,7 @@ class HubWindow(QMainWindow):
         settings["widgetEnabled"] = self.setting_widget_enabled.isChecked()
         settings["widgetTaskCount"] = int(self.setting_widget_task_count.currentText())
         settings["startWithHubMaximized"] = self.setting_hub_maximized.isChecked()
+        settings["startInFocusMode"] = self.setting_start_focus.isChecked()
         settings["closeToTray"] = self.setting_close_to_tray.isChecked()
         settings["startWithWindows"] = self.setting_start_windows.isChecked()
         
@@ -3824,6 +3858,7 @@ class HubWindow(QMainWindow):
         self.setting_widget_enabled.setChecked(settings.get("widgetEnabled", True))
         self.setting_widget_task_count.setCurrentText(str(settings.get("widgetTaskCount", 5)))
         self.setting_hub_maximized.setChecked(settings.get("startWithHubMaximized", True))
+        self.setting_start_focus.setChecked(settings.get("startInFocusMode", False))
         self.setting_close_to_tray.setChecked(settings.get("closeToTray", True))
         self.setting_start_windows.setChecked(settings.get("startWithWindows", False))
 
@@ -4073,6 +4108,17 @@ class HubWindow(QMainWindow):
         sound_layout.addStretch()
         layout.addLayout(sound_layout)
 
+        self.slider_volume = QSlider(Qt.Orientation.Horizontal)
+        self.slider_volume.setRange(0, 100)
+        self.slider_volume.setFixedWidth(100)
+        self.slider_volume.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.slider_volume.setToolTip("Soundscape Volume")
+        self.slider_volume.valueChanged.connect(self._on_zen_volume_changed)
+        sound_layout.addWidget(self.slider_volume)
+        
+        sound_layout.addStretch()
+        layout.addLayout(sound_layout)
+
     def enter_zen_mode(self, task_id: str):
         t = next((x for x in self.state["tasks"] if x["id"] == task_id), None)
         if not t: return
@@ -4161,6 +4207,16 @@ class HubWindow(QMainWindow):
         if self.isVisible() and self.stack.currentWidget() == self.page_zen:
             self._play_soundscape()
 
+    def _on_zen_volume_changed(self, value: int):
+        if not self.media_player: return
+        # Convert 0-100 to 0.0-1.0 for QAudioOutput
+        volume = value / 100.0
+        self.audio_output.setVolume(volume)
+        
+        # Save setting
+        self.state.setdefault("settings", {})["zenVolume"] = volume
+        self.schedule_save()
+
     def _play_soundscape(self):
         if not self.media_player: return
         
@@ -4229,7 +4285,7 @@ class HubWindow(QMainWindow):
             self.lbl_streak.setText(f"🔥 {streak}")
         
         # Update Greeting
-        name = self.state.get("userProfile", {}).get("name", "Friend")
+        name = get_user_name(self.state)
         if hasattr(self, "lbl_greeting"):
             tod = current_time_of_day().capitalize()
             self.lbl_greeting.setText(f"Good {tod}, {name}.")
