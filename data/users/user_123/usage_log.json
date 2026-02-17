@@ -1,0 +1,30 @@
+[
+    {
+        "text": "buy milk",
+        "category": "Personal"
+    },
+    {
+        "text": "submit report",
+        "category": "Work"
+    },
+    {
+        "text": "call mom",
+        "category": "Personal"
+    },
+    {
+        "text": "email client",
+        "category": "Work"
+    },
+    {
+        "text": "build my new bed",
+        "category": "household"
+    },
+    {
+        "text": "Make ui design",
+        "category": "Work"
+    },
+    {
+        "text": "buy water",
+        "category": "shopping"
+    }
+]

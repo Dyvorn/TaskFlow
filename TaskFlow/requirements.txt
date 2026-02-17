@@ -1,2 +1,2 @@
+torch
 PyQt6
-requests
