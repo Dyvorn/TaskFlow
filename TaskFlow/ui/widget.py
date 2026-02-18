@@ -36,8 +36,6 @@ try:
 except ImportError:
     winsound = None
 
-from ai import engine as taskflowai
-
 from core.model import (
     APP_NAME,
     DARK_BG,
@@ -58,6 +56,7 @@ from core.model import (
     add_task,
     create_task_row_widget,
     delete_task,
+    parse_task_input,
 )
 
 
@@ -354,12 +353,12 @@ class WidgetWindow(QWidget):
         if not text:
             return
             
-        # Use AI to infer metadata (Smart Input)
-        meta = taskflowai.infer_metadata(text, self.state, default_section="Today")
+        # Use shared parser
+        meta = parse_task_input(text)
         
         add_task(
             self.state, 
-            text=meta["clean_text"], 
+            text=meta["text"], 
             section=meta["section"],
             category=meta["category"],
             important=meta["important"]

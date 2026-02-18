@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QInputDialog
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QInputDialog, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QCursor
@@ -15,17 +15,57 @@ GLASS_BORDER = "rgba(255, 255, 255, 0.15)"
 class TrainingWorker(QThread):
     """Runs AI training in a separate thread to avoid freezing the UI."""
     progress = pyqtSignal(int)
-    finished = pyqtSignal(str)
+    finished = pyqtSignal()
 
-    def __init__(self, ai_engine):
+    def __init__(self, trainer):
         super().__init__()
-        self.ai_engine = ai_engine
+        self.trainer = trainer
 
     def run(self):
         # In a real scenario, the engine itself would emit progress signals.
         # For now, we just run the blocking training call.
-        self.ai_engine.train_model()
-        self.finished.emit("Training complete!")
+        self.trainer.train_model()
+        self.finished.emit()
+
+
+class SuggestionWidget(QFrame):
+    """A custom widget to display an AI suggestion with action buttons."""
+    action_taken = pyqtSignal(str, dict) # "accept" or "dismiss", suggestion data
+
+    def __init__(self, suggestion: dict, parent=None):
+        super().__init__(parent)
+        self.suggestion = suggestion
+        self.setObjectName("SuggestionCard")
+        self.setStyleSheet(f"#SuggestionCard {{ background-color: {HOVER_BG}; border-radius: 8px; padding: 12px; }}")
+
+        layout = QVBoxLayout(self)
+        
+        # Build text based on type
+        if suggestion['type'] == 'SUGGEST_RECURRENCE':
+            text = f"I noticed you often complete tasks like <b>'{suggestion['task_text']}'</b>. Would you like to make this a recurring <b>{suggestion['interval']}</b> task?"
+        else:
+            text = "I have a suggestion for you."
+            
+        lbl_text = QLabel(text)
+        lbl_text.setWordWrap(True)
+        lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; background: transparent;")
+        layout.addWidget(lbl_text)
+
+        # Action buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        btn_accept = QPushButton("✅ Create")
+        btn_accept.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_accept.clicked.connect(lambda: self.action_taken.emit("accept", self.suggestion))
+        
+        btn_dismiss = QPushButton("❌ Dismiss")
+        btn_dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_dismiss.clicked.connect(lambda: self.action_taken.emit("dismiss", self.suggestion))
+        
+        btn_layout.addWidget(btn_accept)
+        btn_layout.addWidget(btn_dismiss)
+        layout.addLayout(btn_layout)
 
 
 class CoachWidget(QWidget):
@@ -108,6 +148,12 @@ class CoachWidget(QWidget):
             btn_row.addWidget(btn)
             
         layout.addLayout(btn_row)
+        
+        # --- AI Recommendations ---
+        layout.addSpacing(15)
+        layout.addWidget(QLabel("AI Recommendations"))
+        self.recommendations_list = QListWidget()
+        layout.addWidget(self.recommendations_list, 1)
 
     def refresh(self):
         # Update Stats
@@ -132,6 +178,22 @@ class CoachWidget(QWidget):
                 list_item = QListWidgetItem(text)
                 list_item.setData(Qt.ItemDataRole.UserRole, item)
                 self.review_list.addItem(list_item)
+                
+        # Update Recommendations
+        self.recommendations_list.clear()
+        suggestions = self.ai_engine.get_proactive_suggestions()
+        if not suggestions:
+            item = QListWidgetItem("No recommendations right now. Keep using the app!")
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.recommendations_list.addItem(item)
+        else:
+            for suggestion in suggestions:
+                widget = SuggestionWidget(suggestion)
+                widget.action_taken.connect(self._handle_suggestion_action)
+                item = QListWidgetItem()
+                item.setSizeHint(widget.sizeHint())
+                self.recommendations_list.addItem(item)
+                self.recommendations_list.setItemWidget(item, widget)
 
     def _run_training(self):
         self.btn_train.setText("Training... (Please wait)")
@@ -140,12 +202,10 @@ class CoachWidget(QWidget):
         self.train_progress.show()
         
         # Use a worker thread to prevent UI freezing
-        self.worker = TrainingWorker(self.ai_engine)
-        # self.worker.progress.connect(self.train_progress.setValue) # Progress signal not implemented in engine
-        self.worker.finished.connect(self._on_training_finished)
-        self.worker.start()
+        # The AIEngine will handle the actual worker creation and management
+        self.ai_engine.train_model(background=True, on_finish_callback=self._on_training_finished)
 
-    def _on_training_finished(self, message: str):
+    def _on_training_finished(self):
         self.refresh()
         self.btn_train.setText("Train Brain Now")
         self.btn_train.setEnabled(True)
@@ -158,7 +218,7 @@ class CoachWidget(QWidget):
         data = item.data(Qt.ItemDataRole.UserRole)
         if not data: return # Handle empty message
         
-        self.ai_engine.learn_task(data['text'], data['predicted_category'])
+        self.ai_engine.learn_task(data['text'], data['predicted_category'], data.get('context'))
         self.refresh()
 
     def _correct_prediction(self):
@@ -180,5 +240,26 @@ class CoachWidget(QWidget):
                                            categories, current_index, False)
         
         if ok and new_cat:
-            self.ai_engine.learn_task(data['text'], new_cat)
+            self.ai_engine.learn_task(data['text'], new_cat, data.get('context'))
             self.refresh()
+
+    def _handle_suggestion_action(self, action: str, suggestion: dict):
+        if action == "accept":
+            if suggestion['type'] == 'SUGGEST_RECURRENCE':
+                # Access main window state via parent() chain
+                hub = self.window()
+                if hub:
+                    from core.model import add_task
+                    add_task(
+                        hub.state,
+                        text=suggestion['task_text'],
+                        section="Today",
+                        recurrence={'type': suggestion['interval']}
+                    )
+                    hub.schedule_save()
+                    QMessageBox.information(self, "Success", f"Recurring task '{suggestion['task_text']}' created!")
+        
+        # Dismiss the suggestion in both cases
+        self.ai_engine.dismiss_suggestion(suggestion['id'])
+        self.window().schedule_save()
+        self.refresh()

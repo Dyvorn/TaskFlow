@@ -7,6 +7,7 @@ import json
 import uuid
 import shutil
 import math
+import re
 import random
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Callable
@@ -148,6 +149,103 @@ def determine_today_mode(
     return MODE_FOCUS
 
 
+def parse_task_input(text: str) -> Dict[str, Any]:
+    """
+    Parses a raw input string to extract text, section, category, and importance.
+    """
+    text = text.strip()
+    section = "Today" # Default
+    important = False
+    category = None
+    
+    # Priority
+    if "!" in text or "urgent" in text.lower():
+        important = True
+        text = text.replace("!", "").replace("urgent", "", 1).strip()
+        
+    # Category hashtags
+    match = re.search(r"#(\w+)", text)
+    if match:
+        category = match.group(1)
+        text = text.replace(match.group(0), "").strip()
+        
+    # Section keywords
+    lower = text.lower()
+    if "tomorrow" in lower: 
+        section = "Tomorrow"
+    elif "week" in lower and "next" not in lower: # "this week"
+        section = "This Week"
+    elif "someday" in lower: 
+        section = "Someday"
+        
+    return {
+        "text": text,
+        "section": section,
+        "category": category,
+        "important": important
+    }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ANALYTICS HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_completion_rate(state: Dict[str, Any]) -> float:
+    tasks = state.get("tasks", [])
+    if not tasks: return 0.0
+    completed = sum(1 for t in tasks if t.get("completed"))
+    return (completed / len(tasks)) * 100
+
+def get_most_productive_hour(state: Dict[str, Any]) -> int:
+    log = state.get("activityLog", [])
+    hours = {}
+    for entry in log:
+        if entry.get("action") == "completed":
+            try:
+                dt = datetime.fromisoformat(entry["timestamp"])
+                h = dt.hour
+                hours[h] = hours.get(h, 0) + 1
+            except: pass
+    if not hours: return 9
+    return max(hours, key=hours.get)
+
+def get_category_breakdown(state: Dict[str, Any]) -> Dict[str, int]:
+    tasks = state.get("tasks", [])
+    counts = {}
+    for t in tasks:
+        if t.get("completed"):
+            cat = t.get("category", "Uncategorized") or "Uncategorized"
+            counts[cat] = counts.get(cat, 0) + 1
+    return counts
+
+def get_productivity_score(state: Dict[str, Any]) -> int:
+    today = today_str()
+    tasks = state.get("tasks", [])
+    completed_today = sum(1 for t in tasks if t.get("completed") and t.get("completedAt", "").startswith(today))
+    checks = state.get("habitChecks", {}).get(today, {})
+    habits_done = sum(1 for v in checks.values() if v)
+    return min(100, (completed_today * 10) + (habits_done * 5))
+
+def get_hourly_activity(state: Dict[str, Any]) -> Dict[int, int]:
+    log = state.get("activityLog", [])
+    hours = {h: 0 for h in range(24)}
+    for entry in log:
+        try:
+            dt = datetime.fromisoformat(entry["timestamp"])
+            hours[dt.hour] += 1
+        except: pass
+    return hours
+
+def get_activity_heatmap_data(state: Dict[str, Any]) -> Dict[str, int]:
+    log = state.get("activityLog", [])
+    data = {}
+    for entry in log:
+        ts = entry.get("timestamp", "")
+        if ts:
+            d = ts.split("T")[0]
+            data[d] = data.get(d, 0) + 1
+    return data
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # DATA PATHS & ATOMIC WRITE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -242,6 +340,7 @@ def default_state() -> Dict[str, Any]:
         },
         # dayQuality: stores {date, tasksCompleted, tasksPlanned, moodAtStart, moodAtEnd, habitsDone}
         "dayQuality": {},
+        "dismissed_suggestions": [],
         "uiGeometry": None,
         "settings": {
             "widgetEnabled": True,

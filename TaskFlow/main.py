@@ -47,7 +47,7 @@ def main():
     app.processEvents() # Ensure splash paints before AI load
     
     # Create the AI Engine instance for the current user
-    ai_engine = AIEngine(user_id="user_123")
+    ai_engine = AIEngine(user_id="user_123", state=state)
     
     # 5. Launch Main Hub
     def show_hub():

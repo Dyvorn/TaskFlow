@@ -1,52 +1,51 @@
 import torch
 import torch.nn as nn
+from typing import List
 
 class TaskBrain(nn.Module):
     """
-    A simple Feed-Forward Neural Network for task classification (e.g., priority/category).
-    This architecture is designed to be lightweight and fast for a local-first environment.
+    A neural network that classifies tasks based on their text and context.
     
-    Layers:
-    1. EmbeddingBag: Efficiently converts batches of word indices into dense vectors.
-    2. Linear (Hidden): A fully connected layer.
-    3. ReLU: Activation function.
-    4. Linear (Output): Produces logits for each class.
+    This enhanced model includes multiple embedding layers for various contextual 
+    features (like time of day, day of week), which are combined with the text 
+    embedding to make a more informed prediction.
     """
-    def __init__(self, vocab_size: int, hidden_size: int, num_classes: int):
-        """
-        Initializes the network layers.
-
-        Args:
-            vocab_size (int): The total number of unique words in the vocabulary.
-            hidden_size (int): The number of neurons in the hidden layer.
-            num_classes (int): The number of output classes (e.g., categories).
-        """
+    def __init__(self, vocab_size: int, num_classes: int, context_dims: List[int], hidden_size: int = 32, context_embedding_dim: int = 4):
         super(TaskBrain, self).__init__()
         self.embedding = nn.EmbeddingBag(vocab_size, hidden_size, sparse=True)
-        self.fc1 = nn.Linear(hidden_size, hidden_size)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, num_classes)
+        
+        # Create a list of embedding layers, one for each contextual feature
+        self.context_embeddings = nn.ModuleList([
+            nn.Embedding(num_features, context_embedding_dim) for num_features in context_dims
+        ])
+        
+        # The total size of the input to the linear layer is the text embedding size
+        # plus the size of all context embeddings combined.
+        combined_context_size = len(context_dims) * context_embedding_dim
+        combined_size = hidden_size + combined_context_size
+        
+        self.fc = nn.Linear(combined_size, num_classes)
         self.init_weights()
 
     def init_weights(self):
         initrange = 0.5
         self.embedding.weight.data.uniform_(-initrange, initrange)
-        self.fc1.weight.data.uniform_(-initrange, initrange)
-        self.fc1.bias.data.zero_()
-        self.fc2.weight.data.uniform_(-initrange, initrange)
-        self.fc2.bias.data.zero_()
+        for emb in self.context_embeddings:
+            emb.weight.data.uniform_(-initrange, initrange)
+        self.fc.weight.data.uniform_(-initrange, initrange)
+        self.fc.bias.data.zero_()
 
-    def forward(self, text_indices: torch.Tensor, offsets: torch.Tensor) -> torch.Tensor:
-        """
-        Defines the forward pass of the model.
-
-        Args:
-            text_indices (torch.Tensor): A tensor of concatenated word indices from a batch of texts.
-            offsets (torch.Tensor): A tensor indicating the starting position of each text in `text_indices`.
-
-        Returns:
-            torch.Tensor: The output logits from the model.
-        """
-        embedded = self.embedding(text_indices, offsets)
-        x = self.relu(self.fc1(embedded))
-        return self.fc2(x)
+    def forward(self, text_indices: torch.Tensor, offsets: torch.Tensor, context_indices: torch.Tensor) -> torch.Tensor:
+        text_embedded = self.embedding(text_indices, offsets)
+        
+        # Process each context feature through its respective embedding layer
+        context_embeds = []
+        for i, embedding_layer in enumerate(self.context_embeddings):
+            # context_indices is (batch_size, num_context_features)
+            # We select the i-th column for the i-th embedding layer
+            context_embeds.append(embedding_layer(context_indices[:, i]))
+        
+        all_context_embedded = torch.cat(context_embeds, dim=1)
+        combined = torch.cat((text_embedded, all_context_embedded), dim=1)
+        
+        return self.fc(combined)

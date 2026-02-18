@@ -1,6 +1,7 @@
 import json
 import torch
 from pathlib import Path
+import re
 from typing import List, Dict, Tuple, Optional
 
 class TaskPipeline:
@@ -15,10 +16,22 @@ class TaskPipeline:
         self.vocab = {"<unk>": 0}
         self.categories = []
         self.cat_to_idx = {}
+        # Define context features and their possible values (dimensions)
+        self.context_features = {
+            'time_of_day': ['morning', 'afternoon', 'evening', 'unknown'],
+            'day_of_week': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'unknown'],
+            'mood': ['Low energy', 'Okay', 'Motivated', 'Stressed', 'Great', 'unknown']
+        }
+        # Create a mapping from value to index for each feature type
+        self.context_to_idx = {
+            feature: {val: i for i, val in enumerate(values)}
+            for feature, values in self.context_features.items()
+        }
 
     def normalize(self, text: str) -> List[str]:
-        """Simple text normalization: lowercase and split."""
-        return text.lower().split()
+        """Improved text normalization: lowercase, remove punctuation, and split."""
+        # Remove non-alphanumeric characters (and spaces) and convert to lowercase
+        return re.sub(r'[^\w\s]', '', text.lower()).split()
 
     def build_or_update_from_log(self, data: List[Dict]):
         """
@@ -57,13 +70,30 @@ class TaskPipeline:
                 self.categories = json.load(f)
                 self.cat_to_idx = {cat: i for i, cat in enumerate(self.categories)}
 
-    def process_input(self, text: str) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Converts text into tensors for the model."""
+    def process_input(self, text: str, context: Dict) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Converts text and context into tensors for the model."""
         tokens = self.normalize(text)
         indices = [self.vocab.get(t, 0) for t in tokens]
         if not indices:
             indices = [0] # Handle empty input
-        return torch.tensor(indices, dtype=torch.long), torch.tensor([0], dtype=torch.long)
+            
+        # Process context
+        context_indices_list = []
+        
+        # Order must be consistent: time_of_day, day_of_week, mood
+        tod_val = context.get('time_of_day', 'unknown')
+        tod_idx = self.context_to_idx['time_of_day'].get(tod_val, len(self.context_to_idx['time_of_day']) - 1)
+        context_indices_list.append(tod_idx)
+        
+        dow_val = context.get('day_of_week', 'unknown')
+        dow_idx = self.context_to_idx['day_of_week'].get(dow_val, len(self.context_to_idx['day_of_week']) - 1)
+        context_indices_list.append(dow_idx)
+        
+        mood_val = context.get('mood', 'unknown')
+        mood_idx = self.context_to_idx['mood'].get(mood_val, len(self.context_to_idx['mood']) - 1)
+        context_indices_list.append(mood_idx)
+
+        return torch.tensor(indices, dtype=torch.long), torch.tensor([0], dtype=torch.long), torch.tensor([context_indices_list], dtype=torch.long)
 
     def get_category_index(self, category: str) -> int:
         return self.cat_to_idx.get(category, -1)

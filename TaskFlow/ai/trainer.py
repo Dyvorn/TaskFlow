@@ -38,7 +38,7 @@ class UserTrainer:
         with open(self.log_path, 'r', encoding='utf-8') as f:
             log_data = json.load(f)
 
-        # 1. Build/Update pipeline and check for vocabulary changes
+        # 2. Build/Update pipeline and check for vocabulary changes
         pipeline = TaskPipeline(self.user_path)
         
         # Get old vocab size before updating
@@ -51,8 +51,16 @@ class UserTrainer:
         
         vocab_size_changed = len(old_vocab) != len(pipeline.vocab)
         
-        # 2. Initialize Model and Optimizer
-        model = TaskBrain(vocab_size=len(pipeline.vocab), hidden_size=hidden_size, num_classes=len(pipeline.categories))
+        # Get context dimensions from the pipeline
+        context_dims = [len(values) for values in pipeline.context_features.values()]
+        
+        # 3. Initialize Model and Optimizer
+        model = TaskBrain(
+            vocab_size=len(pipeline.vocab), 
+            hidden_size=hidden_size, 
+            num_classes=len(pipeline.categories),
+            context_dims=context_dims
+        )
         
         # Load existing model state ONLY if vocabulary has NOT changed
         if self.model_path.exists() and not vocab_size_changed:
@@ -64,17 +72,24 @@ class UserTrainer:
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(model.parameters(), lr=lr)
 
-        # 3. Training Loop
+        # 4. Training Loop
         model.train()
         print(f"Training started for {epochs} epochs...")
         for epoch in range(epochs):
             total_loss = 0
             for item in log_data:
                 optimizer.zero_grad()
-                text_indices, offsets = pipeline.process_input(item['text'])
-                target = torch.tensor([pipeline.get_category_index(item['category'])], dtype=torch.long)
+                # Provide context, defaulting to 'unknown' for all fields if not present in older logs
+                context = item.get('context')
+                if not context: # Handle very old logs with no context key
+                    context = {'time_of_day': 'unknown', 'day_of_week': 'unknown', 'mood': 'unknown'}
+                else: # Ensure all keys are present
+                    context.setdefault('day_of_week', 'unknown')
+                    context.setdefault('mood', 'unknown')
 
-                output = model(text_indices, offsets)
+                text_indices, offsets, context_indices = pipeline.process_input(item['text'], context)
+                target = torch.tensor([pipeline.get_category_index(item['category'])], dtype=torch.long)
+                output = model(text_indices, offsets, context_indices)
                 loss = criterion(output, target)
                 loss.backward()
                 optimizer.step()
@@ -83,6 +98,6 @@ class UserTrainer:
             if (epoch + 1) % 5 == 0:
                 print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f}")
 
-        # 4. Save the newly trained model back to the user's private directory
+        # 5. Save the newly trained model back to the user's private directory
         torch.save(model.state_dict(), self.model_path)
         print(f"Training complete. Brain saved for user {self.user_id}.")
