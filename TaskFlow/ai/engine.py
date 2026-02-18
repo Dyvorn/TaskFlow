@@ -1,5 +1,6 @@
 import json
 import torch
+import shutil
 from pathlib import Path
 from typing import Dict, Optional, List
 
@@ -19,6 +20,8 @@ class AIEngine:
         self.user_manager = UserManager()
         self.user_path = self.user_manager.ensure_user_directory(user_id)
         
+        self._bootstrap_base_model()
+        
         self.pipeline = TaskPipeline(self.user_path)
         self.model: Optional[TaskBrain] = None
         self.review_queue: List[Dict] = []
@@ -28,6 +31,30 @@ class AIEngine:
         self._training_worker: Optional[TrainingWorker] = None
 
         self.load_pipeline_and_model()
+
+    def _bootstrap_base_model(self):
+        """Copies pre-trained assets to user directory if fresh."""
+        # Locate assets folder (assuming it's in the project root, two levels up)
+        base_path = Path(__file__).parent.parent / "assets"
+        base_brain = base_path / "base_brain.pth"
+        base_vocab = base_path / "base_vocab.json"
+        
+        user_brain = self.user_path / "brain.pth"
+        user_vocab = self.user_path / "vocab.json"
+        
+        if base_brain.exists() and not user_brain.exists():
+            try:
+                shutil.copy2(base_brain, user_brain)
+                print(f"Bootstrapped user brain from {base_brain}")
+            except Exception as e:
+                print(f"Failed to bootstrap brain: {e}")
+                
+        if base_vocab.exists() and not user_vocab.exists():
+            try:
+                shutil.copy2(base_vocab, user_vocab)
+                print(f"Bootstrapped user vocab from {base_vocab}")
+            except Exception as e:
+                print(f"Failed to bootstrap vocab: {e}")
 
     def load_pipeline_and_model(self):
         """Loads the pipeline and model from disk."""
@@ -47,6 +74,7 @@ class AIEngine:
 
         self.model = TaskBrain(
             vocab_size=len(self.pipeline.vocab),
+            hidden_size=64,
             num_classes=len(self.pipeline.categories),
             context_dims=context_dims
         )
@@ -54,10 +82,27 @@ class AIEngine:
         model_path = self.user_path / "brain.pth"
         if model_path.exists():
             try:
+                # Check for corruption (empty file)
+                if model_path.stat().st_size == 0:
+                    raise ValueError("Model file is empty")
                 self.model.load_state_dict(torch.load(model_path))
                 print("AI brain loaded successfully.")
             except Exception as e:
-                print(f"Could not load AI brain, it may be incompatible. Re-initializing. Error: {e}")
+                print(f"Could not load AI brain (corrupt or incompatible). Re-initializing. Error: {e}")
+                # Rename corrupt file for safety/debugging
+                try:
+                    model_path.rename(model_path.with_suffix(".corrupt"))
+                except OSError:
+                    pass
+                
+                # Attempt to restore base model immediately
+                self._bootstrap_base_model()
+                # Try loading again if bootstrap succeeded
+                if model_path.exists():
+                    try:
+                        self.model.load_state_dict(torch.load(model_path))
+                    except Exception:
+                        print("Failed to load bootstrapped model. Starting with random weights.")
         self.model.eval()
 
     def predict_category(self, text: str, context: Dict) -> Optional[str]:
@@ -65,13 +110,26 @@ class AIEngine:
         if not self.model or not text:
             return None
 
+        # --- Dynamic Confidence Threshold ---
+        # Start with a high threshold and lower it as the model becomes more mature.
+        base_threshold = 0.85
+        min_threshold = 0.60
+        vocab_size = len(self.pipeline.vocab)
+        log_count = self.get_stats()["task_log_count"]
+        
+        # Lower threshold by 0.05 for every 100 vocab words and 50 log entries
+        vocab_bonus = (vocab_size // 100) * 0.05
+        log_bonus = (log_count // 50) * 0.05
+        
+        dynamic_threshold = max(min_threshold, base_threshold - vocab_bonus - log_bonus)
+
         text_indices, offsets, context_indices = self.pipeline.process_input(text, context)
         with torch.no_grad():
             output = self.model(text_indices, offsets, context_indices)
             probabilities = torch.softmax(output, dim=1)
             confidence, predicted_idx = torch.max(probabilities, 1)
 
-        if confidence.item() < 0.65:  # Confidence threshold
+        if confidence.item() < dynamic_threshold:
             # Low confidence, add to review queue
             prediction = {
                 "text": text,
@@ -95,6 +153,13 @@ class AIEngine:
         
         log_data.append({"text": text, "category": category, "context": context or {}})
         
+        # Log Rotation: Keep the model focused on recent user behavior.
+        MAX_LOG_ENTRIES = 500
+        if len(log_data) > MAX_LOG_ENTRIES:
+            # Keep the most recent N entries
+            log_data = log_data[-MAX_LOG_ENTRIES:]
+            print(f"AI log trimmed to the latest {MAX_LOG_ENTRIES} entries for relevance.")
+
         with open(log_path, 'w', encoding='utf-8') as f:
             json.dump(log_data, f, indent=2)
             

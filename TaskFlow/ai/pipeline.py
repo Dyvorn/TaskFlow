@@ -2,6 +2,7 @@ import json
 import torch
 from pathlib import Path
 import re
+import os
 from typing import List, Dict, Tuple, Optional
 
 class TaskPipeline:
@@ -55,10 +56,21 @@ class TaskPipeline:
 
     def save(self):
         """Saves vocabulary and categories to the user's directory."""
-        with open(self.vocab_path, 'w', encoding='utf-8') as f:
+        # Atomic save for vocab
+        tmp_vocab = self.vocab_path.with_suffix(".tmp")
+        with open(tmp_vocab, 'w', encoding='utf-8') as f:
             json.dump(self.vocab, f)
-        with open(self.categories_path, 'w', encoding='utf-8') as f:
+        if self.vocab_path.exists():
+            self.vocab_path.unlink()
+        tmp_vocab.rename(self.vocab_path)
+
+        # Atomic save for categories
+        tmp_cats = self.categories_path.with_suffix(".tmp")
+        with open(tmp_cats, 'w', encoding='utf-8') as f:
             json.dump(self.categories, f)
+        if self.categories_path.exists():
+            self.categories_path.unlink()
+        tmp_cats.rename(self.categories_path)
 
     def load(self):
         """Loads vocabulary and categories from the user's directory."""

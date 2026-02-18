@@ -76,6 +76,8 @@ class CoachWidget(QWidget):
     2. Manually trigger training.
     3. Review and answer 'questions' (low-confidence predictions) to teach the AI.
     """
+    message_requested = pyqtSignal(str)
+
     def __init__(self, ai_engine, parent=None):
         super().__init__(parent)
         self.ai_engine = ai_engine
@@ -210,17 +212,17 @@ class CoachWidget(QWidget):
         self.btn_train.setText("Train Brain Now")
         self.btn_train.setEnabled(True)
         self.train_progress.hide()
-        QMessageBox.information(self, "Training Complete", "The AI has learned from your latest data!")
+        self.message_requested.emit("Training Complete! The AI has learned.")
 
     def _confirm_prediction(self):
         item = self.review_list.currentItem()
         if not item: return
         data = item.data(Qt.ItemDataRole.UserRole)
-        if not data: return # Handle empty message
+        if not data: return
         
         self.ai_engine.learn_task(data['text'], data['predicted_category'], data.get('context'))
         self.refresh()
-
+        
     def _correct_prediction(self):
         item = self.review_list.currentItem()
         if not item: return
@@ -257,9 +259,10 @@ class CoachWidget(QWidget):
                         recurrence={'type': suggestion['interval']}
                     )
                     hub.schedule_save()
-                    QMessageBox.information(self, "Success", f"Recurring task '{suggestion['task_text']}' created!")
+                    self.message_requested.emit(f"Recurring task '{suggestion['task_text']}' created!")
         
         # Dismiss the suggestion in both cases
         self.ai_engine.dismiss_suggestion(suggestion['id'])
-        self.window().schedule_save()
+        if self.window():
+            self.window().schedule_save()
         self.refresh()

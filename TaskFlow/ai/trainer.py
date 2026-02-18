@@ -2,6 +2,7 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import json
+import random
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -28,7 +29,7 @@ class UserTrainer:
         self.model_path = self.user_path / "brain.pth"
         self.log_path = self.user_path / "usage_log.json"
 
-    def train_model(self, hidden_size: int = 32, epochs: int = 10, lr: float = 0.01):
+    def train_model(self, hidden_size: int = 64, epochs: int = 30, lr: float = 0.1):
         """
         Loads user data, trains the model, and saves the updated weights.
         """
@@ -39,6 +40,9 @@ class UserTrainer:
         # 1. Load and process data (this would be more robust in pipeline.py)
         with open(self.log_path, 'r', encoding='utf-8') as f:
             log_data = json.load(f)
+            
+        # Shuffle data to prevent order bias
+        random.shuffle(log_data)
 
         # 2. Build/Update pipeline and check for vocabulary changes
         pipeline = TaskPipeline(self.user_path)
@@ -66,8 +70,11 @@ class UserTrainer:
         
         # Load existing model state ONLY if vocabulary has NOT changed
         if self.model_path.exists() and not vocab_size_changed:
-            model.load_state_dict(torch.load(self.model_path))
-            print(f"Loaded existing brain for user {self.user_id}.")
+            try:
+                model.load_state_dict(torch.load(self.model_path))
+                print(f"Loaded existing brain for user {self.user_id}.")
+            except RuntimeError:
+                print("Model architecture changed. Re-initializing model.")
         elif vocab_size_changed:
             print("Vocabulary has expanded. Re-initializing model to accommodate new words.")
 
@@ -86,6 +93,7 @@ class UserTrainer:
                 if not context: # Handle very old logs with no context key
                     context = {'time_of_day': 'unknown', 'day_of_week': 'unknown', 'mood': 'unknown'}
                 else: # Ensure all keys are present
+                    context.setdefault('time_of_day', 'unknown')
                     context.setdefault('day_of_week', 'unknown')
                     context.setdefault('mood', 'unknown')
 
@@ -101,7 +109,11 @@ class UserTrainer:
                 print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f}")
 
         # 5. Save the newly trained model back to the user's private directory
-        torch.save(model.state_dict(), self.model_path)
+        tmp_model_path = self.model_path.with_suffix(".tmp")
+        torch.save(model.state_dict(), tmp_model_path)
+        if self.model_path.exists():
+            self.model_path.unlink()
+        tmp_model_path.rename(self.model_path)
         print(f"Training complete. Brain saved for user {self.user_id}.")
 
 

@@ -77,6 +77,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QProgressBar,
     QSystemTrayIcon,
+    QLayout,
 )
 
 try:
@@ -1377,6 +1378,82 @@ class ConfettiOverlay(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
 
+class ToastOverlay(QWidget):
+    """
+    Non-intrusive notification pill that fades in and out.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        
+        self.label = QLabel(self)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Style: Dark pill with light text, subtle border
+        self.label.setStyleSheet(f"""
+            background-color: #252525;
+            color: {TEXT_WHITE};
+            border: 1px solid {GLASS_BORDER};
+            border-radius: 20px;
+            padding: 8px 24px;
+            font-weight: bold;
+            font-size: 14px;
+        """)
+        
+        # Shadow
+        shadow = QGraphicsDropShadowEffect(self.label)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 100))
+        shadow.setOffset(0, 4)
+        self.label.setGraphicsEffect(shadow)
+        
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+        
+        self.anim = QPropertyAnimation(self.opacity_effect, b"opacity", self)
+        self.anim.setDuration(300)
+        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.anim.finished.connect(self._on_anim_finished)
+        
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.fade_out)
+        
+        self.hide()
+
+    def show_message(self, text, duration=2500):
+        self.label.setText(text)
+        self.label.adjustSize()
+        self.resize(self.label.width() + 10, self.label.height() + 10) # slight padding for shadow
+        self.label.move(5, 5)
+        
+        if self.parent():
+            p_rect = self.parent().rect()
+            x = (p_rect.width() - self.width()) // 2
+            y = p_rect.height() - self.height() - 60 # Position near bottom
+            self.move(x, y)
+            
+        self.show()
+        self.raise_()
+        self.opacity_effect.setOpacity(0.0)
+        self.anim.setStartValue(0.0)
+        self.anim.setEndValue(1.0)
+        self.anim.setDirection(QPropertyAnimation.Direction.Forward)
+        self.anim.start()
+        
+        self.timer.start(duration)
+
+    def fade_out(self):
+        self.anim.setStartValue(1.0)
+        self.anim.setEndValue(0.0)
+        self.anim.setDirection(QPropertyAnimation.Direction.Forward)
+        self.anim.start()
+
+    def _on_anim_finished(self):
+        if self.opacity_effect.opacity() == 0.0:
+            self.hide()
+
 class ProjectListRow(QWidget):
     """
     Custom widget for the project list item, showing progress bar.
@@ -2211,7 +2288,7 @@ class TaskListWidget(QWidget):
         incomplete = [t for t in tasks if not t.get("completed")]
         
         if not incomplete:
-            QMessageBox.information(self, "Review Someday", "No tasks in Someday to review.")
+            self.show_toast("No tasks in Someday to review.")
             return
             
         # Pick 3 random
@@ -2896,6 +2973,8 @@ class HubWindow(QMainWindow):
         # Confetti Overlay
         self.confetti = ConfettiOverlay(self)
         self.confetti.resize(self.size())
+        self.toast = ToastOverlay(self)
+        self.toast.resize(self.size())
 
         # Geometry
         geom = self.state.get("uiGeometry")
@@ -2947,6 +3026,9 @@ class HubWindow(QMainWindow):
     def resizeEvent(self, event):
         if hasattr(self, "confetti"):
             self.confetti.resize(self.size())
+        if hasattr(self, "toast"):
+            # Toast resizes itself on show, but we ensure it stays centered if needed
+            pass
         super().resizeEvent(event)
 
     def celebrate(self):
@@ -2962,6 +3044,8 @@ class HubWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+T"), self, activated=lambda: self._switch_page(self.page_today))
         QShortcut(QKeySequence("Ctrl+P"), self, activated=lambda: self._switch_page(self.page_projects))
         QShortcut(QKeySequence("Ctrl+B"), self, activated=self._toggle_focus_mode)
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=lambda: self._switch_page(self.page_search))
+        QShortcut(QKeySequence("Ctrl+N"), self, activated=self._focus_quick_add)
 
     def _setup_tray(self):
         """Initialize the system tray icon."""
@@ -3240,6 +3324,7 @@ class HubWindow(QMainWindow):
         self._build_zen_page()
         self.page_search = SearchWidget(self.state, self.schedule_save)
         self.page_profile = CoachWidget(self.ai_engine)
+        self.page_profile.message_requested.connect(self.show_toast)
 
         # Add pages to stack
         self.stack.addWidget(self.page_home)
@@ -3291,6 +3376,27 @@ class HubWindow(QMainWindow):
         # Set Home as the default/initial page
         self._switch_page(self.page_home)
         self.btn_home.setChecked(True)
+
+    def show_toast(self, message: str):
+        """Displays a non-intrusive toast notification."""
+        self.toast.show_message(message)
+
+    def _focus_quick_add(self):
+        """Shortcut handler to focus the primary input of the current page."""
+        current = self.stack.currentWidget()
+        if isinstance(current, TaskListWidget):
+            current.quick_add_input.setFocus()
+        elif current is self.page_home:
+            self.idea_input.setFocus()
+        elif current is self.page_projects:
+            self.project_task_widget.quick_add_input.setFocus()
+        elif current is self.page_scheduled:
+            if self.sched_stack.currentWidget() == self.view_list:
+                self.scheduled_list_widget.quick_add_input.setFocus()
+            else:
+                self.cal_quick_add.setFocus()
+        elif current is self.page_search:
+            self.page_search.search_input.setFocus()
 
     # ────────────────────────────────────────────────────────────────────
     # Page builders
@@ -3963,7 +4069,7 @@ class HubWindow(QMainWindow):
                 count += 1
         if count > 0:
             self.schedule_save()
-            QMessageBox.information(self, "Archived", f"Moved {count} tasks to Archive.")
+            self.show_toast(f"Moved {count} tasks to Archive.")
 
     def _open_backup_manager(self):
         dlg = BackupManagerDialog(self.paths, self)
@@ -4286,7 +4392,7 @@ class HubWindow(QMainWindow):
             self.schedule_save()
 
             # Suggest a break
-            QMessageBox.information(self, "Session Complete!", "Great focus session. Time for a short break?")
+            self.show_toast("Session Complete! Time for a break?")
 
     def _on_zen_distraction(self):
         text = self.zen_distraction.text().strip()
@@ -4296,8 +4402,7 @@ class HubWindow(QMainWindow):
             self.schedule_save()
             self.zen_distraction.clear()
             # Visual feedback
-            self.zen_distraction.setPlaceholderText("Saved to Ideas! Stay focused.")
-            QTimer.singleShot(2000, lambda: self.zen_distraction.setPlaceholderText("Distraction? Type it here to clear your mind..."))
+            self.show_toast("Saved to Ideas! Stay focused.")
 
     def _on_soundscape_changed(self, text):
         self.state.setdefault("settings", {})["zenSoundscape"] = text
@@ -4824,7 +4929,7 @@ class HubWindow(QMainWindow):
             
         if not is_newer_version(latest_version, APP_VERSION):
             if manual:
-                QMessageBox.information(self, "Up to Date", f"You are using the latest version (v{APP_VERSION}).")
+                self.show_toast(f"You are up to date (v{APP_VERSION}).")
             return
 
         msg = QMessageBox(self)
