@@ -1,7 +1,6 @@
 from pathlib import Path
 import os
-
-DATA_DIR_NAME = "TaskFlowV7" # From core.model
+from .model import DATA_DIR_NAME
 
 class UserManager:
     """

@@ -28,7 +28,7 @@ except ImportError:
 
 APP_NAME = "TaskFlow"
 APP_VERSION = "9.0"
-DATA_DIR_NAME = "TaskFlowV7"
+DATA_DIR_NAME = "TaskFlow_Data"
 
 # Theme colors
 GOLD = "#ffd700"

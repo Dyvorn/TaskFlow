@@ -14,6 +14,7 @@ import webbrowser
 import re
 import math
 import ctypes
+import time
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Callable
 
@@ -686,6 +687,26 @@ class QuickTipsDialog(ShadowedDialog):
 
         c_layout.addStretch()
         scroll.setWidget(content)
+        
+        # Style the scrollbar
+        scrollbar = scroll.verticalScrollBar()
+        scrollbar.setStyleSheet(f"""
+            QScrollBar:vertical {{
+                border: none;
+                background: {HOVER_BG};
+                width: 8px;
+                margin: 0px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: #e0e0e0;
+                min-height: 20px;
+                border-radius: 4px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+        """)
+        
         self.add_widget(scroll)
 
         btn_close = QPushButton("Got it")
@@ -2993,6 +3014,9 @@ class HubWindow(QMainWindow):
 
         # Focus session tracking (in-memory)
         self._session_completed_today = 0
+        
+        # Confetti cooldown (15 seconds)
+        self._last_confetti_time = 0
 
         self._build_ui()
         self._refresh_home()
@@ -3031,10 +3055,8 @@ class HubWindow(QMainWindow):
             pass
         super().resizeEvent(event)
 
-    def celebrate(self):
-        self.confetti.burst()
-
-        # Keyboard shortcuts
+    def _setup_shortcuts(self) -> None:
+        """Initialize keyboard shortcuts (called once during startup)."""
         QShortcut(QKeySequence("Ctrl+1"), self, activated=lambda: self._switch_page(self.page_home))
         QShortcut(QKeySequence("Ctrl+2"), self, activated=lambda: self._switch_page(self.page_today))
         QShortcut(QKeySequence("Ctrl+3"), self, activated=lambda: self._switch_page(self.page_week))
@@ -3046,6 +3068,13 @@ class HubWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+B"), self, activated=self._toggle_focus_mode)
         QShortcut(QKeySequence("Ctrl+F"), self, activated=lambda: self._switch_page(self.page_search))
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._focus_quick_add)
+
+    def celebrate(self) -> None:
+        """Trigger confetti with a 10-second cooldown to prevent spamming."""
+        current_time = time.time()
+        if current_time - self._last_confetti_time >= 10:
+            self.confetti.burst()
+            self._last_confetti_time = current_time
 
     def _setup_tray(self):
         """Initialize the system tray icon."""
@@ -3376,6 +3405,9 @@ class HubWindow(QMainWindow):
         # Set Home as the default/initial page
         self._switch_page(self.page_home)
         self.btn_home.setChecked(True)
+        
+        # Initialize keyboard shortcuts
+        self._setup_shortcuts()
 
     def show_toast(self, message: str):
         """Displays a non-intrusive toast notification."""
@@ -4176,6 +4208,10 @@ class HubWindow(QMainWindow):
         if visible:
             # We just hid it
             self.statusBar().showMessage("Focus Mode Active. Press Ctrl+B to restore sidebar.", 3000)
+        else:
+            # We just showed it - celebrate exiting focus mode
+            self.statusBar().showMessage("Sidebar restored.", 2000)
+            self.celebrate()
 
     def _set_button_highlight(self, btn: QPushButton, highlighted: bool) -> None:
         """Apply or remove highlight styling to a button."""
