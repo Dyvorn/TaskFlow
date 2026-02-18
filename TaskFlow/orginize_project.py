@@ -15,6 +15,7 @@ MOVES = {
 REPLACEMENTS = {
     "ai/engine.py": [
         ("import taskflowanalytics", "import core.analytics as taskflowanalytics"),
+        ("import ai.analytics as analytics", "import core.analytics as analytics"),
     ],
     "core/model.py": [],
     "core/analytics.py": [],

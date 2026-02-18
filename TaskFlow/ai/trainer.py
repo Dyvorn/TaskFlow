@@ -4,6 +4,8 @@ import torch.nn as nn
 import json
 from pathlib import Path
 
+from PyQt6.QtCore import QThread, pyqtSignal
+
 from core.user_manager import UserManager
 from .architect import TaskBrain
 from .pipeline import TaskPipeline
@@ -101,3 +103,26 @@ class UserTrainer:
         # 5. Save the newly trained model back to the user's private directory
         torch.save(model.state_dict(), self.model_path)
         print(f"Training complete. Brain saved for user {self.user_id}.")
+
+
+class TrainingWorker(QThread):
+    """
+    A QThread worker that runs the UserTrainer's training process in the background.
+    This prevents the UI from freezing during training.
+    """
+    finished = pyqtSignal()
+
+    def __init__(self, trainer: UserTrainer, parent=None):
+        super().__init__(parent)
+        self.trainer = trainer
+
+    def run(self):
+        """
+        Executes the training process. This method is called when the thread starts.
+        """
+        try:
+            self.trainer.train_model()
+        except Exception as e:
+            print(f"An error occurred during background training: {e}")
+        finally:
+            self.finished.emit()
