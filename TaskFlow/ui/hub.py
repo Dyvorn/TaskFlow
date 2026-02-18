@@ -394,43 +394,105 @@ def animate_widget_entry(widget: QWidget) -> None:
     anim.finished.connect(lambda: widget.setGraphicsEffect(None))
     anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
-class WelcomeDialog(QDialog):
+def add_dialog_shadow(dialog: QDialog) -> None:
+    """Add drop shadow effect to frameless dialog to make it appear floating."""
+    shadow = QGraphicsDropShadowEffect()
+    shadow.setBlurRadius(20)
+    shadow.setColor(QColor(0, 0, 0, 100))
+    shadow.setOffset(0, 8)
+    dialog.setGraphicsEffect(shadow)
+
+
+class ShadowedDialog(QDialog):
+    """Base dialog class with frameless window, shadow, and rounded corners."""
+    def __init__(self, parent: Optional[QWidget] = None, title: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        try:
+            # Set frameless window
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        except Exception as e:
+            # Fallback if attributes not supported
+            pass
+        
+        self.setModal(True)
+        
+        # Create main frame with shadow
+        self.shadow_frame = QFrame()
+        self.shadow_frame.setObjectName("ShadowFrame")
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 120))
+        shadow.setOffset(0, 8)
+        self.shadow_frame.setGraphicsEffect(shadow)
+        
+        # Create main container layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(16, 16, 16, 16)  # Space for shadow
+        main_layout.addWidget(self.shadow_frame)
+        
+        # Create layout for content inside frame
+        self.content_layout = QVBoxLayout(self.shadow_frame)
+        self.content_layout.setContentsMargins(20, 20, 20, 20)
+        self.content_layout.setSpacing(16)
+        
+        # Apply styling - transparent dialog, styled frame
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: transparent;
+            }}
+            QFrame#ShadowFrame {{
+                background-color: {CARD_BG};
+                border: 1px solid {GLASS_BORDER};
+                border-radius: 16px;
+            }}
+        """)
+    
+    def add_widget(self, widget: QWidget) -> None:
+        """Add a widget to the dialog's content layout."""
+        self.content_layout.addWidget(widget)
+    
+    def add_layout(self, layout: QLayout) -> None:
+        """Add a layout to the dialog's content layout."""
+        self.content_layout.addLayout(layout)
+    
+    def add_stretch(self) -> None:
+        """Add stretch to the dialog's content layout."""
+        self.content_layout.addStretch()
+
+class WelcomeDialog(ShadowedDialog):
     """
     Start-of-Day screen to capture mood and main focus.
     """
     def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setWindowTitle("Welcome Back")
-        self.setModal(True)
+        super().__init__(parent, "Welcome Back")
         self.setMinimumWidth(400)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
 
         # Greeting
         lbl_greet = QLabel(f"Good {current_time_of_day()}.")
         lbl_greet.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
-        layout.addWidget(lbl_greet)
+        self.add_widget(lbl_greet)
 
-        layout.addWidget(QLabel("How are you feeling right now?"))
+        self.add_widget(QLabel("How are you feeling right now?"))
 
         self.mood_combo = QComboBox()
         self.mood_combo.addItems(MOOD_OPTIONS)
-        layout.addWidget(self.mood_combo)
+        self.add_widget(self.mood_combo)
 
-        layout.addWidget(QLabel("What is your one main goal for today?"))
+        self.add_widget(QLabel("What is your one main goal for today?"))
         self.goal_input = QLineEdit()
         self.goal_input.setPlaceholderText("e.g. Finish the report")
-        layout.addWidget(self.goal_input)
+        self.add_widget(self.goal_input)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Start Day")
         buttons.accepted.connect(self.accept)
-        layout.addWidget(buttons)
+        self.add_widget(buttons)
 
+        # Additional styling
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {CARD_BG}; border: 1px solid {GLASS_BORDER}; border-radius: 16px; }}
+            {self.styleSheet()}
             QLabel {{ color: {TEXT_WHITE}; }}
             QLineEdit, QComboBox {{ 
                 background-color: rgba(0,0,0,0.3); 
@@ -457,7 +519,7 @@ class WelcomeDialog(QDialog):
 # ============================================================================
 
 
-class DailyPlanningDialog(QDialog):
+class DailyPlanningDialog(ShadowedDialog):
     """
     Gentle dialog shown once per day to set a realistic number of tasks.
 
@@ -465,14 +527,8 @@ class DailyPlanningDialog(QDialog):
     """
 
     def __init__(self, incomplete_today_count: int, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setWindowTitle("Daily planning")
-        self.setModal(True)
+        super().__init__(parent, "Daily planning")
         self.setMinimumWidth(360)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
 
         if incomplete_today_count > 0:
             info = (
@@ -483,92 +539,82 @@ class DailyPlanningDialog(QDialog):
             info = "Ready for a fresh start. Let's plan today lightly."
         info_label = QLabel(info)
         info_label.setWordWrap(True)
-        layout.addWidget(info_label)
+        self.add_widget(info_label)
 
-        layout.addWidget(QLabel("How many tasks do you realistically want to focus on today?"))
+        self.add_widget(QLabel("How many tasks do you realistically want to focus on today?"))
 
         self.spinbox = QSpinBox()
         self.spinbox.setRange(0, MAX_PLANNED_TASKS)
         self.spinbox.setValue(DEFAULT_PLANNED_TASKS)
-        layout.addWidget(self.spinbox)
+        self.add_widget(self.spinbox)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self.add_widget(buttons)
 
-        # Style to match glass theme
-        self.setStyleSheet(
-            f"""
-            QDialog {{
-                background-color: {CARD_BG};
-            }}
+        self.setStyleSheet(f"""
+            {self.styleSheet()}
             QLabel {{
                 color: {TEXT_WHITE};
             }}
             QSpinBox {{
-                background-color: {CARD_BG};
+                background-color: rgba(0,0,0,0.3);
                 color: {TEXT_WHITE};
                 border-radius: 6px;
                 border: 1px solid {HOVER_BG};
                 padding: 2px 6px;
             }}
-            """
-        )
+        """)
 
     def planned_tasks(self) -> int:
         return self.spinbox.value()
 
-class FeedbackDialog(QDialog):
+class FeedbackDialog(ShadowedDialog):
     """
     Dialog to direct users to feedback channels.
     """
     def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setWindowTitle("Feedback & Requests")
-        self.setModal(True)
+        super().__init__(parent, "Feedback & Requests")
         self.resize(400, 300)
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
-
         lbl_title = QLabel("Feedback & Requests")
         lbl_title.setStyleSheet(f"color: {GOLD}; font-size: 20px; font-weight: bold;")
-        layout.addWidget(lbl_title)
+        self.add_widget(lbl_title)
 
         lbl_info = QLabel("Help us improve TaskFlow. Found a bug or have a feature idea?")
         lbl_info.setWordWrap(True)
         lbl_info.setStyleSheet(f"color: {TEXT_GRAY};")
-        layout.addWidget(lbl_info)
+        self.add_widget(lbl_info)
 
         # GitHub Issues
         btn_gh = QPushButton("🐞 Report Bug / 💡 Feature Request (GitHub)")
         btn_gh.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_gh.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 12px; border: 1px solid {GLASS_BORDER}; text-align: left; font-weight: bold;")
         btn_gh.clicked.connect(self._open_github)
-        layout.addWidget(btn_gh)
+        self.add_widget(btn_gh)
 
         # Email
         btn_email = QPushButton("📧 Send Email")
         btn_email.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_email.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 12px; border: 1px solid {GLASS_BORDER}; text-align: left; font-weight: bold;")
         btn_email.clicked.connect(self._open_email)
-        layout.addWidget(btn_email)
+        self.add_widget(btn_email)
 
-        layout.addStretch()
+        self.add_stretch()
 
         btn_close = QPushButton("Close")
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 6px; padding: 8px;")
         btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close)
+        self.add_widget(btn_close)
 
-        self.setStyleSheet(f"background-color: {CARD_BG};")
+        self.setStyleSheet(f"{self.styleSheet()} QLabel {{ color: {TEXT_WHITE}; }}")
+        add_dialog_shadow(self)
 
     def _open_github(self):
         url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/issues"
@@ -581,25 +627,19 @@ class FeedbackDialog(QDialog):
         open_url_safe(url)
         self.accept()
 
-class QuickTipsDialog(QDialog):
+class QuickTipsDialog(ShadowedDialog):
     """
     Dialog showing shortcuts and features.
     """
     def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setWindowTitle("Quick Tips & Shortcuts")
-        self.setModal(True)
+        super().__init__(parent, "Quick Tips & Shortcuts")
         self.resize(500, 550)
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
-
         lbl_title = QLabel("💡 Tips & Tricks")
         lbl_title.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
-        layout.addWidget(lbl_title)
+        self.add_widget(lbl_title)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -645,15 +685,15 @@ class QuickTipsDialog(QDialog):
 
         c_layout.addStretch()
         scroll.setWidget(content)
-        layout.addWidget(scroll)
+        self.add_widget(scroll)
 
         btn_close = QPushButton("Got it")
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 10px;")
         btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close)
+        self.add_widget(btn_close)
 
-        self.setStyleSheet(f"background-color: {CARD_BG};")
+        self.setStyleSheet(f"{self.styleSheet()}")
 
 class BackupManagerDialog(QDialog):
     """
@@ -663,9 +703,11 @@ class BackupManagerDialog(QDialog):
         super().__init__(parent)
         self.paths = paths
         self.setWindowTitle("Backup Manager")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setModal(True)
         self.resize(400, 400)
         self._build_ui()
+        add_dialog_shadow(self)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -724,6 +766,7 @@ class BrainDumpDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("Brain Dump 🧠")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setModal(True)
         self.resize(500, 400)
         
@@ -789,6 +832,7 @@ class BrainDumpDialog(QDialog):
         layout.addWidget(buttons)
         
         self.setStyleSheet(f"background-color: {CARD_BG};")
+        add_dialog_shadow(self)
 
 class SomedayReviewDialog(QDialog):
     """
@@ -797,12 +841,14 @@ class SomedayReviewDialog(QDialog):
     def __init__(self, tasks: List[Dict[str, Any]], state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("Review Someday Tasks")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.tasks = tasks
         self.state = state
         self.save_callback = save_callback
         self.setModal(True)
         self.resize(400, 400)
         self._build_ui()
+        add_dialog_shadow(self)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -915,9 +961,11 @@ class WeeklyReviewDialog(QDialog):
         self.state = state
         self._save_callback = save_callback
         self.setWindowTitle("Weekly Review")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setModal(True)
         self.resize(400, 300)
         self._build_ui()
+        add_dialog_shadow(self)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -3139,13 +3187,12 @@ class HubWindow(QMainWindow):
         self._create_nav_group(nav_layout, "ORGANIZE", [self.btn_projects, self.btn_journal])
 
         self.btn_search = QPushButton("🔍 Search")
-        self.btn_tips = QPushButton("💡 Tips")
         self.btn_focus = QPushButton("🧘 Focus Mode")
-        self._create_nav_group(nav_layout, "TOOLS", [self.btn_search, self.btn_tips, self.btn_focus])
+        self._create_nav_group(nav_layout, "TOOLS", [self.btn_search, self.btn_focus])
 
         nav_layout.addStretch(1)
 
-        # Bottom Actions
+        # Bottom Actions - Separator between Focus Mode and Settings
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setFrameShadow(QFrame.Shadow.Sunken)
@@ -3153,16 +3200,29 @@ class HubWindow(QMainWindow):
         sep.setFixedHeight(1)
         nav_layout.addWidget(sep)
 
+        self.btn_tips = QPushButton("💡 Tips")
         self.btn_settings = QPushButton("⚙️ Settings")
         self.btn_feedback = QPushButton("💬 Feedback")
         self.btn_check_updates = QPushButton("🔄 Check updates")
         self.btn_quit = QPushButton("🚪 Exit Hub")
 
-        for btn in (self.btn_focus, self.btn_settings, self.btn_feedback, self.btn_check_updates, self.btn_quit):
+        # Add Settings, Feedback, Tips
+        for btn in (self.btn_settings, self.btn_feedback, self.btn_tips):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            # btn_focus is already added above, skip re-adding
-            if btn != self.btn_focus:
-                nav_layout.addWidget(btn)
+            nav_layout.addWidget(btn)
+
+        # Separator after Tips
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setFrameShadow(QFrame.Shadow.Sunken)
+        sep2.setStyleSheet(f"background-color: {GLASS_BORDER}; margin-top: 8px; margin-bottom: 8px;")
+        sep2.setFixedHeight(1)
+        nav_layout.addWidget(sep2)
+
+        # Add Check updates and Exit Hub
+        for btn in (self.btn_check_updates, self.btn_quit):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            nav_layout.addWidget(btn)
 
         root.addWidget(self.nav_frame)
 
@@ -3227,6 +3287,10 @@ class HubWindow(QMainWindow):
         self.btn_quit.clicked.connect(self.close)
         self.btn_check_updates.clicked.connect(lambda: self._check_updates_async(manual=True))
         self.btn_focus.clicked.connect(self._toggle_focus_mode)
+        
+        # Set Home as the default/initial page
+        self._switch_page(self.page_home)
+        self.btn_home.setChecked(True)
 
     # ────────────────────────────────────────────────────────────────────
     # Page builders
@@ -3949,17 +4013,27 @@ class HubWindow(QMainWindow):
             self._switch_page(target_page)
 
     def _switch_page(self, page: QWidget) -> None:
+        # Update sidebar active state (always, even if same page)
+        for btn in self.nav_map.values():
+            btn.setChecked(False)
+        if page in self.nav_map:
+            self.nav_map[page].setChecked(True)
+        
+        # Clear dialog button highlights when navigating to a page
+        self._set_button_highlight(self.btn_feedback, False)
+        self._set_button_highlight(self.btn_tips, False)
+        self._set_button_highlight(self.btn_settings, False)
+        
+        # Apply highlight to Settings if navigating to settings page
+        if page is self.page_settings:
+            self._set_button_highlight(self.btn_settings, True)
+
+        # Only animate and refresh if actually switching pages
         if self.stack.currentWidget() is page:
             return
 
         self.stack.setCurrentWidget(page)
         self._animate_page_in()
-
-        # Update sidebar active state
-        for btn in self.nav_map.values():
-            btn.setChecked(False)
-        if page in self.nav_map:
-            self.nav_map[page].setChecked(True)
 
         if page is self.page_home:
             self._refresh_home()
@@ -3997,13 +4071,32 @@ class HubWindow(QMainWindow):
             # We just hid it
             self.statusBar().showMessage("Focus Mode Active. Press Ctrl+B to restore sidebar.", 3000)
 
+    def _set_button_highlight(self, btn: QPushButton, highlighted: bool) -> None:
+        """Apply or remove highlight styling to a button."""
+        if highlighted:
+            btn.setStyleSheet(f"""
+                background-color: {HOVER_BG};
+                color: {TEXT_WHITE};
+                border-radius: 6px;
+                font-weight: 600;
+                padding-left: 16px;
+                border: none;
+                text-align: left;
+            """)
+        else:
+            btn.setStyleSheet("")
+
     def _open_feedback_dialog(self):
+        self._set_button_highlight(self.btn_feedback, True)
         dlg = FeedbackDialog(self)
         dlg.exec()
+        self._set_button_highlight(self.btn_feedback, False)
 
     def _open_tips_dialog(self):
+        self._set_button_highlight(self.btn_tips, True)
         dlg = QuickTipsDialog(self)
         dlg.exec()
+        self._set_button_highlight(self.btn_tips, False)
 
     def _build_zen_page(self):
         self.page_zen = QWidget()
