@@ -101,8 +101,9 @@ class AIEngine:
                 if model_path.exists():
                     try:
                         self.model.load_state_dict(torch.load(model_path))
-                    except Exception:
-                        print("Failed to load bootstrapped model. Starting with random weights.")
+                    except Exception as e2:
+                        print(f"Failed to load bootstrapped model: {e2}")
+                        print("Starting with random weights. Please run 'train_brain_model.py' to update the base model.")
         self.model.eval()
 
     def predict_category(self, text: str, context: Dict) -> Optional[str]:

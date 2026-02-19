@@ -30,8 +30,10 @@ class VoiceListener:
     Handles audio recording and offline transcription using Faster-Whisper.
     """
     def __init__(self, model_size: str = "tiny", device: str = "cpu", compute_type: str = "int8"):
+        self.load_error = None
         if not WhisperModel:
             print("Warning: 'faster_whisper' not installed. Voice features will be disabled.")
+            self.load_error = "faster_whisper not installed"
             self.model = None
             return
         
@@ -40,6 +42,7 @@ class VoiceListener:
             self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
         except Exception as e:
             print(f"Failed to load Whisper model: {e}")
+            self.load_error = str(e)
             self.model = None
 
     def record_audio(self, output_filename: str = "temp_voice.wav", duration: int = 5, 

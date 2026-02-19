@@ -1671,6 +1671,16 @@ class VoiceWorker(QThread):
         # 2. Transcribe
         text = self.listener.transcribe(audio_path)
         
+        # Check for transcription errors returned as text
+        if text.startswith("Error:") or text.startswith("Transcription error:"):
+            self.error.emit(text)
+            try:
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+            except:
+                pass
+            return
+        
         # 3. Parse
         actions = self.parser.parse(text)
         self.finished.emit(actions)
@@ -3219,7 +3229,7 @@ class HubWindow(QMainWindow):
             self._toggle_focus_mode()
             
         # Initialize Voice AI in background
-        if VOICE_AVAILABLE:
+        if VOICE_AVAILABLE and self.state.get("settings", {}).get("voiceEnabled", True):
             threading.Thread(target=self._init_voice_ai, daemon=True).start()
 
     def resizeEvent(self, event):
@@ -4204,6 +4214,18 @@ class HubWindow(QMainWindow):
         self.setting_start_windows.toggled.connect(self._on_settings_changed)
         l_card.addWidget(self.setting_start_windows)
 
+        # --- Voice Settings ---
+        if VOICE_AVAILABLE:
+            l_card.addSpacing(10)
+            lbl_voice = QLabel("Voice & AI")
+            lbl_voice.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
+            l_card.addWidget(lbl_voice)
+            
+            self.setting_voice_enabled = QCheckBox("Enable Voice Input Features")
+            self.setting_voice_enabled.setToolTip("Uncheck to disable the microphone button and unload AI models to save memory.")
+            self.setting_voice_enabled.toggled.connect(self._on_settings_changed)
+            l_card.addWidget(self.setting_voice_enabled)
+
         # --- Maintenance ---
         l_card.addSpacing(10)
         lbl_maint = QLabel("Maintenance")
@@ -4241,6 +4263,22 @@ class HubWindow(QMainWindow):
 
     def _on_settings_changed(self):
         settings = self.state.setdefault("settings", {})
+        
+        # Voice Toggle Logic
+        if VOICE_AVAILABLE and hasattr(self, "setting_voice_enabled"):
+            was_enabled = settings.get("voiceEnabled", True)
+            is_enabled = self.setting_voice_enabled.isChecked()
+            settings["voiceEnabled"] = is_enabled
+            
+            if is_enabled and not was_enabled:
+                if not self.voice_listener:
+                    self.show_toast("Loading Voice AI...")
+                    threading.Thread(target=self._init_voice_ai, daemon=True).start()
+            elif not is_enabled and was_enabled:
+                self.voice_listener = None
+                self.command_parser = None
+                self.show_toast("Voice AI unloaded.")
+        
         settings["widgetEnabled"] = self.setting_widget_enabled.isChecked()
         settings["widgetTaskCount"] = int(self.setting_widget_task_count.currentText())
         settings["startWithHubMaximized"] = self.setting_hub_maximized.isChecked()
@@ -4259,6 +4297,8 @@ class HubWindow(QMainWindow):
         self.setting_start_focus.setChecked(settings.get("startInFocusMode", False))
         self.setting_close_to_tray.setChecked(settings.get("closeToTray", True))
         self.setting_start_windows.setChecked(settings.get("startWithWindows", False))
+        if VOICE_AVAILABLE and hasattr(self, "setting_voice_enabled"):
+            self.setting_voice_enabled.setChecked(settings.get("voiceEnabled", True))
 
     def _set_startup_registry(self, enabled: bool):
         """Add or remove the app from Windows startup registry."""
@@ -4611,6 +4651,16 @@ class HubWindow(QMainWindow):
             if winsound:
                 try: winsound.MessageBeep(winsound.MB_ICONASTERISK)
                 except: pass
+            
+            # Notify if minimized or in background
+            if self.isMinimized() or not self.isActiveWindow():
+                self.tray_icon.showMessage(
+                    "Zen Session Complete",
+                    "Great focus! Time for a break.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    4000
+                )
+                QApplication.alert(self)
             
             self.celebrate()
 
@@ -5118,8 +5168,28 @@ class HubWindow(QMainWindow):
             QMessageBox.warning(self, "Voice Not Available", "Voice dependencies (pyaudio, faster_whisper) are missing.")
             return
             
+        # Check if disabled in settings
+        if not self.state.get("settings", {}).get("voiceEnabled", True):
+            reply = QMessageBox.question(
+                self, 
+                "Voice Disabled", 
+                "Voice features are currently disabled in Settings.\nWould you like to enable them now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                # Enable and trigger load
+                self.state.setdefault("settings", {})["voiceEnabled"] = True
+                if hasattr(self, "setting_voice_enabled"):
+                    self.setting_voice_enabled.setChecked(True)
+                self._on_settings_changed() # This will trigger the load
+            return
+            
         if not self.voice_listener or not self.voice_listener.model:
             self.show_toast("Voice AI is still loading... please wait.")
+            return
+            
+        if self.voice_listener.load_error:
+            QMessageBox.warning(self, "Voice Error", f"Voice AI failed to load: {self.voice_listener.load_error}")
             return
 
         # Show listening dialog
