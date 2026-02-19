@@ -10,7 +10,7 @@ class TaskBrain(nn.Module):
     features (like time of day, day of week), which are combined with the text 
     embedding to make a more informed prediction.
     """
-    def __init__(self, vocab_size: int, num_classes: int, context_dims: List[int], hidden_size: int = 32, context_embedding_dim: int = 4):
+    def __init__(self, vocab_size: int, num_classes: int, context_dims: List[int], hidden_size: int = 64, context_embedding_dim: int = 8):
         super(TaskBrain, self).__init__()
         self.embedding = nn.EmbeddingBag(vocab_size, hidden_size, sparse=True)
         

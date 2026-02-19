@@ -32,18 +32,54 @@ def train_base():
     # 2. Create Base Training Data (Common tasks)
     # Categories must match core/model.py defaults
     training_data = [
-        {"text": "Buy milk", "category": "Personal", "context": {}},
+        # Personal
+        {"text": "Buy groceries", "category": "Personal", "context": {}},
         {"text": "Call mom", "category": "Personal", "context": {}},
+        {"text": "Pick up dry cleaning", "category": "Personal", "context": {}},
+        {"text": "Schedule dentist appointment", "category": "Personal", "context": {}},
+        {"text": "Walk the dog", "category": "Personal", "context": {}},
+        
+        # Health
         {"text": "Go to the gym", "category": "Health", "context": {}},
         {"text": "Drink water", "category": "Health", "context": {}},
+        {"text": "Meditate for 10 minutes", "category": "Health", "context": {}},
+        {"text": "Meal prep for the week", "category": "Health", "context": {}},
+        {"text": "Go for a run", "category": "Health", "context": {}},
+        
+        # Work
         {"text": "Submit report", "category": "Work", "context": {}},
         {"text": "Meeting with team", "category": "Work", "context": {}},
+        {"text": "Prepare presentation slides", "category": "Work", "context": {}},
+        {"text": "Email client about project update", "category": "Work", "context": {}},
+        {"text": "Review quarterly budget", "category": "Work", "context": {}},
+        
+        # Finance
         {"text": "Pay rent", "category": "Finance", "context": {}},
         {"text": "Check stocks", "category": "Finance", "context": {}},
+        {"text": "Review monthly credit card statement", "category": "Finance", "context": {}},
+        {"text": "Transfer money to savings account", "category": "Finance", "context": {}},
+        {"text": "File taxes", "category": "Finance", "context": {}},
+        
+        # Learning
         {"text": "Learn Python", "category": "Learning", "context": {}},
+        {"text": "Read a chapter of the book", "category": "Learning", "context": {}},
+        {"text": "Watch tutorial on machine learning", "category": "Learning", "context": {}},
+        {"text": "Practice Spanish on Duolingo", "category": "Learning", "context": {}},
+        {"text": "Take notes on the lecture", "category": "Learning", "context": {}},
+        
+        # Dev
         {"text": "Read documentation", "category": "Dev", "context": {}},
-        {"text": "Commit changes", "category": "Dev", "context": {}},
+        {"text": "Commit changes to git", "category": "Dev", "context": {}},
+        {"text": "Fix bug in the login page", "category": "Dev", "context": {}},
+        {"text": "Refactor the database module", "category": "Dev", "context": {}},
+        {"text": "Deploy new version to staging", "category": "Dev", "context": {}},
+        
+        # Creative
         {"text": "Sketch new icon", "category": "Creative", "context": {}},
+        {"text": "Write a blog post draft", "category": "Creative", "context": {}},
+        {"text": "Brainstorm ideas for the new design", "category": "Creative", "context": {}},
+        {"text": "Practice guitar for 20 minutes", "category": "Creative", "context": {}},
+        {"text": "Edit photos from the weekend", "category": "Creative", "context": {}},
     ]
     
     print(f"Training on {len(training_data)} base samples...")

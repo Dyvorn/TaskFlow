@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
 import re
 import hashlib
 
@@ -65,12 +65,69 @@ def find_recurring_task_patterns(state: dict) -> list:
 
     return suggestions
 
+def analyze_mood_patterns(state: dict) -> list:
+    """Analyzes recent mood entries for negative trends."""
+    suggestions = []
+    moods = state.get("moods", [])
+    if len(moods) < 3:
+        return [] # Not enough data
+
+    # Look at the last 3 logged days
+    recent_moods = sorted(moods, key=lambda m: m.get("date", ""), reverse=True)[:3]
+    
+    negative_moods = ["Low energy", "Stressed"]
+    
+    # Check for consecutive negative moods
+    if all(m.get("value") in negative_moods for m in recent_moods):
+        suggestion_id = _get_suggestion_id('SUGGEST_WELLBEING_CHECK', recent_moods[0]['date'])
+        suggestion = {
+            'id': suggestion_id,
+            'type': 'WELLBEING_CHECK',
+            'text': "I've noticed you've been feeling down or stressed lately. Remember to be kind to yourself. Maybe a short break or a lighter schedule could help?",
+            'confidence': 100 # This is a high-priority notification
+        }
+        suggestions.append(suggestion)
+        
+    return suggestions
+
+def find_stale_tasks(state: dict) -> list:
+    """Finds old, uncompleted tasks in the 'Someday' list."""
+    suggestions = []
+    someday_tasks = [t for t in state.get("tasks", []) if t.get("section") == "Someday" and not t.get("completed")]
+    
+    if len(someday_tasks) < 5:
+        return []
+
+    now = datetime.now()
+    stale_tasks = []
+    for task in someday_tasks:
+        try:
+            created_at = datetime.fromisoformat(task.get("createdAt", ""))
+            if (now - created_at).days > 30: # Task is older than 30 days
+                stale_tasks.append(task)
+        except (ValueError, TypeError):
+            continue
+            
+    if len(stale_tasks) >= 3:
+        suggestion_id = _get_suggestion_id('SUGGEST_REVIEW_STALE', str(now.date()))
+        suggestion = {
+            'id': suggestion_id,
+            'type': 'REVIEW_STALE_TASKS',
+            'text': f"You have {len(stale_tasks)} tasks in 'Someday' that are over a month old. Would you like to review them now to see if they are still relevant?",
+            'confidence': len(stale_tasks)
+        }
+        suggestions.append(suggestion)
+        
+    return suggestions
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
     all_suggestions = []
     
     all_suggestions.extend(find_recurring_task_patterns(state))
+    all_suggestions.extend(analyze_mood_patterns(state))
+    all_suggestions.extend(find_stale_tasks(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]

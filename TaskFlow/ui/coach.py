@@ -41,10 +41,19 @@ class SuggestionWidget(QFrame):
         layout = QVBoxLayout(self)
         
         # Build text based on type
-        if suggestion['type'] == 'SUGGEST_RECURRENCE':
+        s_type = suggestion['type']
+        if s_type == 'SUGGEST_RECURRENCE':
             text = f"I noticed you often complete tasks like <b>'{suggestion['task_text']}'</b>. Would you like to make this a recurring <b>{suggestion['interval']}</b> task?"
+            accept_text = "✅ Create"
+        elif s_type == 'WELLBEING_CHECK':
+            text = suggestion.get('text', "How are you feeling?")
+            accept_text = "❤️ Acknowledge"
+        elif s_type == 'REVIEW_STALE_TASKS':
+            text = suggestion.get('text', "You have some old tasks.")
+            accept_text = "👍 Review Now"
         else:
-            text = "I have a suggestion for you."
+            text = suggestion.get('text', "I have a suggestion for you.")
+            accept_text = "✅ Accept"
             
         lbl_text = QLabel(text)
         lbl_text.setWordWrap(True)
@@ -55,7 +64,7 @@ class SuggestionWidget(QFrame):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
-        btn_accept = QPushButton("✅ Create")
+        btn_accept = QPushButton(accept_text)
         btn_accept.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_accept.clicked.connect(lambda: self.action_taken.emit("accept", self.suggestion))
         
@@ -246,23 +255,30 @@ class CoachWidget(QWidget):
             self.refresh()
 
     def _handle_suggestion_action(self, action: str, suggestion: dict):
+        s_type = suggestion['type']
+        hub = self.window()
+        if not hub:
+            return
+            
         if action == "accept":
-            if suggestion['type'] == 'SUGGEST_RECURRENCE':
-                # Access main window state via parent() chain
-                hub = self.window()
-                if hub:
-                    from core.model import add_task
-                    add_task(
-                        hub.state,
-                        text=suggestion['task_text'],
-                        section="Today",
-                        recurrence={'type': suggestion['interval']}
-                    )
-                    hub.schedule_save()
-                    self.message_requested.emit(f"Recurring task '{suggestion['task_text']}' created!")
+            if s_type == 'SUGGEST_RECURRENCE':
+                from core.model import add_task
+                add_task(
+                    hub.state,
+                    text=suggestion['task_text'],
+                    section="Today",
+                    recurrence={'type': suggestion['interval']}
+                )
+                hub.schedule_save()
+                self.message_requested.emit(f"Recurring task '{suggestion['task_text']}' created!")
+            elif s_type == 'WELLBEING_CHECK':
+                hub.open_page("journal")
+                self.message_requested.emit("Taking time for yourself is a great idea.")
+            elif s_type == 'REVIEW_STALE_TASKS':
+                hub.open_page("someday")
+                self.message_requested.emit("Let's clear out some old ideas.")
         
         # Dismiss the suggestion in both cases
         self.ai_engine.dismiss_suggestion(suggestion['id'])
-        if self.window():
-            self.window().schedule_save()
+        hub.schedule_save()
         self.refresh()

@@ -15,6 +15,8 @@ import re
 import math
 import ctypes
 import time
+import wave
+import struct
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Callable
 
@@ -31,6 +33,7 @@ from PyQt6.QtCore import (
     pyqtSignal, 
     QUrl,
     QMimeData,
+    QThread,
 )
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtGui import (
@@ -107,6 +110,11 @@ try:
 except ImportError:
     ctypes = None
 
+try:
+    import pyaudio
+except ImportError:
+    pyaudio = None
+
 
 # Shared model & theme (data model, colors, constants, helpers)
 from core.model import (
@@ -175,6 +183,13 @@ from core.model import (
 # Import new analytics engine
 import core.analytics as taskflowanalytics
 from .coach import CoachWidget
+
+# --- Voice Input Imports ---
+try:
+    from processor import VoiceListener, CommandParser
+    VOICE_AVAILABLE = True
+except ImportError:
+    VOICE_AVAILABLE = False
 
 # ============================================================================
 # SECTION 2: APP CONFIGURATION & MODES
@@ -856,6 +871,80 @@ class BrainDumpDialog(QDialog):
         self.setStyleSheet(f"background-color: {CARD_BG};")
         add_dialog_shadow(self)
 
+class WaveformWidget(QWidget):
+    """
+    Visualizes audio amplitude as a dynamic bar chart.
+    """
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setFixedHeight(40)
+        self.levels = [0.0] * 30  # Keep last 30 frames
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def update_level(self, level: float):
+        self.levels.pop(0)
+        self.levels.append(level)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        w = self.width()
+        h = self.height()
+        bar_w = w / len(self.levels)
+        center_y = h / 2
+        
+        for i, level in enumerate(self.levels):
+            # Scale level for visibility (non-linear)
+            scaled = min(1.0, level ** 0.5)
+            bar_h = max(2, h * scaled * 0.8)
+            
+            x = i * bar_w
+            y = center_y - bar_h / 2
+            
+            painter.setBrush(QColor(GOLD))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setOpacity(0.4 + (scaled * 0.6))
+            painter.drawRoundedRect(QRectF(x + 1, y, bar_w - 2, bar_h), 2, 2)
+
+class VoiceDialog(QDialog):
+    """
+    Visual feedback during voice recording.
+    """
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setModal(True)
+        self.resize(300, 220)
+        
+        layout = QVBoxLayout(self)
+        
+        frame = QFrame()
+        frame.setStyleSheet(f"background-color: {CARD_BG}; border: 1px solid {GOLD}; border-radius: 16px;")
+        f_layout = QVBoxLayout(frame)
+        f_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        f_layout.setSpacing(15)
+        
+        lbl_icon = QLabel("🎙️")
+        lbl_icon.setStyleSheet("font-size: 48px;")
+        f_layout.addWidget(lbl_icon)
+        
+        lbl_text = QLabel("Listening...")
+        lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 18px; font-weight: bold;")
+        f_layout.addWidget(lbl_text)
+        
+        self.waveform = WaveformWidget()
+        f_layout.addWidget(self.waveform)
+        
+        layout.addWidget(frame)
+        add_dialog_shadow(self)
+
+    def update_level(self, level: float):
+        if hasattr(self, "waveform"):
+            self.waveform.update_level(level)
+
 class SomedayReviewDialog(QDialog):
     """
     Dialog to review a few random tasks from Someday.
@@ -1515,6 +1604,83 @@ class ProjectListRow(QWidget):
             bar.setValue(done)
             bar.setStyleSheet(f"QProgressBar {{ border: none; background-color: {HOVER_BG}; border-radius: 2px; }} QProgressBar::chunk {{ background-color: {project.get('color', GOLD)}; border-radius: 2px; }}")
             layout.addWidget(bar)
+
+class VoiceWorker(QThread):
+    """
+    Background thread to handle recording and transcription to avoid freezing UI.
+    """
+    finished = pyqtSignal(list) # list of action dicts
+    error = pyqtSignal(str)
+    amplitude = pyqtSignal(float)
+
+    def __init__(self, listener, parser, duration=5):
+        super().__init__()
+        self.listener = listener
+        self.parser = parser
+        self.duration = duration
+
+    def run(self):
+        if not self.listener or not self.listener.model:
+            self.error.emit("Voice AI model is not loaded yet.")
+            return
+
+        # 1. Record
+        audio_path = "temp_voice.wav"
+        
+        # We implement the recording loop here to emit amplitude signals
+        if pyaudio:
+            try:
+                chunk = 1024
+                fmt = pyaudio.paInt16
+                chans = 1
+                rate = 16000
+                
+                p = pyaudio.PyAudio()
+                stream = p.open(format=fmt, channels=chans, rate=rate, input=True, frames_per_buffer=chunk)
+                
+                frames = []
+                for _ in range(0, int(rate / chunk * self.duration)):
+                    data = stream.read(chunk)
+                    frames.append(data)
+                    
+                    # Calculate RMS amplitude
+                    shorts = struct.unpack("%dh" % (len(data) // 2), data)
+                    sum_squares = sum(s**2 for s in shorts)
+                    rms = math.sqrt(sum_squares / len(shorts))
+                    self.amplitude.emit(min(1.0, rms / 32768.0))
+                
+                stream.stop_stream()
+                stream.close()
+                p.terminate()
+                
+                with wave.open(audio_path, 'wb') as wf:
+                    wf.setnchannels(chans)
+                    wf.setsampwidth(p.get_sample_size(fmt))
+                    wf.setframerate(rate)
+                    wf.writeframes(b''.join(frames))
+            except Exception as e:
+                self.error.emit(f"Recording error: {e}")
+                return
+        else:
+            # Fallback if pyaudio missing (though VoiceListener checks it too)
+            audio_path = self.listener.record_audio(duration=self.duration)
+            if not audio_path:
+                self.error.emit("Recording failed. Check microphone.")
+                return
+
+        # 2. Transcribe
+        text = self.listener.transcribe(audio_path)
+        
+        # 3. Parse
+        actions = self.parser.parse(text)
+        self.finished.emit(actions)
+        
+        # Cleanup
+        try:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+        except:
+            pass
 
 # ============================================================================
 # SECTION 5: TASK LIST WIDGETS (TODAY / WEEK / SOMEDAY / PROJECTS)
@@ -2987,6 +3153,11 @@ class HubWindow(QMainWindow):
         self.paths = paths
         self.ai_engine = ai_engine
 
+        # Voice AI components
+        self.voice_listener = None
+        self.command_parser = None
+        self._voice_worker = None
+
         self._zen_task_id = None
         # Prevent app from exiting when window is closed (if tray is enabled)
         QApplication.setQuitOnLastWindowClosed(False)
@@ -3046,6 +3217,10 @@ class HubWindow(QMainWindow):
         settings = self.state.get("settings", {})
         if settings.get("startInFocusMode", False):
             self._toggle_focus_mode()
+            
+        # Initialize Voice AI in background
+        if VOICE_AVAILABLE:
+            threading.Thread(target=self._init_voice_ai, daemon=True).start()
 
     def resizeEvent(self, event):
         if hasattr(self, "confetti"):
@@ -3054,6 +3229,14 @@ class HubWindow(QMainWindow):
             # Toast resizes itself on show, but we ensure it stays centered if needed
             pass
         super().resizeEvent(event)
+
+    def _init_voice_ai(self):
+        """Loads the Whisper model in the background."""
+        try:
+            self.voice_listener = VoiceListener(model_size="tiny")
+            self.command_parser = CommandParser()
+        except Exception as e:
+            print(f"Failed to initialize Voice AI: {e}")
 
     def _setup_shortcuts(self) -> None:
         """Initialize keyboard shortcuts (called once during startup)."""
@@ -3566,6 +3749,14 @@ class HubWindow(QMainWindow):
         btn_brain_dump.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 8px; border: 1px solid {GLASS_BORDER};")
         btn_brain_dump.clicked.connect(self._on_brain_dump)
         cap_row.addWidget(btn_brain_dump)
+        
+        # Voice Input Button
+        self.btn_voice = QPushButton("🎙️")
+        self.btn_voice.setFixedSize(40, 32)
+        self.btn_voice.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_voice.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; border: 1px solid {GLASS_BORDER}; font-size: 16px;")
+        self.btn_voice.clicked.connect(self._on_voice_input)
+        cap_row.addWidget(self.btn_voice)
         
         l_capture.addLayout(cap_row)
         
@@ -4920,6 +5111,75 @@ class HubWindow(QMainWindow):
                     self._switch_page(self.page_today)
                 else:
                     self._switch_page(self.page_someday)
+
+    def _on_voice_input(self):
+        """Handles the voice button click."""
+        if not VOICE_AVAILABLE:
+            QMessageBox.warning(self, "Voice Not Available", "Voice dependencies (pyaudio, faster_whisper) are missing.")
+            return
+            
+        if not self.voice_listener or not self.voice_listener.model:
+            self.show_toast("Voice AI is still loading... please wait.")
+            return
+
+        # Show listening dialog
+        self.voice_dialog = VoiceDialog(self)
+        self.voice_dialog.show()
+        
+        # Start worker (5 seconds recording for now)
+        self._voice_worker = VoiceWorker(self.voice_listener, self.command_parser, duration=5)
+        self._voice_worker.finished.connect(self._on_voice_finished)
+        self._voice_worker.error.connect(self._on_voice_error)
+        self._voice_worker.amplitude.connect(self.voice_dialog.update_level)
+        self._voice_worker.start()
+
+    def _on_voice_error(self, msg):
+        if hasattr(self, "voice_dialog"):
+            self.voice_dialog.close()
+        QMessageBox.warning(self, "Voice Error", msg)
+
+    def _on_voice_finished(self, actions):
+        if hasattr(self, "voice_dialog"):
+            self.voice_dialog.close()
+            
+        if not actions:
+            self.show_toast("Could not understand command.")
+            return
+            
+        count = 0
+        for action in actions:
+            self._process_voice_action(action)
+            count += 1
+            
+        self.show_toast(f"Processed {count} voice commands.")
+        self.schedule_save()
+        self._refresh_home()
+        self.confetti.burst()
+
+    def _process_voice_action(self, action):
+        """Executes a single parsed voice action."""
+        intent = action.get("intent")
+        
+        if intent == "create_task":
+            # Map parsed date/time to schedule dict
+            schedule = None
+            if action.get("due_date"):
+                schedule = {"date": action["due_date"], "time": action.get("due_time")}
+            
+            section = "Today" if not schedule else "Scheduled"
+            
+            add_task(self.state, text=action["text"], section=section, schedule=schedule)
+            
+        elif intent == "create_project":
+            add_project(self.state, action.get("name", "New Project"))
+            
+        elif intent == "set_goal":
+            # Set today's primary goal
+            today = today_str()
+            self.state["stats"].setdefault("dailyLogs", {}).setdefault(today, {})["primaryGoal"] = action["text"]
+            
+        elif intent == "log_mood":
+            set_today_mood(self.state, action["value"], action.get("note", ""))
 
     # ────────────────────────────────────────────────────────────────────
     # Updates, saving & close
