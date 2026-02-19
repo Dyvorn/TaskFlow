@@ -7,6 +7,10 @@ from __future__ import annotations
 import sys
 import os
 import json
+
+# Ensure project root is in sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import html
 import random
 import threading
@@ -26,6 +30,8 @@ from PyQt6.QtCore import (
     QSize,
     QPropertyAnimation,
     QEasingCurve,
+    QVariantAnimation,
+    QRect,
     QRectF,
     QPoint,
     QParallelAnimationGroup,
@@ -40,6 +46,7 @@ from PyQt6.QtGui import (
     QColor,
     QFont,
     QPainter,
+    QPainterPath,
     QPen,
     QBrush,
     QShortcut,
@@ -182,7 +189,10 @@ from core.model import (
 
 # Import new analytics engine
 import core.analytics as taskflowanalytics
-from .coach import CoachWidget
+try:
+    from .coach import CoachWidget
+except ImportError:
+    from ui.coach import CoachWidget
 
 # --- Voice Input Imports ---
 try:
@@ -231,6 +241,54 @@ FOCUS_SESSION_SIZE = 3               # Tasks per "focus session" before suggesti
 # ============================================================================
 
 
+class LiquidProgressBar(QWidget):
+    """
+    Simple progress bar that fills from left to right.
+    """
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.progress = 0  # 0-100
+        self.setMinimumHeight(12)
+        self.setMaximumHeight(12)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        
+    def set_progress(self, value):
+        """Set progress value (0-100)"""
+        self.progress = min(100, max(0, value))
+        self.update()
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        
+        rect = self.rect()
+        width = rect.width()
+        height = rect.height()
+        radius = height / 2
+        
+        # Draw background with rounded corners
+        bg_color = QColor(60, 100, 160, 180)  # Lighter blue with transparency
+        painter.setBrush(bg_color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(rect, radius, radius)
+        
+        # Draw progress fill from left to right
+        if self.progress > 0:
+            fill_width = (width * self.progress) / 100
+            
+            # Use clipping to ensure the fill stays inside the rounded background
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(rect), radius, radius)
+            painter.setClipPath(path)
+
+            gold_color = QColor(GOLD)
+            gold_color.setAlpha(220)
+            painter.fillRect(QRectF(0, 0, fill_width, height), gold_color)
+            
+        painter.end()
+
+
 class SplashWindow(QMainWindow):
     """
     Soft startup screen with a watery gradient and a rotating quote.
@@ -242,6 +300,12 @@ class SplashWindow(QMainWindow):
         super().__init__(parent)
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self._opacity_effect)
+        
+        # Track timing for minimum load duration
+        self._load_start_time = time.time()
+        self._min_duration_ms = 2000  # Minimum 2 seconds
+        self._progress_bar = None
+        self.card = None
 
         self._build_ui()
         self._center_on_screen()
@@ -253,7 +317,7 @@ class SplashWindow(QMainWindow):
     def _build_ui(self) -> None:
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.resize(600, 360)
+        self.resize(600, 400)
 
         central = QWidget(self)
         self.setCentralWidget(central)
@@ -262,11 +326,17 @@ class SplashWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Background card with gradient + glass
-        card = QFrame()
-        card.setObjectName("SplashCard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(32, 32, 32, 32)
+        self.card = QFrame()
+        self.card.setObjectName("SplashCard")
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(32, 32, 32, 24)
         card_layout.setSpacing(16)
+
+        # Content container for fading out text separately
+        self.content_container = QWidget()
+        self.content_layout = QVBoxLayout(self.content_container)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(16)
 
         title = QLabel(APP_NAME)
         f = title.font()
@@ -274,23 +344,49 @@ class SplashWindow(QMainWindow):
         f.setBold(True)
         title.setFont(f)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet(f"color: {GOLD};")
 
         quote = QLabel(self._pick_quote())
         quote.setWordWrap(True)
         quote.setAlignment(Qt.AlignmentFlag.AlignCenter)
         quote.setStyleSheet(f"color: {TEXT_GRAY}; font-style: italic;")
 
+        # Liquid progress bar with wave effect
+        self._progress_bar = LiquidProgressBar()
+
         subtitle = QLabel("A gentle space to plan and breathe.")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet(f"color: {TEXT_WHITE};")
 
-        card_layout.addWidget(title)
-        card_layout.addWidget(quote)
-        card_layout.addWidget(subtitle)
+        # Layout: title, quote, stretch, progress bar, subtitle
+        self.content_layout.addWidget(title)
+        self.content_layout.addWidget(quote)
+        self.content_layout.addStretch()
+        self.content_layout.addWidget(self._progress_bar)
+        self.content_layout.addWidget(subtitle)
 
-        layout.addWidget(card)
+        card_layout.addWidget(self.content_container)
+        layout.addWidget(self.card)
 
-        # Style
+        # Initial Style
+        self._update_style(0.0)
+
+    def _update_style(self, progress: float) -> None:
+        """Interpolates background color from Splash Gradient to Hub Dark Grey."""
+        # Start: rgba(20, 30, 60, 220) -> End: rgba(18, 18, 18, 255) (#121212)
+        def interp(a, b, p):
+            return int(a + (b - a) * p)
+
+        r = interp(20, 18, progress)
+        g = interp(30, 18, progress)
+        b = interp(60, 18, progress)
+        a = interp(220, 255, progress)
+        
+        # Second stop for gradient (fading to flat color)
+        r2 = interp(10, 18, progress)
+        g2 = interp(15, 18, progress)
+        b2 = interp(30, 18, progress)
+
         self.setStyleSheet(
             f"""
             QMainWindow {{
@@ -299,21 +395,14 @@ class SplashWindow(QMainWindow):
             QFrame#SplashCard {{
                 background: qlineargradient(
                     x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(20, 30, 60, 220),
-                    stop:1 rgba(10, 15, 30, 220)
+                    stop:0 rgba({r}, {g}, {b}, {a}),
+                    stop:1 rgba({r2}, {g2}, {b2}, {a})
                 );
                 border-radius: 24px;
                 border: 1px solid {GLASS_BORDER};
             }}
             """
         )
-
-        # Light shadow for depth
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(32)
-        shadow.setColor(QColor(0, 0, 0, 160))
-        shadow.setOffset(0, 12)
-        card.setGraphicsEffect(shadow)
 
     def _center_on_screen(self) -> None:
         screen = QApplication.primaryScreen()
@@ -331,20 +420,19 @@ class SplashWindow(QMainWindow):
             return "Small steps still count."
         return random.choice(MOTIVATIONAL_QUOTES)
 
+    def set_progress(self, value: int) -> None:
+        """Update the progress bar (0-100)."""
+        if self._progress_bar:
+            self._progress_bar.set_progress(min(100, max(0, value)))
+
     def _fade_in(self) -> None:
         anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
         anim.setDuration(SPLASH_FADE_MS)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.finished.connect(self._hold_then_fade_out)
+        anim.finished.connect(lambda: None)  # No automatic fade out
         anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-
-    def _hold_then_fade_out(self) -> None:
-        QTimer.singleShot(
-            max(0, SPLASH_DURATION_MS - 2 * SPLASH_FADE_MS),
-            self._fade_out,
-        )
 
     def _fade_out(self) -> None:
         anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
@@ -358,6 +446,54 @@ class SplashWindow(QMainWindow):
     def _on_finished(self) -> None:
         self.close()
 
+    def finish_loading(self) -> None:
+        """Call this when loading is complete. Waits for minimum duration then fades out."""
+        elapsed_ms = (time.time() - self._load_start_time) * 1000
+        remaining_ms = max(0, self._min_duration_ms - elapsed_ms)
+        
+        self._progress_bar.set_progress(100)
+        
+        # Schedule fade out after minimum duration
+        QTimer.singleShot(int(remaining_ms), self._fade_out)
+
+    def transition_to_main(self, target_geometry: QRect, on_finished: Callable[[], None]) -> None:
+        """
+        Smoothly morphs the splash screen into the main window geometry/color.
+        """
+        # 1. Fade out content (text/progress)
+        self.content_opacity = QGraphicsOpacityEffect(self.content_container)
+        self.content_opacity.setOpacity(1.0)
+        self.content_container.setGraphicsEffect(self.content_opacity)
+        
+        self.anim_content = QPropertyAnimation(self.content_opacity, b"opacity")
+        self.anim_content.setDuration(300)
+        self.anim_content.setStartValue(1.0)
+        self.anim_content.setEndValue(0.0)
+        self.anim_content.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        # 2. Animate Geometry (Resize to Hub size)
+        self.anim_geo = QPropertyAnimation(self, b"geometry")
+        self.anim_geo.setDuration(500)
+        self.anim_geo.setStartValue(self.geometry())
+        self.anim_geo.setEndValue(target_geometry)
+        self.anim_geo.setEasingCurve(QEasingCurve.Type.InOutQuart)
+        
+        # 3. Animate Color (Gradient -> Dark Grey)
+        self.anim_color = QVariantAnimation()
+        self.anim_color.setDuration(500)
+        self.anim_color.setStartValue(0.0)
+        self.anim_color.setEndValue(1.0)
+        self.anim_color.setEasingCurve(QEasingCurve.Type.InOutQuart)
+        self.anim_color.valueChanged.connect(self._update_style)
+        
+        # Group animations
+        self.trans_group = QParallelAnimationGroup(self)
+        self.trans_group.addAnimation(self.anim_content)
+        self.trans_group.addAnimation(self.anim_geo)
+        self.trans_group.addAnimation(self.anim_color)
+        
+        self.trans_group.finished.connect(on_finished)
+        self.trans_group.start()
 
 # ──────────────────────────────────────────────────────────────────────────
 # Update helpers
@@ -3210,10 +3346,6 @@ class HubWindow(QMainWindow):
             shadow.setOffset(0, 4)
             widget.setGraphicsEffect(shadow)
 
-        # Background update check + daily planning
-        self._check_updates_async()
-        QTimer.singleShot(500, self._run_start_of_day_flow)
-        
         # Setup System Tray
         self._setup_tray()
 
@@ -3239,6 +3371,11 @@ class HubWindow(QMainWindow):
             # Toast resizes itself on show, but we ensure it stays centered if needed
             pass
         super().resizeEvent(event)
+
+    def start_post_load_tasks(self) -> None:
+        """Starts background checks and dialogs after the window is fully visible."""
+        self._check_updates_async()
+        QTimer.singleShot(500, self._run_start_of_day_flow)
 
     def _init_voice_ai(self):
         """Loads the Whisper model in the background."""
@@ -5472,6 +5609,7 @@ class HubWindow(QMainWindow):
 def debug_main() -> None:
     """For running the Hub in isolation for development."""
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     paths = get_data_paths()
     state = load_state(paths)
     rollover_tasks(state)
@@ -5479,15 +5617,40 @@ def debug_main() -> None:
 
     splash = SplashWindow()
     splash.show()
+    app.processEvents()
+    
+    # Simulate loading time
+    start_time = time.time()
+    min_duration_ms = 3000
+    
+    progress_timer = QTimer()
 
     def show_hub():
-        window = HubWindow(state, paths)
+        # Keep reference to avoid GC
+        show_hub.window = HubWindow(state, paths)
         if state.get("settings", {}).get("startWithHubMaximized", True):
-            window.showMaximized()
+            show_hub.window.showMaximized()
         else:
-            window.show()
+            show_hub.window.show()
+            
+        show_hub.window.start_post_load_tasks()
 
-    QTimer.singleShot(SPLASH_DURATION_MS, show_hub)
+    def update_progress():
+        elapsed_ms = (time.time() - start_time) * 1000
+        
+        if elapsed_ms >= min_duration_ms:
+            splash.set_progress(100)
+            splash.finish_loading()
+            progress_timer.stop()
+            QTimer.singleShot(400, show_hub)
+        else:
+            # Keep filling progress bar linearly up to 90% over minimum duration
+            progress = min(90, (elapsed_ms / min_duration_ms) * 100)
+            splash.set_progress(int(progress))
+            
+    progress_timer.timeout.connect(update_progress)
+    progress_timer.start(50)
+
     sys.exit(app.exec())
 
 

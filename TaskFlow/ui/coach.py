@@ -167,6 +167,19 @@ class CoachWidget(QWidget):
         layout.addWidget(self.recommendations_list, 1)
 
     def refresh(self):
+        if not self.ai_engine:
+            self.lbl_status.setText("Brain Status: Offline (Debug)")
+            self.lbl_vocab.setText("Vocabulary: -")
+            self.lbl_samples.setText("Training Samples: -")
+            self.review_list.clear()
+            self.review_list.addItem("AI Engine not connected.")
+            self.recommendations_list.clear()
+            self.recommendations_list.addItem("No recommendations.")
+            self.btn_train.setEnabled(False)
+            self.btn_confirm.setEnabled(False)
+            self.btn_correct.setEnabled(False)
+            return
+
         # Update Stats
         stats = self.ai_engine.get_stats()
         self.lbl_status.setText(f"Brain Status: {stats['status']}")
@@ -207,6 +220,8 @@ class CoachWidget(QWidget):
                 self.recommendations_list.setItemWidget(item, widget)
 
     def _run_training(self):
+        if not self.ai_engine:
+            return
         self.btn_train.setText("Training... (Please wait)")
         self.btn_train.setEnabled(False)
         self.train_progress.setValue(0)
@@ -224,6 +239,8 @@ class CoachWidget(QWidget):
         self.message_requested.emit("Training Complete! The AI has learned.")
 
     def _confirm_prediction(self):
+        if not self.ai_engine:
+            return
         item = self.review_list.currentItem()
         if not item: return
         data = item.data(Qt.ItemDataRole.UserRole)
@@ -233,6 +250,8 @@ class CoachWidget(QWidget):
         self.refresh()
         
     def _correct_prediction(self):
+        if not self.ai_engine:
+            return
         item = self.review_list.currentItem()
         if not item: return
         data = item.data(Qt.ItemDataRole.UserRole)

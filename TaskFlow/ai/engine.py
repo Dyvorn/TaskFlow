@@ -103,6 +103,10 @@ class AIEngine:
                         self.model.load_state_dict(torch.load(model_path))
                     except Exception as e2:
                         print(f"Failed to load bootstrapped model: {e2}")
+                        # If bootstrapped model is also bad, delete it to prevent loop
+                        try:
+                            model_path.unlink()
+                        except: pass
                         print("Starting with random weights. Please run 'train_brain_model.py' to update the base model.")
         self.model.eval()
 
