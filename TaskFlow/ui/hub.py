@@ -185,10 +185,16 @@ from core.model import (
     restore_backup,
     TaskRowWidget,
     ConfettiOverlay,
+    parse_task_input,
+    get_completion_rate,
+    get_most_productive_hour,
+    get_category_breakdown,
+    get_productivity_score,
+    get_hourly_activity,
+    get_activity_heatmap_data,
+    AnimationManager,
 )
 
-# Import new analytics engine
-import core.analytics as taskflowanalytics
 try:
     from .coach import CoachWidget
 except ImportError:
@@ -260,10 +266,7 @@ class LiquidProgressBar(QWidget):
     
     def paintEvent(self, event):
         painter = QPainter(self)
-        if not painter.isActive():
-            return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        
         rect = self.rect()
         width = rect.width()
         height = rect.height()
@@ -287,8 +290,6 @@ class LiquidProgressBar(QWidget):
             gold_color = QColor(GOLD)
             gold_color.setAlpha(220)
             painter.fillRect(QRectF(0, 0, fill_width, height), gold_color)
-            
-        painter.end()
 
 
 class SplashWindow(QMainWindow):
@@ -535,19 +536,6 @@ def open_url_safe(url: str) -> None:
         webbrowser.open(url)
     except Exception:
         pass
-
-def animate_widget_entry(widget: QWidget) -> None:
-    """Fade in animation for a widget."""
-    effect = QGraphicsOpacityEffect(widget)
-    widget.setGraphicsEffect(effect)
-    
-    anim = QPropertyAnimation(effect, b"opacity", widget)
-    anim.setDuration(ANIM_DURATION_MEDIUM)
-    anim.setStartValue(0.0)
-    anim.setEndValue(1.0)
-    anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-    anim.finished.connect(lambda: widget.setGraphicsEffect(None))
-    anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
 def add_dialog_shadow(dialog: QDialog) -> None:
     """Add drop shadow effect to frameless dialog to make it appear floating."""
@@ -1054,7 +1042,6 @@ class WaveformWidget(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setOpacity(0.4 + (scaled * 0.6))
             painter.drawRoundedRect(QRectF(x + 1, y, bar_w - 2, bar_h), 2, 2)
-        painter.end()
 
 class VoiceDialog(QDialog):
     """
@@ -1352,7 +1339,6 @@ class MoodGraphWidget(QWidget):
         # Baseline
         painter.setBrush(QBrush(QColor(HOVER_BG)))
         painter.drawRect(QRectF(2, rect.height() - 2, rect.width() - 4, 2))
-        painter.end()
 
 
 class HabitGraphWidget(QWidget):
@@ -1411,7 +1397,6 @@ class HabitGraphWidget(QWidget):
 
         painter.setBrush(QBrush(QColor(HOVER_BG)))
         painter.drawRect(QRectF(2, rect.height() - 2, rect.width() - 4, 2))
-        painter.end()
 
 class CategoryGraphWidget(QWidget):
     """
@@ -1428,7 +1413,7 @@ class CategoryGraphWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
         
-        data = taskflowanalytics.get_category_breakdown(self.state)
+        data = get_category_breakdown(self.state)
         if not data:
             painter.setPen(QColor(TEXT_GRAY))
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "No categorized data yet.")
@@ -1455,7 +1440,6 @@ class CategoryGraphWidget(QWidget):
             painter.drawRoundedRect(100, y, bar_width, bar_height, 4, 4)
             
             y += bar_height + spacing
-        painter.end()
 
 class ProductivityScoreWidget(QWidget):
     """
@@ -1468,7 +1452,7 @@ class ProductivityScoreWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         
     def paintEvent(self, event) -> None:
-        score = taskflowanalytics.get_productivity_score(self.state)
+        score = get_productivity_score(self.state)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -1499,7 +1483,6 @@ class ProductivityScoreWidget(QWidget):
         f.setBold(False)
         painter.setFont(f)
         painter.drawText(rect.adjusted(0, 40, 0, 0), Qt.AlignmentFlag.AlignCenter, "Daily Score")
-        painter.end()
 
 class HourlyChartWidget(QWidget):
     """
@@ -1516,7 +1499,7 @@ class HourlyChartWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
         
-        data = taskflowanalytics.get_hourly_activity(self.state)
+        data = get_hourly_activity(self.state)
         max_val = max(data.values()) if data else 1
         
         bar_width = rect.width() / 24
@@ -1537,7 +1520,6 @@ class HourlyChartWidget(QWidget):
             if h % 6 == 0:
                 painter.setPen(QColor(TEXT_GRAY))
                 painter.drawText(QRectF(h * bar_width, rect.height() - 12, bar_width * 2, 12), Qt.AlignmentFlag.AlignLeft, f"{h:02}")
-        painter.end()
 
 class HeatmapWidget(QWidget):
     """
@@ -1553,7 +1535,7 @@ class HeatmapWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        data = taskflowanalytics.get_activity_heatmap_data(self.state)
+        data = get_activity_heatmap_data(self.state)
         today = date.today()
         
         # Calculate start date (52 weeks ago, aligned to Sunday)
@@ -1583,7 +1565,6 @@ class HeatmapWidget(QWidget):
                 painter.setBrush(color)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(x, y, cell_size, cell_size, 2, 2)
-        painter.end()
 
 class ToastOverlay(QWidget):
     """
@@ -2160,7 +2141,7 @@ class TaskListWidget(QWidget):
 
                 # Cascade animation for visible items
                 if total < 20: # Only animate if list isn't huge to save perf
-                    self._animate_row_entry(row, index=len(self.tasks_list)-1)
+                    AnimationManager.fade_in(row, duration=300, delay=(len(self.tasks_list)-1) * 40)
 
         self.tasks_list.setUpdatesEnabled(True)
         
@@ -2173,21 +2154,6 @@ class TaskListWidget(QWidget):
                     break
                     
         self.tasks_list.verticalScrollBar().setValue(scroll_pos)
-
-    def _animate_row_entry(self, row: QWidget, index: int) -> None:
-        """Slide and fade in a row."""
-        effect = QGraphicsOpacityEffect(row)
-        row.setGraphicsEffect(effect)
-        effect.setOpacity(0.0)
-        
-        anim = QPropertyAnimation(effect, b"opacity", row)
-        anim.setDuration(300)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.Type.OutQuad)
-        
-        # Stagger based on index
-        QTimer.singleShot(index * 40, anim.start)
 
     def _on_reorder(self):
         """Update the order field in the state based on the new list order."""
@@ -2213,7 +2179,12 @@ class TaskListWidget(QWidget):
         # Use AI to infer category
         category = "Personal" # Default
         if self.ai_engine:
-            pred_cat = self.ai_engine.predict_category(text)
+            context = {
+                "time_of_day": current_time_of_day(),
+                "day_of_week": datetime.now().strftime("%A"),
+                "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+            }
+            pred_cat = self.ai_engine.predict_category(text, context)
             if pred_cat:
                 category = pred_cat
         
@@ -2256,7 +2227,7 @@ class TaskListWidget(QWidget):
                     self.tasks_list.scrollToItem(item)
                     row = self.tasks_list.itemWidget(item)
                     if row:
-                        animate_widget_entry(row)
+                        AnimationManager.fade_in(row)
                     break
         else:
             # Task moved elsewhere
@@ -2285,32 +2256,12 @@ class TaskListWidget(QWidget):
                 if item.data(Qt.ItemDataRole.UserRole) == task_id:
                     row = self.tasks_list.itemWidget(item)
                     if row:
-                        self._animate_and_finalize_toggle(row, task_id)
+                        AnimationManager.slide_and_fade_out(row, on_finished=lambda: self._finalize_toggle(task_id))
                     return
         else:
             toggle_task_completed(self.state, task_id)
             self._save_callback()
             self.refresh()
-
-    def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
-        effect = QGraphicsOpacityEffect(row)
-        row.setGraphicsEffect(effect)
-        group = QParallelAnimationGroup(self)
-        anim_fade = QPropertyAnimation(effect, b"opacity")
-        anim_fade.setDuration(ANIM_DURATION_MEDIUM)
-        anim_fade.setStartValue(1.0)
-        anim_fade.setEndValue(0.0)
-        anim_fade.setEasingCurve(QEasingCurve.Type.InQuad)
-        anim_size = QPropertyAnimation(row, b"maximumHeight")
-        anim_size.setDuration(ANIM_DURATION_MEDIUM)
-        anim_size.setStartValue(row.height())
-        anim_size.setEndValue(0)
-        anim_size.setEasingCurve(QEasingCurve.Type.InCubic)
-        group.addAnimation(anim_fade)
-        group.addAnimation(anim_size)
-        group.finished.connect(row.hide)
-        group.finished.connect(lambda: self._finalize_toggle(task_id))
-        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _finalize_toggle(self, task_id: str):
         toggle_task_completed(self.state, task_id)
@@ -2830,7 +2781,7 @@ class ProjectTaskListWidget(QWidget):
                 self.tasks_list.scrollToItem(item)
                 row = self.tasks_list.itemWidget(item)
                 if row:
-                    animate_widget_entry(row)
+                    AnimationManager.fade_in(row)
                 break
 
     def _on_toggle_task(self, task_id: str) -> None:
@@ -2850,33 +2801,12 @@ class ProjectTaskListWidget(QWidget):
                 if item.data(Qt.ItemDataRole.UserRole) == task_id:
                     row = self.tasks_list.itemWidget(item)
                     if row:
-                        self._animate_and_finalize_toggle(row, task_id)
+                        AnimationManager.slide_and_fade_out(row, on_finished=lambda: self._finalize_toggle(task_id))
                     return
         else:
             toggle_task_completed(self.state, task_id)
             self._save_callback()
             self.refresh()
-
-    def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
-        """Animate a row out, then finalize the data change and refresh."""
-        effect = QGraphicsOpacityEffect(row)
-        row.setGraphicsEffect(effect)
-        group = QParallelAnimationGroup(self)
-        anim_fade = QPropertyAnimation(effect, b"opacity")
-        anim_fade.setDuration(ANIM_DURATION_MEDIUM)
-        anim_fade.setStartValue(1.0)
-        anim_fade.setEndValue(0.0)
-        anim_fade.setEasingCurve(QEasingCurve.Type.InQuad)
-        anim_size = QPropertyAnimation(row, b"maximumHeight")
-        anim_size.setDuration(ANIM_DURATION_MEDIUM)
-        anim_size.setStartValue(row.height())
-        anim_size.setEndValue(0)
-        anim_size.setEasingCurve(QEasingCurve.Type.InCubic)
-        group.addAnimation(anim_fade)
-        group.addAnimation(anim_size)
-        group.finished.connect(row.hide)
-        group.finished.connect(lambda: self._finalize_toggle(task_id))
-        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _finalize_toggle(self, task_id: str):
         """This is called after the completion animation finishes."""
@@ -4084,15 +4014,15 @@ class HubWindow(QMainWindow):
         if not text: return
         
         date_str = self.calendar.selectedDate().toString(Qt.DateFormat.ISODate)
-        # meta = taskflowai.infer_metadata(text, self.state) # TODO: Port metadata inference
         
-        # Defaults to prevent crash
-        category = "Personal"
-        important = False
+        # Use shared parser for smart entry
+        meta = parse_task_input(text)
+        category = meta.get("category")
+        important = meta.get("important", False)
         
         add_task(
             self.state,
-            text=text,
+            text=meta["text"],
             section="Scheduled",
             category=category,
             important=important,
@@ -4524,7 +4454,7 @@ class HubWindow(QMainWindow):
             return
 
         self.stack.setCurrentWidget(page)
-        self._animate_page_in()
+        AnimationManager.fade_in(self.stack, duration=PAGE_FADE_DURATION_MS)
 
         if page is self.page_home:
             self._refresh_home()
@@ -4557,16 +4487,7 @@ class HubWindow(QMainWindow):
         """Cascading fade-in for home page cards."""
         cards = [self.card_focus, self.card_insights, self.card_capture]
         for i, card in enumerate(cards):
-            effect = QGraphicsOpacityEffect(card)
-            card.setGraphicsEffect(effect)
-            effect.setOpacity(0.0)
-            
-            anim = QPropertyAnimation(effect, b"opacity", card)
-            anim.setDuration(400)
-            anim.setStartValue(0.0)
-            anim.setEndValue(1.0)
-            anim.setEasingCurve(QEasingCurve.Type.OutQuad)
-            QTimer.singleShot(i * 100, anim.start)
+            AnimationManager.fade_in(card, duration=400, delay=i*100)
 
     def _toggle_focus_mode(self) -> None:
         """Toggle the visibility of the sidebar."""
@@ -4953,10 +4874,15 @@ class HubWindow(QMainWindow):
             
             self.btn_up_next.clicked.connect(lambda: self.enter_zen_mode(top_task["id"]))
 
-        # Use AI for the home suggestion to keep the persona consistent
-        # insights = taskflowai.generate_insights(self.state) # TODO: Port insights
-        # suggestion = insights["advice"]
-        self.suggestion_label.setText(f"<i>AI Coach is ready.</i>")
+        # Use AI for the home suggestion
+        if self.ai_engine:
+            suggestions = self.ai_engine.get_proactive_suggestions(self.state)
+            if suggestions:
+                self.suggestion_label.setText(f"💡 {suggestions[0]['text']}")
+            else:
+                self.suggestion_label.setText(f"<i>AI Coach is analyzing...</i>")
+        else:
+            self.suggestion_label.setText(f"<i>AI Coach is ready.</i>")
 
         # Card 3: Ideas list
         self.ideas_list.clear()
@@ -5176,8 +5102,8 @@ class HubWindow(QMainWindow):
 
     def _refresh_stats_and_habits(self) -> None:
         # Generate insights using analytics engine
-        rate = taskflowanalytics.get_completion_rate(self.state)
-        hour = taskflowanalytics.get_most_productive_hour(self.state)
+        rate = get_completion_rate(self.state)
+        hour = get_most_productive_hour(self.state)
         
         summary_html = (
             f"<p style='font-size:16px; margin-bottom:4px;'><b>Completion Rate:</b> <span style='color:{GOLD}'>{int(rate)}%</span></p>"
@@ -5273,7 +5199,12 @@ class HubWindow(QMainWindow):
                 
                 # AI Category Prediction
                 if use_ai and self.ai_engine and not p_cat:
-                    p_cat = self.ai_engine.predict_category(p_text)
+                    context = {
+                        "time_of_day": current_time_of_day(),
+                        "day_of_week": datetime.now().strftime("%A"),
+                        "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+                    }
+                    p_cat = self.ai_engine.predict_category(p_text, context)
                 
                 # Default section logic
                 section = p_section if p_section else "Someday"
@@ -5474,9 +5405,6 @@ class HubWindow(QMainWindow):
         set_today_mood(self.state, value, note)
         self.schedule_save()
         self._refresh_stats_and_habits()
-
-    def _on_suggest_by_time(self) -> None:
-        pass # TODO: Port time suggestion
 
     def _on_data_changed(self) -> None:
         """Refresh the currently visible page when data changes."""

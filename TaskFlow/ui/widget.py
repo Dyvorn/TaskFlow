@@ -53,10 +53,11 @@ from core.model import (
     tasks_in_section,
     toggle_task_completed,
     ConfettiOverlay,
+    TaskRowWidget,
     add_task,
-    create_task_row_widget,
     delete_task,
     parse_task_input,
+    AnimationManager,
 )
 
 
@@ -427,10 +428,10 @@ class WidgetWindow(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-            row = create_task_row_widget(
-                task=t,
-                on_toggle=lambda c, tid: self._on_widget_task_toggle(tid),
-                show_delete_button=False
+            row = TaskRowWidget(t, show_delete_button=False, show_focus_button=False)
+            row.toggled.connect(self._on_widget_task_toggle)
+            row.contextMenuRequested.connect(
+                lambda pos, tid: self._on_context_menu(row.mapToGlobal(pos), tid)
             )
             
             self.tasks_list.addItem(item)
@@ -442,39 +443,32 @@ class WidgetWindow(QWidget):
             if item.data(Qt.ItemDataRole.UserRole) == task_id:
                 row = self.tasks_list.itemWidget(item)
                 if row:
-                    self._animate_and_finalize_toggle(row, task_id)
+                    AnimationManager.slide_and_fade_out(row, on_finished=lambda: self._finalize_toggle(task_id))
                 break
-
-    def _animate_and_finalize_toggle(self, row: QWidget, task_id: str):
-        effect = QGraphicsOpacityEffect(row)
-        row.setGraphicsEffect(effect)
-        group = QParallelAnimationGroup(self)
-        anim = QPropertyAnimation(effect, b"opacity")
-        anim.setDuration(200)
-        anim.setStartValue(1.0)
-        anim.setEndValue(0.0)
-        group.addAnimation(anim)
-        group.finished.connect(lambda: self._finalize_toggle(task_id))
-        group.start()
 
     def _finalize_toggle(self, task_id: str):
         self._refresh_tasks()
 
-    def _on_context_menu(self, pos):
-        item = self.tasks_list.itemAt(pos)
+    def _on_context_menu(self, pos, task_id=None):
+        # If task_id is not provided (e.g. background click), try to find item at pos
+        if not task_id:
+            # Map global pos back to list widget coordinates for itemAt
+            local_pos = self.tasks_list.mapFromGlobal(pos)
+            item = self.tasks_list.itemAt(local_pos)
+            if item:
+                task_id = item.data(Qt.ItemDataRole.UserRole)
         
         menu = QMenu(self)
         menu.setStyleSheet(f"QMenu {{ background-color: {GLASS_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; }} QMenu::item:selected {{ background-color: {HOVER_BG}; }}")
         
-        if item:
-            task_id = item.data(Qt.ItemDataRole.UserRole)
+        if task_id:
             task = next((t for t in self.state["tasks"] if t["id"] == task_id), None)
             if not task: return
 
             act_imp = menu.addAction("Unmark Important" if task.get("important") else "Mark Important")
             act_del = menu.addAction("Delete")
             
-            action = menu.exec(self.tasks_list.mapToGlobal(pos))
+            action = menu.exec(pos)
             
             if action == act_imp:
                 task["important"] = not task.get("important")
@@ -489,7 +483,7 @@ class WidgetWindow(QWidget):
             act_add = menu.addAction("Quick Add")
             act_hub = menu.addAction("Open Hub")
             
-            action = menu.exec(self.tasks_list.mapToGlobal(pos))
+            action = menu.exec(pos)
             
             if action == act_add:
                 self._toggle_quick_add()

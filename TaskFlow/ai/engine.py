@@ -110,10 +110,13 @@ class AIEngine:
                         print("Starting with random weights. Please run 'train_brain_model.py' to update the base model.")
         self.model.eval()
 
-    def predict_category(self, text: str, context: Dict) -> Optional[str]:
+    def predict_category(self, text: str, context: Optional[Dict] = None) -> Optional[str]:
         """Predicts the category for a given task text and context."""
         if not self.model or not text:
             return None
+            
+        if context is None:
+            context = {}
 
         # --- Dynamic Confidence Threshold ---
         # Start with a high threshold and lower it as the model becomes more mature.
@@ -233,7 +236,7 @@ class AIEngine:
         # Fallback to app state if still empty
         return self.pipeline.categories or self.state.get("categories", [])
 
-    def get_proactive_suggestions(self) -> List[Dict]:
+    def get_proactive_suggestions(self, state: Optional[Dict] = None) -> List[Dict]:
         """Generates and returns actionable suggestions based on user history."""
         return analytics.generate_suggestions(self.state)
 

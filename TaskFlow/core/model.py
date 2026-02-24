@@ -9,14 +9,15 @@ import shutil
 import math
 import re
 import random
+import calendar
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional, Callable
 
 # UI Imports (Guarded for non-GUI contexts)
 try:
-    from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal
+    from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
     from PyQt6.QtGui import QPainter, QColor, QCursor
-    from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel
+    from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect
     import html
     UI_LIBS_AVAILABLE = True
 except ImportError:
@@ -705,12 +706,9 @@ def _handle_recurrence(state: Dict[str, Any], original_task: Dict[str, Any]) -> 
         if m > 12:
             m = 1
             y += 1
-        try:
-            next_date = date(y, m, today_dt.day)
-        except ValueError:
-            # Handle short months (e.g. Jan 31 -> Feb 28/29)
-            # Simple fallback: 1st of the month after next
-            next_date = date(y, m + 1, 1) if m < 12 else date(y + 1, 1, 1)
+        # Handle end of month (e.g. Jan 31 -> Feb 28)
+        _, last_day = calendar.monthrange(y, m)
+        next_date = date(y, m, min(today_dt.day, last_day))
     
     if next_date:
         new_task = original_task.copy()
@@ -880,6 +878,70 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
         return False
 
 if UI_LIBS_AVAILABLE:
+    class AnimationManager:
+        """
+        Centralized manager for UI animations to ensure consistency and resource cleanup.
+        Prevents painter conflicts by properly managing QGraphicsOpacityEffect.
+        """
+        
+        @staticmethod
+        def fade_in(widget: QWidget, duration: int = 250, delay: int = 0, on_finished: Optional[Callable] = None):
+            effect = QGraphicsOpacityEffect(widget)
+            widget.setGraphicsEffect(effect)
+            effect.setOpacity(0.0)
+            
+            anim = QPropertyAnimation(effect, b"opacity", widget)
+            anim.setDuration(duration)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            
+            def cleanup():
+                widget.setGraphicsEffect(None)
+                if on_finished:
+                    on_finished()
+            
+            anim.finished.connect(cleanup)
+            
+            if delay > 0:
+                QTimer.singleShot(delay, lambda: anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped))
+            else:
+                anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+            return anim
+
+        @staticmethod
+        def slide_and_fade_out(widget: QWidget, duration: int = 250, on_finished: Optional[Callable] = None):
+            effect = QGraphicsOpacityEffect(widget)
+            widget.setGraphicsEffect(effect)
+            
+            group = QParallelAnimationGroup(widget)
+            
+            anim_fade = QPropertyAnimation(effect, b"opacity")
+            anim_fade.setDuration(duration)
+            anim_fade.setStartValue(1.0)
+            anim_fade.setEndValue(0.0)
+            anim_fade.setEasingCurve(QEasingCurve.Type.InQuad)
+            
+            anim_size = QPropertyAnimation(widget, b"maximumHeight")
+            anim_size.setDuration(duration)
+            anim_size.setStartValue(widget.height())
+            anim_size.setEndValue(0)
+            anim_size.setEasingCurve(QEasingCurve.Type.InCubic)
+            
+            group.addAnimation(anim_fade)
+            group.addAnimation(anim_size)
+            
+            def cleanup():
+                widget.hide()
+                widget.setMaximumHeight(16777215) # Restore max height
+                widget.setGraphicsEffect(None)
+                if on_finished:
+                    on_finished()
+
+            group.finished.connect(cleanup)
+            group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+            return group
+
     class TaskRowWidget(QWidget):
         """A standardized task row widget that emits signals for interactions."""
         toggled = pyqtSignal(str)
@@ -1034,105 +1096,8 @@ if UI_LIBS_AVAILABLE:
         def paintEvent(self, event):
             if not self.particles: return
             painter = QPainter(self)
-            if not painter.isActive():
-                return
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             for p in self.particles:
                 painter.setBrush(p["color"])
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
-            painter.end()
-
-    def create_task_row_widget(task: Dict[str, Any], on_toggle: Callable, on_focus: Optional[Callable] = None, on_delete: Optional[Callable] = None, on_context_menu: Optional[Callable] = None, on_edit: Optional[Callable] = None, show_delete_button: bool = True) -> QWidget:
-        row = QWidget()
-        row.setObjectName("TaskRow")
-        row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        important_style = f"border-left: 3px solid {GOLD};" if task.get("important") else "border-left: 3px solid transparent;"
-        row.setStyleSheet(f"""
-            #TaskRow {{
-                border-radius: 8px;
-                background-color: rgba(255, 255, 255, 0.02);
-                {important_style}
-            }}
-            #TaskRow:hover {{ background-color: {HOVER_BG}; }}
-        """)
-        
-        hl = QHBoxLayout(row)
-        hl.setContentsMargins(6, 2, 6, 2)
-        hl.setSpacing(6)
-
-        chk = QPushButton("✔" if task.get("completed") else "")
-        chk.setFixedSize(QSize(22, 22))
-        chk.setCheckable(True)
-        chk.setChecked(task.get("completed", False))
-        chk.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: transparent;
-                border-radius: 11px;
-                border: 1px solid {HOVER_BG};
-                color: {GOLD};
-                font-weight: bold;
-            }}
-            QPushButton:checked {{
-                background-color: {GOLD};
-                color: {DARK_BG};
-            }}
-            """
-        )
-
-        # Build label with metadata
-        text_content = task.get("text", "")
-        meta_info = []
-        if sched := task.get("schedule"):
-            if isinstance(sched, dict) and sched.get("date"):
-                date_str = sched['date']
-                if sched.get("time"):
-                    date_str += f" @ {sched['time']}"
-                meta_info.append(f"📅 {date_str}")
-        if rec := task.get("recurrence"):
-            if isinstance(rec, dict) and rec.get("type"):
-                meta_info.append(f"↻ {rec['type']}")
-        if cat := task.get("category"):
-            meta_info.append(f"🏷 {cat}")
-
-        lbl = QLabel()
-        lbl.setWordWrap(True)
-        lbl.setStyleSheet(f"color: {TEXT_GRAY if task.get('completed') else (GOLD if task.get('important') else TEXT_WHITE)};" + ("text-decoration: line-through;" if task.get("completed") else ""))
-        lbl.setToolTip(text_content)
-        
-        lbl.setText(f"{html.escape(text_content)}<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>" if meta_info else text_content)
-
-        # Focus Button (Zen Mode)
-        focus_btn = QPushButton("👁")
-        focus_btn.setFixedSize(QSize(24, 24))
-        focus_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        focus_btn.setToolTip("Focus on this task (Zen Mode)")
-        focus_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
-        focus_btn.setVisible(not task.get("completed") and on_focus is not None)
-
-        del_btn = QPushButton("×")
-        del_btn.setFixedSize(QSize(24, 24))
-        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        del_btn.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {TEXT_GRAY}; font-weight: bold; font-size: 14px; }} QPushButton:hover {{ color: {GOLD}; }}")
-        del_btn.setVisible(show_delete_button and on_delete is not None)
-
-        hl.addWidget(chk)
-        hl.addWidget(lbl, 1)
-        hl.addWidget(focus_btn)
-        hl.addWidget(del_btn)
-
-        tid = task.get("id")
-        chk.clicked.connect(lambda c, t=tid: on_toggle(c, t))
-        if on_focus: focus_btn.clicked.connect(lambda c, t=tid: on_focus(t))
-        if on_delete: del_btn.clicked.connect(lambda c, t=tid: on_delete(c, t))
-        if on_context_menu:
-            row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            row.customContextMenuRequested.connect(lambda pos, t=tid: on_context_menu(pos, t))
-        if on_edit:
-            def mouseDoubleClickEvent(event, t=tid):
-                if event.button() == Qt.MouseButton.LeftButton: on_edit(t)
-            row.mouseDoubleClickEvent = mouseDoubleClickEvent
-
-        return row

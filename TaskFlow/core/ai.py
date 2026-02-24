@@ -3,6 +3,11 @@ import threading
 import time
 from typing import List, Dict, Any, Optional
 
+try:
+    import ai.analytics as analytics
+except ImportError:
+    analytics = None
+
 class AIEngine:
     """
     The central AI logic for TaskFlow.
@@ -67,11 +72,12 @@ class AIEngine:
         }
 
     def get_review_queue(self) -> List[Dict[str, Any]]:
-        # Return dummy data for now
+        # Future: Return tasks that need review (e.g. low priority, old)
         return []
 
-    def get_proactive_suggestions(self) -> List[Dict[str, Any]]:
-        # Return dummy data for now
+    def get_proactive_suggestions(self, state: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        if analytics and state:
+            return analytics.generate_suggestions(state)
         return []
 
     def train_model(self, background: bool = True, on_finish_callback=None) -> None:
