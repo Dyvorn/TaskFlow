@@ -12,22 +12,6 @@ GOLD = "#ffd700"
 HOVER_BG = "rgba(255, 255, 255, 0.1)"
 GLASS_BORDER = "rgba(255, 255, 255, 0.15)"
 
-class TrainingWorker(QThread):
-    """Runs AI training in a separate thread to avoid freezing the UI."""
-    progress = pyqtSignal(int)
-    finished = pyqtSignal()
-
-    def __init__(self, trainer):
-        super().__init__()
-        self.trainer = trainer
-
-    def run(self):
-        # In a real scenario, the engine itself would emit progress signals.
-        # For now, we just run the blocking training call.
-        self.trainer.train_model()
-        self.finished.emit()
-
-
 class SuggestionWidget(QFrame):
     """A custom widget to display an AI suggestion with action buttons."""
     action_taken = pyqtSignal(str, dict) # "accept" or "dismiss", suggestion data

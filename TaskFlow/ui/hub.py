@@ -183,7 +183,7 @@ from core.model import (
     create_timestamped_backup,
     get_backups,
     restore_backup,
-    create_task_row_widget,
+    TaskRowWidget,
     ConfettiOverlay,
 )
 
@@ -2184,16 +2184,17 @@ class TaskListWidget(QWidget):
                 item = QListWidgetItem()
                 item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-                row = create_task_row_widget(
-                    t,
-                    lambda _, tid: self._on_toggle_task(tid),
-                    lambda _, tid: self._on_delete_task(tid),
-                    lambda pos, tid: self._show_task_menu(tid, row.mapToGlobal(pos)),
-                    lambda tid: self._rename_task(tid),
-                    lambda tid: self.requestFocus.emit(tid)
+                row = TaskRowWidget(t)
+                row.toggled.connect(self._on_toggle_task)
+                row.deleted.connect(self._on_delete_task)
+                row.contextMenuRequested.connect(
+                    lambda pos, tid, r=row: self._show_task_menu(tid, r.mapToGlobal(pos))
                 )
+                row.editRequested.connect(self._rename_task)
+                row.focusRequested.connect(self.requestFocus)
 
                 self.tasks_list.addItem(item)
+                item.setSizeHint(row.sizeHint())
                 self.tasks_list.setItemWidget(item, row)
 
         self.tasks_list.setUpdatesEnabled(True)
@@ -2591,7 +2592,14 @@ class TaskListWidget(QWidget):
         completed = [t for t in tasks if t.get("completed")]
         
         # Rank incomplete tasks
-        ranked = incomplete # taskflowai.rank_tasks_smart(incomplete, self.state) # TODO: Port ranking logic
+        ranked = incomplete
+        if self.ai_engine:
+            context = {
+                "time_of_day": current_time_of_day(),
+                "day_of_week": datetime.now().strftime("%A"),
+                "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+            }
+            ranked = self.ai_engine.rank_tasks(incomplete, context)
         
         # Apply new order (0, 1, 2...)
         for i, t in enumerate(ranked + completed):
@@ -2782,16 +2790,16 @@ class ProjectTaskListWidget(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
 
-            row = create_task_row_widget(
-                t,
-                lambda _, tid: self._on_toggle_task(tid),
-                lambda _, tid: self._on_delete_task(tid),
-                lambda pos, tid: self._show_task_menu(tid, row.mapToGlobal(pos)),
-                lambda tid: self._rename_task(tid),
-                None # No focus in project view for now, or add signal if needed
+            row = TaskRowWidget(t, show_focus_button=False)
+            row.toggled.connect(self._on_toggle_task)
+            row.deleted.connect(self._on_delete_task)
+            row.contextMenuRequested.connect(
+                lambda pos, tid, r=row: self._show_task_menu(tid, r.mapToGlobal(pos))
             )
+            row.editRequested.connect(self._rename_task)
 
             self.tasks_list.addItem(item)
+            item.setSizeHint(row.sizeHint())
             self.tasks_list.setItemWidget(item, row)
 
     def _set_enabled(self, enabled: bool) -> None:
@@ -3062,18 +3070,13 @@ class SearchWidget(QWidget):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
             
-            # We reuse create_task_row_widget but disable some callbacks for simplicity in search view
-            # or implement full functionality. Let's implement full functionality.
-            row = create_task_row_widget(
-                task=t,
-                on_toggle=lambda c, tid: self._toggle_task(tid),
-                on_delete=None,
-                on_context_menu=None,
-                on_edit=None,
-                on_focus=None
+            row = TaskRowWidget(
+                task=t, show_delete_button=False, show_focus_button=False
             )
+            row.toggled.connect(self._toggle_task)
             
             self.results_list.addItem(item)
+            item.setSizeHint(row.sizeHint())
             self.results_list.setItemWidget(item, row)
 
     def _toggle_task(self, task_id):
@@ -3376,6 +3379,8 @@ class HubWindow(QMainWindow):
         """Starts background checks and dialogs after the window is fully visible."""
         self._check_updates_async()
         QTimer.singleShot(500, self._run_start_of_day_flow)
+        # Show a helpful tip after a short delay
+        QTimer.singleShot(3000, self._show_tip_of_the_day)
 
     def _init_voice_ai(self):
         """Loads the Whisper model in the background."""
@@ -4064,14 +4069,14 @@ class HubWindow(QMainWindow):
         for t in tasks:
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, t.get("id"))
-            row = create_task_row_widget(
-                t,
-                lambda c, tid: self._on_toggle_task_calendar(tid),
-                lambda c, tid: self._on_delete_task_calendar(tid),
-                lambda pos, tid: self._show_calendar_task_menu(tid, self.cal_task_list.mapToGlobal(pos)),
-                None,
-                lambda tid: self.enter_zen_mode(tid)
+            row = TaskRowWidget(t)
+            row.toggled.connect(self._on_toggle_task_calendar)
+            row.deleted.connect(self._on_delete_task_calendar)
+            row.contextMenuRequested.connect(
+                lambda pos, tid, r=row: self._show_calendar_task_menu(tid, r.mapToGlobal(pos))
             )
+            row.focusRequested.connect(self.enter_zen_mode)
+
             item.setSizeHint(row.sizeHint())
             self.cal_task_list.addItem(item)
             self.cal_task_list.setItemWidget(item, row)
@@ -5496,6 +5501,13 @@ class HubWindow(QMainWindow):
             self._refresh_stats_and_habits()
         elif current is self.page_home:
             self._refresh_home()
+
+    def _show_tip_of_the_day(self) -> None:
+        """Shows a tip from the AI engine if available."""
+        if self.ai_engine and hasattr(self.ai_engine, "get_tip_of_the_day"):
+            tip = self.ai_engine.get_tip_of_the_day()
+            if tip:
+                self.show_toast(f"💡 AI Tip: {tip}")
 
     def _run_onboarding_flow(self) -> None:
         """Show the brain dump dialog on first launch if no tasks exist."""

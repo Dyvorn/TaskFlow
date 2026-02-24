@@ -85,7 +85,7 @@ class MonkeyTester:
 
     def start(self):
         print(f"Starting Monkey Test ({self.max_actions} actions)...")
-        self.timer.start(50)  # 50ms interval (very fast)
+        self.timer.start(100)  # 100ms interval (fast but allows event processing)
 
     def act(self):
         self.actions += 1

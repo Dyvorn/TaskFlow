@@ -1,5 +1,0 @@
-PyQt6
-faster-whisper
-dateparser
-pyaudio
-requests

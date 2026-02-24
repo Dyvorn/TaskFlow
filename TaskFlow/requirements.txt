@@ -1,3 +1,7 @@
 --index-url https://download.pytorch.org/whl/cpu
 torch
 PyQt6
+faster-whisper
+dateparser
+pyaudio
+requests
