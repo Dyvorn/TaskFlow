@@ -1034,12 +1034,19 @@ if UI_LIBS_AVAILABLE:
         def paintEvent(self, event):
             if not self.particles: return
             painter = QPainter(self)
+            if not painter.isActive():
+                return
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             for p in self.particles:
                 painter.setBrush(p["color"])
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
-        
+
+    def create_task_row_widget(task: Dict[str, Any], on_toggle: Callable, on_focus: Optional[Callable] = None, on_delete: Optional[Callable] = None, on_context_menu: Optional[Callable] = None, on_edit: Optional[Callable] = None, show_delete_button: bool = True) -> QWidget:
+        row = QWidget()
+        row.setObjectName("TaskRow")
+        row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
         important_style = f"border-left: 3px solid {GOLD};" if task.get("important") else "border-left: 3px solid transparent;"
         row.setStyleSheet(f"""
             #TaskRow {{
@@ -1128,58 +1135,3 @@ if UI_LIBS_AVAILABLE:
             row.mouseDoubleClickEvent = mouseDoubleClickEvent
 
         return row
-
-    class ConfettiOverlay(QWidget):
-        """
-        A transparent overlay that renders a particle burst effect.
-        """
-        def __init__(self, parent: Optional[QWidget] = None):
-            super().__init__(parent)
-            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-            self.particles = []
-            self.timer = QTimer(self)
-            self.timer.timeout.connect(self._update)
-
-        def burst(self):
-            self.particles.clear()
-            cx = self.width() / 2
-            cy = self.height() / 2
-            for _ in range(60):
-                angle = random.uniform(0, 2 * math.pi)
-                speed = random.uniform(5, 12)
-                self.particles.append({
-                    "x": cx, "y": cy,
-                    "vx": math.cos(angle) * speed,
-                    "vy": math.sin(angle) * speed - 4, # Upward bias
-                    "color": QColor.fromHsv(random.randint(0, 359), 200, 255),
-                    "size": random.randint(4, 8),
-                    "decay": random.uniform(0.92, 0.96)
-                })
-            self.timer.start(16)
-            self.show()
-            self.raise_()
-
-        def _update(self):
-            if not self.particles:
-                self.timer.stop()
-                self.hide()
-                return
-            
-            for p in self.particles:
-                p["x"] += p["vx"]
-                p["y"] += p["vy"]
-                p["vy"] += 0.5 # Gravity
-                p["vx"] *= p["decay"] # Air resistance
-                
-            self.particles = [p for p in self.particles if p["y"] < self.height() + 10]
-            self.update()
-
-        def paintEvent(self, event):
-            if not self.particles: return
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            for p in self.particles:
-                painter.setBrush(p["color"])
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)

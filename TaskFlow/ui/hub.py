@@ -260,6 +260,8 @@ class LiquidProgressBar(QWidget):
     
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         
         rect = self.rect()
@@ -613,6 +615,15 @@ class ShadowedDialog(QDialog):
     def add_stretch(self) -> None:
         """Add stretch to the dialog's content layout."""
         self.content_layout.addStretch()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        anim = QPropertyAnimation(self, b"windowOpacity", self)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setDuration(300)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
 class WelcomeDialog(ShadowedDialog):
     """
@@ -1567,63 +1578,6 @@ class HeatmapWidget(QWidget):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(x, y, cell_size, cell_size, 2, 2)
 
-class ConfettiOverlay(QWidget):
-    """
-    A transparent overlay that renders a particle burst effect.
-    """
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.particles = []
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update)
-
-    def burst(self):
-        self.particles.clear()
-        cx = self.width() / 2
-        cy = self.height() / 2
-        for _ in range(60):
-            angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(5, 12)
-            self.particles.append({
-                "x": cx, "y": cy,
-                "vx": math.cos(angle) * speed,
-                "vy": math.sin(angle) * speed - 4, # Upward bias
-                "color": QColor.fromHsv(random.randint(0, 359), 200, 255),
-                "size": random.randint(4, 8),
-                "decay": random.uniform(0.92, 0.96)
-            })
-        self.timer.start(16)
-        self.show()
-        self.raise_()
-
-    def _update(self):
-        if not self.particles:
-            self.timer.stop()
-            self.hide()
-            return
-        
-        for p in self.particles:
-            p["x"] += p["vx"]
-            p["y"] += p["vy"]
-            p["vy"] += 0.5 # Gravity
-            p["vx"] *= p["decay"] # Air resistance
-            
-        # Remove particles off screen
-        self.particles = [p for p in self.particles if p["y"] < self.height() + 10]
-        self.update()
-
-    def paintEvent(self, event):
-        if not self.particles:
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        for p in self.particles:
-            painter.setBrush(p["color"])
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
-
 class ToastOverlay(QWidget):
     """
     Non-intrusive notification pill that fades in and out.
@@ -1670,7 +1624,7 @@ class ToastOverlay(QWidget):
 
     def show_message(self, text, duration=2500):
         self.label.setText(text)
-        self.label.adjustSize()
+        self.label.adjustSize() # Recalculate size
         self.resize(self.label.width() + 10, self.label.height() + 10) # slight padding for shadow
         self.label.move(5, 5)
         
@@ -2197,6 +2151,40 @@ class TaskListWidget(QWidget):
                 item.setSizeHint(row.sizeHint())
                 self.tasks_list.setItemWidget(item, row)
 
+                # Cascade animation for visible items
+                if total < 20: # Only animate if list isn't huge to save perf
+                    self._animate_row_entry(row, index=len(self.tasks_list)-1)
+
+        self.tasks_list.setUpdatesEnabled(True)
+        
+        # Restore selection
+        if selected_id:
+            for i in range(self.tasks_list.count()):
+                item = self.tasks_list.item(i)
+                if item.data(Qt.ItemDataRole.UserRole) == selected_id:
+                    self.tasks_list.setCurrentItem(item)
+                    break
+                    
+        self.tasks_list.verticalScrollBar().setValue(scroll_pos)
+
+    def _animate_row_entry(self, row: QWidget, index: int) -> None:
+        """Slide and fade in a row."""
+        effect = QGraphicsOpacityEffect(row)
+        row.setGraphicsEffect(effect)
+        effect.setOpacity(0.0)
+        
+        anim = QPropertyAnimation(effect, b"opacity", row)
+        anim.setDuration(300)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+        
+        # Stagger based on index
+        QTimer.singleShot(index * 40, anim.start)
+
+    def _on_reorder(self):
+        """Update the order field in the state based on the new list order."""
+        for i in range(self.tasks_list.count()):
         self.tasks_list.setUpdatesEnabled(True)
         
         # Restore selection
@@ -3845,13 +3833,13 @@ class HubWindow(QMainWindow):
         grid.setSpacing(20)
         
         # --- Card 1: Focus (Top Left) ---
-        card_focus = self._build_home_focus_card()
-        grid.addWidget(card_focus, 0, 0)
+        self.card_focus = self._build_home_focus_card()
+        grid.addWidget(self.card_focus, 0, 0)
         
         # --- Card 2: Insights & Wellness (Top Right) ---
-        card_insights = QFrame()
-        card_insights.setObjectName("GlassCard")
-        l_insights = QVBoxLayout(card_insights)
+        self.card_insights = QFrame()
+        self.card_insights.setObjectName("GlassCard")
+        l_insights = QVBoxLayout(self.card_insights)
         l_insights.setContentsMargins(20, 20, 20, 20)
         
         l_insights.addWidget(QLabel("🧠 AI Insights"))
@@ -3882,9 +3870,9 @@ class HubWindow(QMainWindow):
         l_insights.addStretch()
         
         # --- Card 3: Quick Capture (Bottom) ---
-        card_capture = QFrame()
-        card_capture.setObjectName("GlassCard")
-        l_capture = QVBoxLayout(card_capture)
+        self.card_capture = QFrame()
+        self.card_capture.setObjectName("GlassCard")
+        l_capture = QVBoxLayout(self.card_capture)
         l_capture.setContentsMargins(20, 20, 20, 20)
         
         l_capture.addWidget(QLabel("💡 Quick Capture"))
@@ -3920,8 +3908,8 @@ class HubWindow(QMainWindow):
         self.ideas_list.customContextMenuRequested.connect(self._on_idea_menu)
         l_capture.addWidget(self.ideas_list)
         
-        grid.addWidget(card_insights, 0, 1)
-        grid.addWidget(card_capture, 1, 0, 1, 2) # Span 2 columns
+        grid.addWidget(self.card_insights, 0, 1)
+        grid.addWidget(self.card_capture, 1, 0, 1, 2) # Span 2 columns
         
         # Column weights
         grid.setColumnStretch(0, 1)
@@ -4548,6 +4536,7 @@ class HubWindow(QMainWindow):
 
         if page is self.page_home:
             self._refresh_home()
+            self._animate_home_cascade()
         elif page is self.page_today:
             self.page_today.refresh()
         elif page is self.page_week:
@@ -4571,6 +4560,21 @@ class HubWindow(QMainWindow):
             self.page_profile.refresh()
         elif page is self.page_search:
             self.page_search.search_input.setFocus()
+
+    def _animate_home_cascade(self) -> None:
+        """Cascading fade-in for home page cards."""
+        cards = [self.card_focus, self.card_insights, self.card_capture]
+        for i, card in enumerate(cards):
+            effect = QGraphicsOpacityEffect(card)
+            card.setGraphicsEffect(effect)
+            effect.setOpacity(0.0)
+            
+            anim = QPropertyAnimation(effect, b"opacity", card)
+            anim.setDuration(400)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+            QTimer.singleShot(i * 100, anim.start)
 
     def _toggle_focus_mode(self) -> None:
         """Toggle the visibility of the sidebar."""
@@ -4730,7 +4734,6 @@ class HubWindow(QMainWindow):
         sound_layout.addWidget(self.slider_volume)
         
         sound_layout.addStretch()
-        layout.addLayout(sound_layout)
 
     def enter_zen_mode(self, task_id: str):
         t = next((x for x in self.state["tasks"] if x["id"] == task_id), None)
