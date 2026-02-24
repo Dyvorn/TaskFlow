@@ -1054,6 +1054,7 @@ class WaveformWidget(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setOpacity(0.4 + (scaled * 0.6))
             painter.drawRoundedRect(QRectF(x + 1, y, bar_w - 2, bar_h), 2, 2)
+        painter.end()
 
 class VoiceDialog(QDialog):
     """
@@ -1351,6 +1352,7 @@ class MoodGraphWidget(QWidget):
         # Baseline
         painter.setBrush(QBrush(QColor(HOVER_BG)))
         painter.drawRect(QRectF(2, rect.height() - 2, rect.width() - 4, 2))
+        painter.end()
 
 
 class HabitGraphWidget(QWidget):
@@ -1409,6 +1411,7 @@ class HabitGraphWidget(QWidget):
 
         painter.setBrush(QBrush(QColor(HOVER_BG)))
         painter.drawRect(QRectF(2, rect.height() - 2, rect.width() - 4, 2))
+        painter.end()
 
 class CategoryGraphWidget(QWidget):
     """
@@ -1452,6 +1455,7 @@ class CategoryGraphWidget(QWidget):
             painter.drawRoundedRect(100, y, bar_width, bar_height, 4, 4)
             
             y += bar_height + spacing
+        painter.end()
 
 class ProductivityScoreWidget(QWidget):
     """
@@ -1495,6 +1499,7 @@ class ProductivityScoreWidget(QWidget):
         f.setBold(False)
         painter.setFont(f)
         painter.drawText(rect.adjusted(0, 40, 0, 0), Qt.AlignmentFlag.AlignCenter, "Daily Score")
+        painter.end()
 
 class HourlyChartWidget(QWidget):
     """
@@ -1532,6 +1537,7 @@ class HourlyChartWidget(QWidget):
             if h % 6 == 0:
                 painter.setPen(QColor(TEXT_GRAY))
                 painter.drawText(QRectF(h * bar_width, rect.height() - 12, bar_width * 2, 12), Qt.AlignmentFlag.AlignLeft, f"{h:02}")
+        painter.end()
 
 class HeatmapWidget(QWidget):
     """
@@ -1577,6 +1583,7 @@ class HeatmapWidget(QWidget):
                 painter.setBrush(color)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(x, y, cell_size, cell_size, 2, 2)
+        painter.end()
 
 class ToastOverlay(QWidget):
     """
@@ -2181,21 +2188,6 @@ class TaskListWidget(QWidget):
         
         # Stagger based on index
         QTimer.singleShot(index * 40, anim.start)
-
-    def _on_reorder(self):
-        """Update the order field in the state based on the new list order."""
-        for i in range(self.tasks_list.count()):
-        self.tasks_list.setUpdatesEnabled(True)
-        
-        # Restore selection
-        if selected_id:
-            for i in range(self.tasks_list.count()):
-                item = self.tasks_list.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == selected_id:
-                    self.tasks_list.setCurrentItem(item)
-                    break
-                    
-        self.tasks_list.verticalScrollBar().setValue(scroll_pos)
 
     def _on_reorder(self):
         """Update the order field in the state based on the new list order."""

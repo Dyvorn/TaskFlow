@@ -1041,6 +1041,7 @@ if UI_LIBS_AVAILABLE:
                 painter.setBrush(p["color"])
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
+            painter.end()
 
     def create_task_row_widget(task: Dict[str, Any], on_toggle: Callable, on_focus: Optional[Callable] = None, on_delete: Optional[Callable] = None, on_context_menu: Optional[Callable] = None, on_edit: Optional[Callable] = None, show_delete_button: bool = True) -> QWidget:
         row = QWidget()
