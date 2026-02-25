@@ -926,10 +926,6 @@ class BrainDumpDialog(ShadowedDialog):
         super().__init__(parent, title="Brain Dump 🧠")
         self.resize(500, 400)
         
-        # layout = QVBoxLayout(self)
-        # layout.setContentsMargins(20, 20, 20, 20)
-        # layout.setSpacing(15)
-        
         lbl = QLabel("Unload your mind. Type a list or a paragraph, and we'll sort it out.")
         lbl.setWordWrap(True)
         lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
@@ -1024,38 +1020,26 @@ class WaveformWidget(QWidget):
             painter.setOpacity(0.4 + (scaled * 0.6))
             painter.drawRoundedRect(QRectF(x + 1, y, bar_w - 2, bar_h), 2, 2)
 
-class VoiceDialog(QDialog):
+class VoiceDialog(ShadowedDialog):
     """
     Visual feedback during voice recording.
     """
     def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setModal(True)
+        super().__init__(parent, title="Voice Input")
         self.resize(300, 220)
-        
-        layout = QVBoxLayout(self)
-        
-        frame = QFrame()
-        frame.setStyleSheet(f"background-color: {CARD_BG}; border: 1px solid {GOLD}; border-radius: 16px;")
-        f_layout = QVBoxLayout(frame)
-        f_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        f_layout.setSpacing(15)
         
         lbl_icon = QLabel("🎙️")
         lbl_icon.setStyleSheet("font-size: 48px;")
-        f_layout.addWidget(lbl_icon)
+        lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.add_widget(lbl_icon)
         
         lbl_text = QLabel("Listening...")
         lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 18px; font-weight: bold;")
-        f_layout.addWidget(lbl_text)
+        lbl_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.add_widget(lbl_text)
         
         self.waveform = WaveformWidget()
-        f_layout.addWidget(self.waveform)
-        
-        layout.addWidget(frame)
-        add_dialog_shadow(self)
+        self.add_widget(self.waveform)
 
     def update_level(self, level: float):
         if hasattr(self, "waveform"):
@@ -1066,27 +1050,17 @@ class SomedayReviewDialog(ShadowedDialog):
     Dialog to review a few random tasks from Someday.
     """
     def __init__(self, tasks: List[Dict[str, Any]], state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setWindowTitle("Review Someday Tasks")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         super().__init__(parent, title="Review Someday Tasks")
         self.tasks = tasks
         self.state = state
         self.save_callback = save_callback
-        self.setModal(True)
         self.resize(400, 400)
         self._build_ui()
-        add_dialog_shadow(self)
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-        
         lbl = QLabel("Here are 3 tasks from your Someday list. Still relevant?")
         lbl.setWordWrap(True)
         lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
-        layout.addWidget(lbl)
         self.add_widget(lbl)
         
         self.scroll = QScrollArea()
@@ -2239,7 +2213,6 @@ class TaskListWidget(QWidget):
         toggle_task_completed(self.state, task_id)
         self._save_callback()
         # self.refresh() is called via the data_changed signal from save_callback
-        self.refresh()
 
     def _on_delete_task(self, task_id: str) -> None:
         delete_task(self.state, task_id)
@@ -2786,7 +2759,6 @@ class ProjectTaskListWidget(QWidget):
         toggle_task_completed(self.state, task_id)
         self._save_callback()
         # self.refresh() is called via the data_changed signal from save_callback
-        self.refresh()
 
     def _on_delete_task(self, task_id: str) -> None:
         delete_task(self.state, task_id)
