@@ -38,13 +38,6 @@ def qt_message_handler(mode, context, message):
 
 qInstallMessageHandler(qt_message_handler)
 
-# Try to import the main app
-try:
-    import TaskFlow
-except ImportError:
-    print("Error: TaskFlow.py not found in the same directory.")
-    sys.exit(1)
-
 # Override the exception handler to capture crashes
 def monkey_exception_handler(exc_type, exc_value, exc_tb):
     if issubclass(exc_type, KeyboardInterrupt):
@@ -158,17 +151,37 @@ class MonkeyTester:
             pass
 
 if __name__ == "__main__":
-    # Create Application
+    # 1. Setup Application
     app = QApplication(sys.argv)
+    app.setApplicationName("TaskFlowMonkey")
+
+    # 2. Load State
+    from core.model import get_data_paths, load_state, rollover_tasks, save_state
+    paths = get_data_paths()
+    state = load_state(paths)
     
-    # Launch TaskFlow
-    print("Launching TaskFlow...")
-    window = TaskFlow.UltimateTaskFlow()
+    # 3. Daily Maintenance
+    rollover_tasks(state)
+    save_state(paths, state) # Save rollover before launching
+
+    # 4. Import UI and AI
+    from ai.engine import AIEngine
+    from ui.hub import HubWindow
+
+    # 5. Launch TaskFlow Hub (without splash for testing)
+    print("Launching TaskFlow for Monkey Test...")
+    # AI Engine can be mocked or loaded if needed. For a simple UI test, None is fine.
+    ai_engine = None
+    window = HubWindow(state, paths, ai_engine)
     window.show()
     
-    # Start Monkey
+    # Allow window to fully load and run post-load tasks which might open dialogs
+    QApplication.processEvents()
+    window.start_post_load_tasks()
+    
+    # 6. Start Monkey
     monkey = MonkeyTester(window)
-    # Give the app 1 second to initialize before starting chaos
-    QTimer.singleShot(1000, monkey.start)
+    # Give the app a moment to initialize before starting chaos
+    QTimer.singleShot(3500, monkey.start) # Increased delay for post-load tasks
     
     sys.exit(app.exec())

@@ -52,13 +52,12 @@ from core.model import (
     count_today_tasks,
     tasks_in_section,
     toggle_task_completed,
-    ConfettiOverlay,
-    TaskRowWidget,
     add_task,
     delete_task,
     parse_task_input,
-    AnimationManager,
 )
+
+from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
 
 
 WIDGET_WIDTH = 320
@@ -447,6 +446,8 @@ class WidgetWindow(QWidget):
                 break
 
     def _finalize_toggle(self, task_id: str):
+        toggle_task_completed(self.state, task_id)
+        self._save_callback()
         self._refresh_tasks()
 
     def _on_context_menu(self, pos, task_id=None):

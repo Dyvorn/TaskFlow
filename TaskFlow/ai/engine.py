@@ -46,10 +46,14 @@ class AIEngine:
             try:
                 shutil.copy2(base_brain, user_brain)
                 print(f"Bootstrapped user brain from {base_brain}")
+                # Force copy vocab if brain was copied, to ensure sync
+                if base_vocab.exists():
+                    shutil.copy2(base_vocab, user_vocab)
+                    print(f"Bootstrapped user vocab from {base_vocab} (synced with brain)")
             except Exception as e:
                 print(f"Failed to bootstrap brain: {e}")
                 
-        if base_vocab.exists() and not user_vocab.exists():
+        elif base_vocab.exists() and not user_vocab.exists():
             try:
                 shutil.copy2(base_vocab, user_vocab)
                 print(f"Bootstrapped user vocab from {base_vocab}")
@@ -65,8 +69,9 @@ class AIEngine:
             self.pipeline.categories = self.state.get("categories", [])
             self.pipeline.cat_to_idx = {cat: i for i, cat in enumerate(self.pipeline.categories)}
 
-        if not self.pipeline.vocab:
-            # First run, build a basic pipeline from existing tasks
+        model_path = self.user_path / "brain.pth"
+        if not model_path.exists() and not self.pipeline.vocab:
+            # True first run: no model, no vocab. Build a fresh vocab from user's history.
             self.pipeline.build_or_update_from_log(self.state.get("tasks", []))
 
         # The dimensions for each context feature (e.g., 4 times of day, 7 days of week)
@@ -79,7 +84,6 @@ class AIEngine:
             context_dims=context_dims
         )
         
-        model_path = self.user_path / "brain.pth"
         if model_path.exists():
             try:
                 # Check for corruption (empty file)
@@ -97,6 +101,16 @@ class AIEngine:
                 
                 # Attempt to restore base model immediately
                 self._bootstrap_base_model()
+                
+                # Reload pipeline and re-init model to match new vocab
+                self.pipeline.load()
+                self.model = TaskBrain(
+                    vocab_size=len(self.pipeline.vocab),
+                    hidden_size=64,
+                    num_classes=len(self.pipeline.categories),
+                    context_dims=context_dims
+                )
+
                 # Try loading again if bootstrap succeeded
                 if model_path.exists():
                     try:

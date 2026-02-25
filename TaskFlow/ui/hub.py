@@ -183,8 +183,6 @@ from core.model import (
     create_timestamped_backup,
     get_backups,
     restore_backup,
-    TaskRowWidget,
-    ConfettiOverlay,
     parse_task_input,
     get_completion_rate,
     get_most_productive_hour,
@@ -192,9 +190,9 @@ from core.model import (
     get_productivity_score,
     get_hourly_activity,
     get_activity_heatmap_data,
-    AnimationManager,
 )
 
+from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
 try:
     from .coach import CoachWidget
 except ImportError:
@@ -202,7 +200,7 @@ except ImportError:
 
 # --- Voice Input Imports ---
 try:
-    from processor import VoiceListener, CommandParser
+    from ai.processor import VoiceListener, CommandParser
     VOICE_AVAILABLE = True
 except ImportError:
     VOICE_AVAILABLE = False
@@ -764,7 +762,6 @@ class FeedbackDialog(ShadowedDialog):
         self.add_widget(btn_close)
 
         self.setStyleSheet(f"{self.styleSheet()} QLabel {{ color: {TEXT_WHITE}; }}")
-        add_dialog_shadow(self)
 
     def _open_github(self):
         url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/issues"
@@ -865,41 +862,33 @@ class QuickTipsDialog(ShadowedDialog):
 
         self.setStyleSheet(f"{self.styleSheet()}")
 
-class BackupManagerDialog(QDialog):
+class BackupManagerDialog(ShadowedDialog):
     """
     Dialog to manage backups.
     """
     def __init__(self, paths: Dict[str, str], parent: Optional[QWidget] = None):
-        super().__init__(parent)
+        super().__init__(parent, title="Backup Manager")
         self.paths = paths
-        self.setWindowTitle("Backup Manager")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setModal(True)
         self.resize(400, 400)
         self._build_ui()
-        add_dialog_shadow(self)
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(12)
-
-        layout.addWidget(QLabel("Available Backups"))
+        self.add_widget(QLabel("Available Backups"))
         
         self.list = QListWidget()
         self.list.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {HOVER_BG}; border-radius: 6px;")
         self._refresh_list()
-        layout.addWidget(self.list)
+        self.add_widget(self.list)
 
         btn_create = QPushButton("Create New Backup")
         btn_create.clicked.connect(self._create_backup)
-        layout.addWidget(btn_create)
+        self.add_widget(btn_create)
 
         btn_restore = QPushButton("Restore Selected")
         btn_restore.clicked.connect(self._restore_backup)
-        layout.addWidget(btn_restore)
+        self.add_widget(btn_restore)
 
-        self.setStyleSheet(f"background-color: {CARD_BG}; QLabel {{ color: {TEXT_WHITE}; }} QPushButton {{ background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 8px; }} QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; }}")
+        self.setStyleSheet(f"{self.styleSheet()} QLabel {{ color: {TEXT_WHITE}; }} QPushButton {{ background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 8px; }} QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; }}")
 
     def _refresh_list(self):
         self.list.clear()
@@ -929,25 +918,22 @@ class BackupManagerDialog(QDialog):
             else:
                 QMessageBox.warning(self, "Error", "Failed to restore backup.")
 
-class BrainDumpDialog(QDialog):
+class BrainDumpDialog(ShadowedDialog):
     """
     A dialog for bulk task entry with AI processing options.
     """
     def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.setWindowTitle("Brain Dump 🧠")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setModal(True)
+        super().__init__(parent, title="Brain Dump 🧠")
         self.resize(500, 400)
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        # layout = QVBoxLayout(self)
+        # layout.setContentsMargins(20, 20, 20, 20)
+        # layout.setSpacing(15)
         
         lbl = QLabel("Unload your mind. Type a list or a paragraph, and we'll sort it out.")
         lbl.setWordWrap(True)
         lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
-        layout.addWidget(lbl)
+        self.add_widget(lbl)
         
         self.text_edit = QTextEdit()
         self.text_edit.setPlaceholderText("e.g.\n- Buy milk\n- Call John about the project\n- Finish the report by Friday")
@@ -964,7 +950,7 @@ class BrainDumpDialog(QDialog):
                 border: 1px solid {GOLD};
             }}
         """)
-        layout.addWidget(self.text_edit)
+        self.add_widget(self.text_edit)
         
         # Options row
         opt_layout = QHBoxLayout()
@@ -984,7 +970,7 @@ class BrainDumpDialog(QDialog):
         btn_clear.clicked.connect(self.text_edit.clear)
         opt_layout.addWidget(btn_clear)
         
-        layout.addLayout(opt_layout)
+        self.add_layout(opt_layout)
         
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Process Tasks")
@@ -999,10 +985,7 @@ class BrainDumpDialog(QDialog):
         
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        
-        self.setStyleSheet(f"background-color: {CARD_BG};")
-        add_dialog_shadow(self)
+        self.add_widget(buttons)
 
 class WaveformWidget(QWidget):
     """
@@ -1078,7 +1061,7 @@ class VoiceDialog(QDialog):
         if hasattr(self, "waveform"):
             self.waveform.update_level(level)
 
-class SomedayReviewDialog(QDialog):
+class SomedayReviewDialog(ShadowedDialog):
     """
     Dialog to review a few random tasks from Someday.
     """
@@ -1086,6 +1069,7 @@ class SomedayReviewDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Review Someday Tasks")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        super().__init__(parent, title="Review Someday Tasks")
         self.tasks = tasks
         self.state = state
         self.save_callback = save_callback
@@ -1103,6 +1087,7 @@ class SomedayReviewDialog(QDialog):
         lbl.setWordWrap(True)
         lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
         layout.addWidget(lbl)
+        self.add_widget(lbl)
         
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -1113,7 +1098,7 @@ class SomedayReviewDialog(QDialog):
         self.content_layout.setSpacing(10)
         self.content_layout.addStretch() # Push items to top
         self.scroll.setWidget(self.content)
-        layout.addWidget(self.scroll)
+        self.add_widget(self.scroll)
         
         # Insert tasks at the beginning (before stretch)
         for t in self.tasks:
@@ -1123,9 +1108,7 @@ class SomedayReviewDialog(QDialog):
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.clicked.connect(self.accept)
         btn_close.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 8px 16px; border: 1px solid {GLASS_BORDER};")
-        layout.addWidget(btn_close)
-        
-        self.setStyleSheet(f"background-color: {CARD_BG};")
+        self.add_widget(btn_close)
 
     def _add_task_row(self, task):
         frame = QFrame()
@@ -1195,30 +1178,22 @@ class SomedayReviewDialog(QDialog):
         frame.hide()
         frame.deleteLater()
 
-class WeeklyReviewDialog(QDialog):
+class WeeklyReviewDialog(ShadowedDialog):
     """
     Dialog for weekly review (Mondays).
     Shows stats and offers to archive completed tasks.
     """
     def __init__(self, state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
-        super().__init__(parent)
+        super().__init__(parent, title="Weekly Review")
         self.state = state
         self._save_callback = save_callback
-        self.setWindowTitle("Weekly Review")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setModal(True)
         self.resize(400, 300)
         self._build_ui()
-        add_dialog_shadow(self)
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
-
         lbl_title = QLabel("Weekly Review 📅")
         lbl_title.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
-        layout.addWidget(lbl_title)
+        self.add_widget(lbl_title)
 
         # Stats
         now = datetime.now()
@@ -1233,20 +1208,20 @@ class WeeklyReviewDialog(QDialog):
         lbl_info = QLabel(f"You completed {completed_count} tasks in the last 7 days.\nReady for a fresh start?")
         lbl_info.setWordWrap(True)
         lbl_info.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 14px;")
-        layout.addWidget(lbl_info)
+        self.add_widget(lbl_info)
 
         # Mood summary
-        layout.addWidget(QLabel("Mood Trend:"))
+        self.add_widget(QLabel("Mood Trend:"))
         mood_graph = MoodGraphWidget(self.state)
         mood_graph.setFixedHeight(60)
-        layout.addWidget(mood_graph)
+        self.add_widget(mood_graph)
 
         self.chk_archive = QCheckBox("Archive completed tasks")
         self.chk_archive.setChecked(True)
         self.chk_archive.setStyleSheet(f"color: {TEXT_WHITE};")
-        layout.addWidget(self.chk_archive)
+        self.add_widget(self.chk_archive)
 
-        layout.addStretch()
+        self.add_stretch()
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -1257,8 +1232,7 @@ class WeeklyReviewDialog(QDialog):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 16px; border: 1px solid {GLASS_BORDER};")
             
-        layout.addWidget(buttons)
-        self.setStyleSheet(f"background-color: {CARD_BG};")
+        self.add_widget(buttons)
 
 class MoodGraphWidget(QWidget):
     """
@@ -2264,6 +2238,7 @@ class TaskListWidget(QWidget):
     def _finalize_toggle(self, task_id: str):
         toggle_task_completed(self.state, task_id)
         self._save_callback()
+        # self.refresh() is called via the data_changed signal from save_callback
         self.refresh()
 
     def _on_delete_task(self, task_id: str) -> None:
@@ -2810,6 +2785,7 @@ class ProjectTaskListWidget(QWidget):
         """This is called after the completion animation finishes."""
         toggle_task_completed(self.state, task_id)
         self._save_callback()
+        # self.refresh() is called via the data_changed signal from save_callback
         self.refresh()
 
     def _on_delete_task(self, task_id: str) -> None:
@@ -5150,33 +5126,6 @@ class HubWindow(QMainWindow):
         self.schedule_save()
         self._refresh_home()
 
-    def _parse_task_input(self, text: str):
-        """Helper to extract section, priority, and category from text."""
-        text = text.strip()
-        section = None 
-        important = False
-        category = None
-        
-        # Priority
-        if "!" in text or "urgent" in text.lower():
-            important = True
-            text = text.replace("!", "").replace("urgent", "", 1).strip()
-            
-        # Category hashtags
-        match = re.search(r"#(\w+)", text)
-        if match:
-            category = match.group(1)
-            text = text.replace(match.group(0), "").strip()
-            
-        # Section keywords (simple check)
-        lower = text.lower()
-        if "today" in lower: section = "Today"
-        elif "tomorrow" in lower: section = "Tomorrow"
-        elif "week" in lower: section = "This Week"
-        elif "someday" in lower: section = "Someday"
-            
-        return text, section, category, important
-
     def _on_brain_dump(self, onboarding: bool = False) -> None:
         dlg = BrainDumpDialog(self)
         if onboarding:
@@ -5192,27 +5141,24 @@ class HubWindow(QMainWindow):
             lines = [l.strip() for l in text.split('\n') if l.strip()]
             
             for line in lines:
-                # Parse text
-                p_text, p_section, p_cat, p_imp = self._parse_task_input(line)
+                # Use shared parser from core.model
+                meta = parse_task_input(line)
                 
                 # AI Category Prediction
-                if use_ai and self.ai_engine and not p_cat:
+                if use_ai and self.ai_engine and not meta["category"]:
                     context = {
                         "time_of_day": current_time_of_day(),
                         "day_of_week": datetime.now().strftime("%A"),
                         "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
                     }
-                    p_cat = self.ai_engine.predict_category(p_text, context)
-                
-                # Default section logic
-                section = p_section if p_section else "Someday"
+                    meta["category"] = self.ai_engine.predict_category(meta["text"], context)
                 
                 t = add_task(
                     self.state, 
-                    text=p_text, 
-                    section=section, 
-                    category=p_cat, 
-                    important=p_imp
+                    text=meta["text"], 
+                    section=meta["section"], 
+                    category=meta["category"], 
+                    important=meta["important"]
                 )
                 created_ids.append(t["id"])
             
