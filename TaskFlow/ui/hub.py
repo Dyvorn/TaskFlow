@@ -301,8 +301,6 @@ class SplashWindow(QMainWindow):
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self._opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self._opacity_effect)
         
         # Track timing for minimum load duration
         self._load_start_time = time.time()
@@ -314,7 +312,7 @@ class SplashWindow(QMainWindow):
         self._center_on_screen()
 
         # Start fully transparent, then fade in
-        self._opacity_effect.setOpacity(0.0)
+        self.setWindowOpacity(0.0)
         self._fade_in()
 
     def _build_ui(self) -> None:
@@ -429,7 +427,7 @@ class SplashWindow(QMainWindow):
             self._progress_bar.set_progress(min(100, max(0, value)))
 
     def _fade_in(self) -> None:
-        anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+        anim = QPropertyAnimation(self, b"windowOpacity", self)
         anim.setDuration(SPLASH_FADE_MS)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
@@ -438,7 +436,7 @@ class SplashWindow(QMainWindow):
         anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _fade_out(self) -> None:
-        anim = QPropertyAnimation(self._opacity_effect, b"opacity", self)
+        anim = QPropertyAnimation(self, b"windowOpacity", self)
         anim.setDuration(SPLASH_FADE_MS)
         anim.setStartValue(1.0)
         anim.setEndValue(0.0)
