@@ -1,0 +1,8 @@
+TaskFlow Release Notes
+======================
+
+Version 9.0
+-----------
+- Major UI overhaul with glassmorphism theme.
+- Added AI Coach and Voice Input.
+- New Zen Mode for focus.
