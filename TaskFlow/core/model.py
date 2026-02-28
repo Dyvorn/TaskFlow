@@ -148,6 +148,7 @@ def parse_task_input(text: str) -> Dict[str, Any]:
     section = "Today" # Default
     important = False
     category = None
+    tags = []
     
     # Priority
     if "!" in text or "urgent" in text.lower():
@@ -159,6 +160,12 @@ def parse_task_input(text: str) -> Dict[str, Any]:
     if match:
         category = match.group(1)
         text = text.replace(match.group(0), "").strip()
+
+    # Tags (@tag)
+    tags_found = re.findall(r"@(\w+)", text)
+    if tags_found:
+        tags = tags_found
+        text = re.sub(r"@(\w+)", "", text).strip()
         
     # Section keywords
     lower = text.lower()
@@ -173,7 +180,8 @@ def parse_task_input(text: str) -> Dict[str, Any]:
         "text": text,
         "section": section,
         "category": category,
-        "important": important
+        "important": important,
+        "tags": tags
     }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -433,6 +441,11 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         t.setdefault("schedule", None)
         t.setdefault("category", None)
         t.setdefault("completedAt", t["updatedAt"] if t["completed"] else None)
+        # 10.0 New Fields
+        t.setdefault("subtasks", [])
+        t.setdefault("tags", [])
+        t.setdefault("difficulty", 1) # 1: Easy, 2: Medium, 3: Hard
+        t.setdefault("xpReward", 10)
         fixed_tasks.append(t)
     state["tasks"] = fixed_tasks
 
@@ -639,7 +652,11 @@ def add_task(
     project_id: Optional[str] = None,
     important: bool = False,
     category: Optional[str] = None,
+    tags: Optional[List[str]] = None,
     schedule: Optional[Dict[str, str]] = None,
+    difficulty: int = 1,
+    xpReward: int = 10,
+    estimatedDuration: int = 0,
 ) -> Dict[str, Any]:
     if section not in SECTIONS:
         section = "Today"
@@ -654,6 +671,11 @@ def add_task(
         "updatedAt": now_iso(),
         "important": important,
         "category": category,
+        "tags": tags or [],
+        "subtasks": [],
+        "difficulty": difficulty,
+        "xpReward": xpReward,
+        "estimatedDuration": estimatedDuration,
         "schedule": schedule,
     }
     state.setdefault("tasks", []).append(task)
@@ -673,6 +695,62 @@ def tasks_in_section(state: Dict[str, Any], section: str) -> List[Dict[str, Any]
         ),
     )
 
+def add_subtask(state: Dict[str, Any], parent_task_id: str, text: str) -> Optional[Dict[str, Any]]:
+    """Adds a subtask to a parent task."""
+    parent_task = next((t for t in state.get("tasks", []) if t.get("id") == parent_task_id), None)
+    if not parent_task:
+        return None
+    
+    subtask = {
+        "id": str(uuid.uuid4()),
+        "text": text,
+        "completed": False,
+        "createdAt": now_iso(),
+    }
+    
+    parent_task.setdefault("subtasks", []).append(subtask)
+    parent_task["updatedAt"] = now_iso()
+    
+    log_activity(state, "created", "subtask", subtask["id"], {"parent_task_id": parent_task_id})
+    return subtask
+
+def toggle_subtask_completed(state: Dict[str, Any], task_id: str, subtask_id: str) -> bool:
+    """Toggles the completed status of a subtask and updates parent if needed."""
+    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+    if not task:
+        return False
+        
+    subtasks = task.get("subtasks", [])
+    for st in subtasks:
+        if st.get("id") == subtask_id:
+            st["completed"] = not st.get("completed", False)
+            task["updatedAt"] = now_iso()
+            
+            # If all subtasks are now complete, complete the parent
+            if all(s.get("completed") for s in subtasks):
+                if not task.get("completed"):
+                    toggle_task_completed(state, task_id)
+            # If un-completing a subtask, un-complete the parent
+            elif not st["completed"] and task.get("completed"):
+                 toggle_task_completed(state, task_id)
+
+            log_activity(state, "toggled", "subtask", subtask_id, {"parent_task_id": task_id, "completed": st["completed"]})
+            return True
+            
+    return False
+
+def delete_subtask(state: Dict[str, Any], task_id: str, subtask_id: str) -> bool:
+    """Deletes a subtask from a parent task."""
+    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+    if not task: return False
+    
+    initial_len = len(task.get("subtasks", []))
+    task["subtasks"] = [st for st in task.get("subtasks", []) if st.get("id") != subtask_id]
+    if len(task.get("subtasks", [])) < initial_len:
+        task["updatedAt"] = now_iso()
+        log_activity(state, "deleted", "subtask", subtask_id, {"parent_task_id": task_id})
+        return True
+    return False
 
 def _handle_recurrence(state: Dict[str, Any], original_task: Dict[str, Any]) -> None:
     """Creates the next instance of a recurring task."""
@@ -716,16 +794,20 @@ def toggle_task_completed(state: Dict[str, Any], task_id: str) -> Optional[Dict[
     for t in state.get("tasks", []):
         if t.get("id") == task_id:
             was_completed = t.get("completed")
-            t["completed"] = not was_completed
+            is_completing = not was_completed
+            t["completed"] = is_completing
             t["updatedAt"] = now_iso()
             
             if t["completed"]:
                 t["completedAt"] = now_iso()
+                # Also complete all subtasks
+                for st in t.get("subtasks", []):
+                    st["completed"] = True
             else:
                 t["completedAt"] = None
             
             # Handle recurrence on completion
-            if t["completed"] and not was_completed and t.get("recurrence"):
+            if is_completing and t.get("recurrence"):
                 _handle_recurrence(state, t)
                 
             action = "completed" if t["completed"] else "uncompleted"
@@ -866,3 +948,13 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
         return True
     except Exception:
         return False
+
+def calculate_xp_for_task(task: Dict[str, Any]) -> int:
+    """Calculates XP based on difficulty and importance."""
+    base = task.get("xpReward", 10)
+    difficulty = task.get("difficulty", 1)
+    
+    # Multiplier for difficulty
+    multiplier = 1.0 + (0.5 * (difficulty - 1))
+    
+    return int(base * multiplier)

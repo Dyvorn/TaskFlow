@@ -36,6 +36,7 @@ from PyQt6.QtCore import (
     QPoint,
     QParallelAnimationGroup,
     QPointF,
+    QStackedLayout,
     pyqtSignal, 
     QUrl,
     QMimeData,
@@ -164,6 +165,7 @@ from core.model import (
     set_journal_entry,
     count_today_tasks,
     add_task,
+    add_subtask,
     tasks_in_section,
     toggle_task_completed,
     delete_task,
@@ -190,6 +192,7 @@ from core.model import (
     get_productivity_score,
     get_hourly_activity,
     get_activity_heatmap_data,
+    calculate_xp_for_task,
 )
 
 from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
@@ -2137,13 +2140,26 @@ class TaskListWidget(QWidget):
         # Simple section logic for now (can be expanded)
         target_section = self.section
         
+        # 10.0: AI Analysis
+        difficulty = 1
+        xp = 10
+        duration = 0
+        
+        if self.ai_engine:
+            difficulty = self.ai_engine.analyze_task_complexity(text)
+            xp = difficulty * 15 # Higher scaling
+            duration = self.ai_engine.estimate_duration(text)
+        
         task = add_task(
             self.state, 
             text=text, 
             section=target_section, 
             category=category, 
             important=False,
-            schedule=None
+            schedule=None,
+            difficulty=difficulty,
+            xpReward=xp,
+            estimatedDuration=duration
         )
         
         # Dopamine: Flash input success
@@ -2196,6 +2212,19 @@ class TaskListWidget(QWidget):
             # Trigger confetti via main window
             if self.window() and hasattr(self.window(), "celebrate"):
                 self.window().celebrate()
+
+            # 10.0: XP Reward
+            xp_gain = calculate_xp_for_task(task)
+            stats = self.state.setdefault("stats", {})
+            old_xp = stats.get("xp", 0)
+            new_xp = old_xp + xp_gain
+            stats["xp"] = new_xp
+            
+            # Level Up Check (Level = 1 + XP/500)
+            if int(1 + (new_xp / 500)) > int(1 + (old_xp / 500)):
+                self.window().show_toast(f"🎉 LEVEL UP! You are now Level {int(1 + (new_xp / 500))}!")
+            else:
+                self.window().show_toast(f"Completed! +{xp_gain} XP")
 
             for i in range(self.tasks_list.count()):
                 item = self.tasks_list.item(i)
@@ -2284,6 +2313,11 @@ class TaskListWidget(QWidget):
         act_schedule = menu.addAction("Schedule...")
         act_recur = menu.addAction("Repeat...")
 
+        # 10.0: AI Breakdown
+        menu.addSeparator()
+        act_breakdown = menu.addAction("✨ Break down (AI)")
+        act_zen = menu.addAction("🧘 Focus (Zen Mode)")
+
         move_menu = menu.addMenu("Move to…")
         for sec in ["Today", "Tomorrow", "This Week", "Someday"]:
             if sec != self.section:
@@ -2310,6 +2344,10 @@ class TaskListWidget(QWidget):
             self._prompt_schedule(task_id)
         elif action is act_recur:
             self._prompt_recurrence(task_id)
+        elif action is act_breakdown:
+            self._on_break_down_task(task_id)
+        elif action is act_zen:
+            self.requestFocus.emit(task_id)
         elif action.parent() is move_menu:
             new_section = action.text()
             self._move_task_section(task_id, new_section)
@@ -2409,6 +2447,30 @@ class TaskListWidget(QWidget):
         self._save_callback()
         self.refresh()
 
+    def _on_break_down_task(self, task_id: str) -> None:
+        """Uses AI to split a task into subtasks."""
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task or not self.ai_engine:
+            return
+            
+        subtasks_text = self.ai_engine.generate_subtasks(task.get("text", ""))
+        
+        if not subtasks_text:
+            self.window().show_toast("Could not generate subtasks.")
+            return
+            
+        # Add as true subtasks
+        for st_text in subtasks_text:
+            add_subtask(
+                self.state,
+                parent_task_id=task_id,
+                text=st_text
+            )
+            
+        self._save_callback()
+        self.refresh()
+        self.window().show_toast(f"Created {len(subtasks_text)} subtasks for '{task['text']}'.")
+
     def _suggest_next_task(self) -> None:
         """
         Highlight a gentle next step for Today.
@@ -2442,11 +2504,26 @@ class TaskListWidget(QWidget):
             )
             return
 
-        # Simple scoring for suggestion
+        # Smart scoring based on Mood + AI Difficulty
+        mood = get_today_mood(self.state)
+        mood_val = mood.get("value") if mood else "Okay"
+        
+        # If low energy, prefer easy tasks. If motivated, prefer hard/important.
+        prefer_easy = mood_val in ["Low energy", "Stressed"]
+        
         def score_task(t):
             s = 0
             if t.get("important"): s += 10
             if t.get("due_time"): s += 5
+            
+            diff = t.get("difficulty", 1)
+            if prefer_easy:
+                # Higher score for lower difficulty
+                s += (5 - diff) * 2
+            else:
+                # Bonus for tackling hard things
+                s += diff
+                
             return s
             
         target = max(candidates, key=score_task)
@@ -3164,6 +3241,12 @@ class HubWindow(QMainWindow):
         self._voice_worker = None
 
         self._zen_task_id = None
+        self._pomodoro_mode = False
+        self._pomodoro_count = 0
+        self._zen_session_type = "focus"
+        self._consecutive_focus_sessions = 0
+        self._panic_breathing_timer = None
+        self._panic_phase_counter = 0
         # Prevent app from exiting when window is closed (if tray is enabled)
         QApplication.setQuitOnLastWindowClosed(False)
 
@@ -3492,7 +3575,8 @@ class HubWindow(QMainWindow):
 
         self.btn_search = QPushButton("🔍 Search")
         self.btn_focus = QPushButton("🧘 Focus Mode")
-        self._create_nav_group(nav_layout, "TOOLS", [self.btn_search, self.btn_focus])
+        self.btn_panic = QPushButton("🆘 Panic Relief")
+        self._create_nav_group(nav_layout, "TOOLS", [self.btn_search, self.btn_focus, self.btn_panic])
 
         nav_layout.addStretch(1)
 
@@ -3541,6 +3625,7 @@ class HubWindow(QMainWindow):
         self._build_stats_page()
         self._build_scheduled_page()
         self._build_settings_page()
+        self._build_panic_page()
         self._build_zen_page()
         self.page_search = SearchWidget(self.state, self.schedule_save)
         self.page_profile = CoachWidget(self.ai_engine)
@@ -3556,6 +3641,7 @@ class HubWindow(QMainWindow):
         self.stack.addWidget(self.page_journal)
         self.stack.addWidget(self.page_stats)
         self.stack.addWidget(self.page_settings)
+        self.stack.addWidget(self.page_panic)
         self.stack.addWidget(self.page_profile)
         self.stack.addWidget(self.page_zen)
         self.stack.addWidget(self.page_search)
@@ -3571,6 +3657,7 @@ class HubWindow(QMainWindow):
             self.page_journal: self.btn_journal,
             self.page_stats: self.btn_stats,
             self.page_settings: self.btn_settings,
+            self.page_panic: self.btn_panic,
             self.page_profile: self.btn_profile,
             self.page_search: self.btn_search,
         }
@@ -3589,6 +3676,7 @@ class HubWindow(QMainWindow):
         self.btn_feedback.clicked.connect(self._open_feedback_dialog)
         self.btn_tips.clicked.connect(self._open_tips_dialog)
         self.btn_search.clicked.connect(lambda: self._switch_page(self.page_search))
+        self.btn_panic.clicked.connect(self.enter_panic_mode)
         self.btn_quit.clicked.connect(self.close)
         self.btn_check_updates.clicked.connect(lambda: self._check_updates_async(manual=True))
         self.btn_focus.clicked.connect(self._toggle_focus_mode)
@@ -3627,31 +3715,58 @@ class HubWindow(QMainWindow):
     
     def _build_home_header(self, layout: QVBoxLayout) -> None:
         """Builds the header section of the home page."""
-        header_layout = QHBoxLayout()
+        top_row = QHBoxLayout()
         
+        # Left: Greeting + XP Bar
+        left_col = QVBoxLayout()
         self.lbl_greeting = QLabel("Hello.")
         self.lbl_greeting.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 26px; font-weight: bold;")
-        header_layout.addWidget(self.lbl_greeting)
+        left_col.addWidget(self.lbl_greeting)
         
-        header_layout.addStretch()
+        # XP Bar Container
+        xp_container = QHBoxLayout()
+        self.lbl_level = QLabel("Lvl 1")
+        self.lbl_level.setStyleSheet(f"color: {GOLD}; font-weight: bold; font-size: 12px;")
+        xp_container.addWidget(self.lbl_level)
         
+        self.xp_bar = QProgressBar()
+        self.xp_bar.setFixedHeight(6)
+        self.xp_bar.setFixedWidth(120)
+        self.xp_bar.setTextVisible(False)
+        self.xp_bar.setStyleSheet(f"QProgressBar {{ background-color: {HOVER_BG}; border-radius: 3px; border: none; }} QProgressBar::chunk {{ background-color: {GOLD}; border-radius: 3px; }}")
+        xp_container.addWidget(self.xp_bar)
+        
+        left_col.addLayout(xp_container)
+        top_row.addLayout(left_col)
+        
+        top_row.addStretch()
+        
+        # Right: Streak, Plan, Date
+        right_col = QVBoxLayout()
+        right_col.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        stats_row = QHBoxLayout()
         self.lbl_streak = QLabel("🔥 0")
-        self.lbl_streak.setStyleSheet(f"color: {GOLD}; font-size: 16px; font-weight: bold; margin-right: 15px;")
-        self.lbl_streak.setToolTip("Daily Streak")
-        header_layout.addWidget(self.lbl_streak)
+        self.lbl_streak.setStyleSheet(f"color: {GOLD}; font-size: 16px; font-weight: bold; margin-right: 10px;")
+        stats_row.addWidget(self.lbl_streak)
 
         btn_plan = QPushButton("Plan")
         btn_plan.setToolTip("Run Daily Planning")
         btn_plan.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_plan.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 4px 12px; border: 1px solid {GLASS_BORDER}; font-size: 12px;")
         btn_plan.clicked.connect(lambda: self._run_daily_planning(force=True))
-        header_layout.addWidget(btn_plan)
+        stats_row.addWidget(btn_plan)
+        
+        right_col.addLayout(stats_row)
         
         lbl_date = QLabel(datetime.now().strftime("%A, %B %d"))
-        lbl_date.setStyleSheet(f"color: {GOLD}; font-size: 16px; font-weight: bold;")
-        header_layout.addWidget(lbl_date)
+        lbl_date.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px; margin-top: 4px;")
+        lbl_date.setAlignment(Qt.AlignmentFlag.AlignRight)
+        right_col.addWidget(lbl_date)
         
-        layout.addLayout(header_layout)
+        top_row.addLayout(right_col)
+        
+        layout.addLayout(top_row)
 
     def _build_home_focus_card(self) -> QFrame:
         """Builds the 'Today's Focus' card for the home page."""
@@ -4491,6 +4606,7 @@ class HubWindow(QMainWindow):
         self.zen_lbl_text.setWordWrap(True)
         self.zen_lbl_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.zen_lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 28px; font-weight: bold; margin: 10px;")
+        self.zen_lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 28px; font-weight: bold; margin: 10px; background-color: rgba(0,0,0,0.4); border-radius: 8px; padding: 5px 10px;")
         layout.addWidget(self.zen_lbl_text)
         
         self.zen_lbl_note = QLabel("")
@@ -4512,22 +4628,29 @@ class HubWindow(QMainWindow):
         btn_focus = QPushButton("🎯 25m")
         btn_focus.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_focus.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 15px; padding: 8px 16px;")
-        btn_focus.clicked.connect(lambda: self._start_zen_timer(25))
+        btn_focus.clicked.connect(lambda: self._start_manual_timer(25, "focus"))
         
         btn_break_short = QPushButton("☕ 5m")
         btn_break_short.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_break_short.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 15px; padding: 8px 16px;")
-        btn_break_short.clicked.connect(lambda: self._start_zen_timer(5))
+        btn_break_short.clicked.connect(lambda: self._start_manual_timer(5, "break"))
         
         btn_break_long = QPushButton("🧘 15m")
         btn_break_long.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_break_long.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 15px; padding: 8px 16px;")
-        btn_break_long.clicked.connect(lambda: self._start_zen_timer(15))
+        btn_break_long.clicked.connect(lambda: self._start_manual_timer(15, "break"))
+
+        self.btn_pomodoro = QPushButton("🍅 Pomodoro")
+        self.btn_pomodoro.setCheckable(True)
+        self.btn_pomodoro.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_pomodoro.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 15px; padding: 8px 16px;")
+        self.btn_pomodoro.toggled.connect(self._toggle_pomodoro)
 
         break_layout.addStretch()
         break_layout.addWidget(btn_focus)
         break_layout.addWidget(btn_break_short)
         break_layout.addWidget(btn_break_long)
+        break_layout.addWidget(self.btn_pomodoro)
         break_layout.addStretch()
         layout.addLayout(break_layout)
         
@@ -4575,7 +4698,7 @@ class HubWindow(QMainWindow):
         sound_layout.addWidget(lbl_sound)
         
         self.combo_sound = QComboBox()
-        self.combo_sound.addItems(["Silent", "Rain", "Cafe", "Forest", "White Noise"])
+        self.combo_sound.addItems(["Silent", "Rain", "Cafe", "Forest", "Ocean", "Fireplace", "Calm Piano", "White Noise"])
         self.combo_sound.setFixedWidth(120)
         self.combo_sound.setCursor(Qt.CursorShape.PointingHandCursor)
         self.combo_sound.currentTextChanged.connect(self._on_soundscape_changed)
@@ -4593,6 +4716,72 @@ class HubWindow(QMainWindow):
         sound_layout.addWidget(self.slider_volume)
         
         sound_layout.addStretch()
+
+    def _update_zen_background(self, soundscape: str):
+        """Changes the background of the Zen page based on the soundscape."""
+        style = f"background-color: {DARK_BG};" # Default
+        """Changes the background of the Zen page with a fade animation."""
+        # If an animation is already running, let it finish to avoid glitches.
+        if self.page_zen.graphicsEffect() is not None:
+            return
+        style = f"background-color: {DARK_BG};"  # Default
+        
+        image_map = {
+            "Rain": "rain.jpg",
+            "Forest": "forest.jpg",
+            "Cafe": "cafe.jpg",
+            "Ocean": "ocean.jpg",
+            "Fireplace": "fireplace.jpg",
+        }
+        
+        image_name = image_map.get(soundscape)
+        
+        if image_name:
+            # Path logic adapted from _play_soundscape
+            base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            # Assume images are in assets/images
+            image_path = os.path.join(base_dir, "assets", "images", image_name)
+            
+            if not os.path.exists(image_path):
+                if not getattr(sys, 'frozen', False):
+                    # Fallback for running from source (ui/hub.py -> TaskFlow/assets/images)
+                    image_path = os.path.join(os.path.dirname(__file__), "..", "assets", "images", image_name)
+
+            if os.path.exists(image_path):
+                css_path = image_path.replace('\\', '/')
+                style = f"border-image: url('{css_path}') 0 0 0 0 stretch stretch;"
+
+        final_style = f"QWidget {{ {style} }}"
+
+        # Avoid animation if style is the same or page is not visible
+        if self.page_zen.styleSheet() == final_style or not self.page_zen.isVisible():
+            self.page_zen.setStyleSheet(final_style)
+            return
+
+        # Animate: Fade out, change background, fade in
+        effect = QGraphicsOpacityEffect(self.page_zen)
+        self.page_zen.setGraphicsEffect(effect)
+        
+        self.page_zen.setStyleSheet(f"QWidget {{ {style} }}")
+        anim_out = QPropertyAnimation(effect, b"opacity", self.page_zen)
+        anim_out.setDuration(250)  # Fast fade out
+        anim_out.setStartValue(1.0)
+        anim_out.setEndValue(0.0)
+        anim_out.setEasingCurve(QEasingCurve.Type.InCubic)
+        
+        def on_faded_out():
+            self.page_zen.setStyleSheet(final_style)
+            
+            anim_in = QPropertyAnimation(effect, b"opacity", self.page_zen)
+            anim_in.setDuration(350)  # Slower fade in
+            anim_in.setStartValue(0.0)
+            anim_in.setEndValue(1.0)
+            anim_in.setEasingCurve(QEasingCurve.Type.OutCubic)
+            anim_in.finished.connect(lambda: self.page_zen.setGraphicsEffect(None))
+            anim_in.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
+        anim_out.finished.connect(on_faded_out)
+        anim_out.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def enter_zen_mode(self, task_id: str):
         t = next((x for x in self.state["tasks"] if x["id"] == task_id), None)
@@ -4616,13 +4805,33 @@ class HubWindow(QMainWindow):
         # Restore sound preference
         saved_sound = self.state.get("settings", {}).get("zenSoundscape", "Silent")
         self.combo_sound.setCurrentText(saved_sound)
+        self._update_zen_background(saved_sound)
         
         self._switch_page(self.page_zen)
         
         # Start default 25m
-        self._start_zen_timer(25)
+        self._start_zen_timer(25, "focus")
 
-    def _start_zen_timer(self, minutes: int):
+    def _toggle_pomodoro(self, checked: bool):
+        self._pomodoro_mode = checked
+        if checked:
+            self.btn_pomodoro.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 15px; padding: 8px 16px; font-weight: bold;")
+            self._pomodoro_count = 0
+            self._start_zen_timer(25, "focus")
+        else:
+            self.btn_pomodoro.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 15px; padding: 8px 16px;")
+
+    def _start_manual_timer(self, minutes: int, session_type: str):
+        """Starts a timer and disables Pomodoro mode since this is a manual override."""
+        if hasattr(self, "btn_pomodoro"):
+            self.btn_pomodoro.setChecked(False)
+        self._pomodoro_mode = False
+        self._start_zen_timer(minutes, session_type)
+
+    def _start_zen_timer(self, minutes: int, session_type: str = "focus"):
+        if session_type == "break":
+            self._consecutive_focus_sessions = 0 # Reset counter when a break starts
+        self._zen_session_type = session_type
         self._play_soundscape()
         self._zen_seconds = minutes * 60
         self._zen_session_duration = minutes
@@ -4650,7 +4859,6 @@ class HubWindow(QMainWindow):
             self.zen_timer_lbl.setText("00:00")
             self._zen_timer.stop()
             self._allow_sleep()
-            self._stop_soundscape()
 
             if winsound:
                 try: winsound.MessageBeep(winsound.MB_ICONASTERISK)
@@ -4658,22 +4866,60 @@ class HubWindow(QMainWindow):
             
             # Notify if minimized or in background
             if self.isMinimized() or not self.isActiveWindow():
-                self.tray_icon.showMessage(
-                    "Zen Session Complete",
-                    "Great focus! Time for a break.",
-                    QSystemTrayIcon.MessageIcon.Information,
-                    4000
-                )
+                msg = "Great focus! Time for a break." if self._zen_session_type == "focus" else "Break over. Ready to focus?"
+                self.tray_icon.showMessage("Timer Complete", msg, QSystemTrayIcon.MessageIcon.Information, 4000)
                 QApplication.alert(self)
             
-            self.celebrate()
+            if self._zen_session_type == "focus":
+                self.celebrate()
 
             # Log the completed session
-            log_activity(self.state, "completed", "focusSession", self._zen_task_id, {"duration": self._zen_session_duration})
-            self.schedule_save()
+            if self._zen_session_type == "focus":
+                log_activity(self.state, "completed", "focusSession", self._zen_task_id, {"duration": self._zen_session_duration})
+                self._consecutive_focus_sessions += 1
+                self.schedule_save()
 
-            # Suggest a break
-            self.show_toast("Session Complete! Time for a break?")
+            if self._pomodoro_mode:
+                self._handle_pomodoro_transition()
+            else:
+                self._stop_soundscape()
+                
+                # AI Suggestion: Suggest a break after multiple focus sessions
+                if self._zen_session_type == "focus" and self._consecutive_focus_sessions >= 2:
+                    reply = QMessageBox.question(self, "Time for a Break?", 
+                                                 f"You've focused for {self._consecutive_focus_sessions} sessions straight. Great work!\n\nWould you like to take a 5-minute break?",
+                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                    if reply == QMessageBox.StandardButton.Yes:
+                        self._start_zen_timer(5, "break") # This will reset the counter
+                    else:
+                        # User declined, reset counter to avoid asking again immediately
+                        self._consecutive_focus_sessions = 0
+                        self.show_toast("Okay, keep up the great work!")
+                else:
+                    self.show_toast("Session Complete!")
+
+    def _handle_pomodoro_transition(self):
+        if self._zen_session_type == "focus":
+            self._pomodoro_count += 1
+            # Determine break length (Long break every 4th session)
+            is_long = (self._pomodoro_count % 4 == 0)
+            duration = 15 if is_long else 5
+            
+            reply = QMessageBox.question(self, "Pomodoro Focus Complete", f"Great job! You've completed {self._pomodoro_count} session(s).\nStart {duration}m break?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self._start_zen_timer(duration, "break")
+            else:
+                self.btn_pomodoro.setChecked(False)
+                self._stop_soundscape()
+        else: # was break
+            reply = QMessageBox.question(self, "Break Over", "Ready to focus again (25m)?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self._start_zen_timer(25, "focus")
+            else:
+                self.btn_pomodoro.setChecked(False)
+                self._stop_soundscape()
 
     def _on_zen_distraction(self):
         text = self.zen_distraction.text().strip()
@@ -4684,11 +4930,56 @@ class HubWindow(QMainWindow):
             self.zen_distraction.clear()
             # Visual feedback
             self.show_toast("Saved to Ideas! Stay focused.")
+        if not text:
+            return
+
+        # Parse input
+        meta = parse_task_input(text)
+        
+        # AI Enrichment
+        difficulty = 1
+        xp = 10
+        duration = 0
+        
+        if self.ai_engine:
+            # Predict Category if missing
+            if not meta["category"]:
+                context = {
+                    "time_of_day": current_time_of_day(),
+                    "day_of_week": datetime.now().strftime("%A"),
+                    "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+                }
+                meta["category"] = self.ai_engine.predict_category(meta["text"], context)
+            
+            # Analyze Complexity & Duration
+            difficulty = self.ai_engine.analyze_task_complexity(meta["text"])
+            xp = difficulty * 15
+            duration = self.ai_engine.estimate_duration(meta["text"])
+
+        # Add as task
+        add_task(
+            self.state,
+            text=meta["text"],
+            section=meta["section"],
+            category=meta["category"],
+            important=meta["important"],
+            tags=meta.get("tags", []),
+            difficulty=difficulty,
+            xpReward=xp,
+            estimatedDuration=duration
+        )
+
+        self.schedule_save()
+        self.zen_distraction.clear()
+        
+        # Visual feedback
+        self.show_toast(f"Saved to {meta['section']}! Stay focused.")
 
     def _on_soundscape_changed(self, text):
         self.state.setdefault("settings", {})["zenSoundscape"] = text
         self.schedule_save()
         if self.isVisible() and self.stack.currentWidget() == self.page_zen:
+            self._update_zen_background(text)
             self._play_soundscape()
 
     def _on_zen_volume_changed(self, value: int):
@@ -4701,10 +4992,10 @@ class HubWindow(QMainWindow):
         self.state.setdefault("settings", {})["zenVolume"] = volume
         self.schedule_save()
 
-    def _play_soundscape(self):
+    def _play_soundscape(self, sound_name: Optional[str] = None):
         if not self.media_player: return
         
-        sound = self.combo_sound.currentText()
+        sound = sound_name or self.combo_sound.currentText()
         if sound == "Silent":
             self.media_player.stop()
             return
@@ -4744,7 +5035,20 @@ class HubWindow(QMainWindow):
         self.schedule_save()
         self.exit_zen_mode()
 
+    def exit_panic_mode(self):
+        self.panic_background.stop_animation()
+        self._stop_soundscape()
+        if self._panic_breathing_timer:
+            self._panic_breathing_timer.stop()
+        self.nav_frame.setVisible(True)
+        self._switch_page(self.page_home)
+
     def exit_zen_mode(self):
+        self._consecutive_focus_sessions = 0 # Reset on manual exit
+        self._pomodoro_mode = False
+        if hasattr(self, "btn_pomodoro"):
+            self.btn_pomodoro.setChecked(False)
+        self._update_zen_background("Silent") # Reset background
         self._stop_soundscape()
         self._allow_sleep()
         self._zen_task_id = None
@@ -4763,10 +5067,16 @@ class HubWindow(QMainWindow):
         mood = get_today_mood(self.state)
         mood_value = mood.get("value") if mood else None
         
-        # Update Streak
+        # Update Streak & XP
         streak = stats.get("currentStreak", 0)
-        if hasattr(self, "lbl_streak"):
-            self.lbl_streak.setText(f"🔥 {streak}")
+        xp = stats.get("xp", 0)
+        level = int(1 + (xp / 500)) # Simple level formula
+        current_level_xp = xp % 500
+        
+        self.lbl_streak.setText(f"🔥 {streak}")
+        self.lbl_level.setText(f"Lvl {level}")
+        self.xp_bar.setValue(int((current_level_xp / 500) * 100))
+        self.xp_bar.setToolTip(f"{current_level_xp} / 500 XP to Level {level + 1}")
         
         # Update Greeting
         name = get_user_name(self.state)
@@ -5125,12 +5435,24 @@ class HubWindow(QMainWindow):
                     }
                     meta["category"] = self.ai_engine.predict_category(meta["text"], context)
                 
+                # AI Complexity
+                diff = 1
+                xp = 10
+                dur = 0
+                if self.ai_engine:
+                    diff = self.ai_engine.analyze_task_complexity(meta["text"])
+                    xp = diff * 15
+                    dur = self.ai_engine.estimate_duration(meta["text"])
+                
                 t = add_task(
                     self.state, 
                     text=meta["text"], 
                     section=meta["section"], 
                     category=meta["category"], 
-                    important=meta["important"]
+                    important=meta["important"],
+                    difficulty=diff,
+                    xpReward=xp,
+                    estimatedDuration=dur
                 )
                 created_ids.append(t["id"])
             

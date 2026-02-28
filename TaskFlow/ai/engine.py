@@ -3,7 +3,9 @@ import torch
 import shutil
 from pathlib import Path
 from typing import Dict, Optional, List
+from datetime import datetime
 
+from core.model import today_str
 from core.user_manager import UserManager
 from .architect import TaskBrain
 from .pipeline import TaskPipeline
@@ -260,3 +262,127 @@ class AIEngine:
         if suggestion_id not in dismissed:
             dismissed.append(suggestion_id)
         # The caller is expected to schedule a save.
+
+    def rank_tasks(self, tasks: List[Dict], context: Dict) -> List[Dict]:
+        """
+        Ranks tasks based on AI-driven heuristics and context.
+        Returns a sorted list of tasks.
+        """
+        mood = context.get("mood", "Okay")
+        prefer_easy = mood in ["Low energy", "Stressed"]
+
+        def score_task(t):
+            score = 0
+            # --- Factors that INCREASE score (higher priority) ---
+            
+            # 1. Importance is paramount
+            if t.get("important"):
+                score += 100
+
+            # 2. Scheduled items with a due date today
+            schedule = t.get("schedule")
+            if schedule and schedule.get("date") == today_str():
+                score += 50
+                # Bonus if it has a time
+                if schedule.get("time"):
+                    score += 10
+
+            # 3. Difficulty (context-dependent)
+            difficulty = t.get("difficulty", 1)
+            if prefer_easy:
+                # If low energy, give a large boost to easier tasks to get momentum
+                score += (5 - difficulty) * 10
+            else:
+                # If motivated, give a slight bonus to harder tasks
+                score += difficulty * 2
+            
+            # 4. Age of task (older tasks get a small nudge)
+            try:
+                created_dt = datetime.fromisoformat(t.get("createdAt", ""))
+                days_old = (datetime.now() - created_dt).days
+                score += min(days_old, 5) # Cap at 5 to avoid old tasks always winning
+            except:
+                pass
+
+            return score
+
+        # Sort descending by score (higher score = higher priority)
+        return sorted(tasks, key=score_task, reverse=True)
+
+    def analyze_task_complexity(self, text: str) -> int:
+        """
+        Estimates difficulty (1-5) based on keywords and length.
+        1: Trivial, 2: Easy, 3: Medium, 4: Hard, 5: Epic
+        """
+        text = text.lower()
+        score = 1
+        
+        # Length heuristic
+        if len(text.split()) > 8:
+            score += 1
+            
+        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop"]
+        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare"]
+        
+        # Keyword heuristics
+        if any(k in text for k in hard_keywords):
+            score += 2
+        elif any(k in text for k in medium_keywords):
+            score += 1
+            
+        # Time heuristics (if user mentions time)
+        if "hour" in text or "hr" in text:
+            score += 1
+        if "day" in text or "week" in text:
+            score += 2
+            
+        # Cap at 5
+        return min(5, max(1, score))
+
+    def generate_subtasks(self, text: str) -> List[str]:
+        """
+        Returns a list of suggested subtasks based on the parent task text.
+        Uses heuristics for now, can be upgraded to LLM later.
+        """
+        text = text.lower()
+        
+        if "report" in text or "paper" in text:
+            return ["Research topic", "Create outline", "Draft introduction", "Write body paragraphs", "Review and edit"]
+        elif "presentation" in text or "slides" in text:
+            return ["Outline key points", "Gather visuals/data", "Create slides", "Practice delivery"]
+        elif "meeting" in text:
+            return ["Prepare agenda", "Send invites", "Prepare notes"]
+        elif "clean" in text or "tidy" in text:
+            return ["Clear surfaces", "Dust", "Vacuum/Sweep", "Take out trash"]
+        elif "shop" in text or "groceries" in text:
+            return ["Check fridge", "Make list", "Go to store"]
+        elif "learn" in text or "study" in text:
+            return ["Find resources/tutorial", "Set up environment", "Practice exercises", "Review notes"]
+        elif "fix" in text or "debug" in text:
+            return ["Reproduce issue", "Analyze logs", "Implement fix", "Test solution"]
+        elif "email" in text:
+            return ["Draft content", "Proofread", "Send"]
+        elif "trip" in text or "travel" in text:
+            return ["Book tickets", "Book accommodation", "Pack bags", "Check documents"]
+        
+        # Generic breakdown
+        return ["Step 1: Preparation", "Step 2: Execution", "Step 3: Review"]
+
+    def estimate_duration(self, text: str) -> int:
+        """
+        Returns estimated duration in minutes based on text.
+        Returns 0 if no estimate could be made.
+        """
+        text = text.lower()
+        
+        # Explicit time mentions could be parsed here, but for now we use heuristics
+        if any(k in text for k in ["quick", "call", "email", "check", "pay"]):
+            return 15
+        if any(k in text for k in ["meeting", "review", "clean", "fix", "write"]):
+            return 30
+        if any(k in text for k in ["report", "presentation", "design", "study"]):
+            return 60
+        if any(k in text for k in ["project", "build", "refactor"]):
+            return 120
+            
+        return 0

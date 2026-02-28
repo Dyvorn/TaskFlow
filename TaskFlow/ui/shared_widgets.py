@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Callable
 
 from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
 from PyQt6.QtGui import QPainter, QColor, QCursor
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame
 
 from core.model import (
     GOLD,
@@ -193,6 +193,45 @@ class TaskRowWidget(QWidget):
         chk.clicked.connect(lambda: self.toggled.emit(self.task_id))
         focus_btn.clicked.connect(lambda: self.focusRequested.emit(self.task_id))
         del_btn.clicked.connect(lambda: self.deleted.emit(self.task_id))
+
+        self._apply_decorations()
+
+    def _apply_decorations(self):
+        """Adds visual indicators (difficulty, duration) to the task row."""
+        # Difficulty
+        difficulty = self.task.get("difficulty", 1)
+        if difficulty > 2:
+            self.difficulty_indicator = QFrame(self)
+            self.difficulty_indicator.setFixedSize(4, 18)
+            
+            color = GOLD
+            tooltip = "Difficulty: Medium"
+            if difficulty == 4:
+                color = "#f39c12" # Orange
+                tooltip = "Difficulty: Hard"
+            elif difficulty >= 5:
+                color = "#e74c3c" # Red
+                tooltip = "Difficulty: Epic"
+            
+            self.difficulty_indicator.setStyleSheet(f"background-color: {color}; border-radius: 2px;")
+            self.difficulty_indicator.setToolTip(tooltip)
+            self.difficulty_indicator.show()
+        else:
+            self.difficulty_indicator = None
+
+        # Duration
+        duration = self.task.get("estimatedDuration", 0)
+        if duration > 0:
+            layout = self.layout()
+            if layout:
+                lbl = QLabel(f"⏱ {duration}m")
+                lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px; margin-right: 8px; background: transparent;")
+                layout.insertWidget(2, lbl)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'difficulty_indicator') and self.difficulty_indicator:
+             self.difficulty_indicator.move(6, (self.height() - 18) // 2)
 
 class ConfettiOverlay(QWidget):
     """
