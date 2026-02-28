@@ -16,7 +16,7 @@
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
-AppId={{8A4B6C2D-1E3F-4567-890A-BCDEF1234567}
+AppId={{8A4B6C2D-1E3F-4567-890A-BCDEF1234567}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
@@ -24,10 +24,10 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL="https://github.com/Dyvorn/TaskFlow/issues"
 AppUpdatesURL="https://github.com/Dyvorn/TaskFlow/releases"
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={userpf}\{#MyAppName}
 DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
-;PrivilegesRequired=lowest
+PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64
 
 ; --- Output ---
@@ -41,9 +41,6 @@ WizardStyle=modern
 WizardSmallImageFile=TaskFlow\icon.ico
 ; To make this work, create a 164x314 bitmap (.bmp) file with a dark background.
 ; WizardImageFile=TaskFlow\wizard-image.bmp 
-WizardSolid=yes
-WizardColor=$121212
-WizardTextColor=$E0E0E0
 
 ; --- Compression ---
 Compression=lzma2/ultra64
