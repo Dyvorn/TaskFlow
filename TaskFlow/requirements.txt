@@ -1,7 +1,16 @@
 --index-url https://download.pytorch.org/whl/cpu
+# PyTorch (CPU version for smaller build size)
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch
+
+# GUI
 PyQt6
+
+# AI & Voice
 faster-whisper
 dateparser
 pyaudio
+
+# Utilities
 requests
+pyinstaller

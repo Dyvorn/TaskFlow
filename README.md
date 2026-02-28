@@ -89,7 +89,7 @@ This project is open source. See the LICENSE file for details.
 
 ## Author
 
-**Dyvorn** - App Developer and Creator
+**Refined** - App Developer and Creator
 
 ## Status
 

@@ -1,18 +1,8 @@
 import os
-import shutil
 import subprocess
 import sys
 
-def clean():
-    """Removes previous build artifacts to ensure a fresh compile."""
-    dirs = ["build", "dist"]
-    for d in dirs:
-        if os.path.exists(d):
-            print(f"Cleaning '{d}' directory...")
-            try:
-                shutil.rmtree(d)
-            except Exception as e:
-                print(f"Warning: Could not remove {d}: {e}")
+from clean import clean_project
 
 def build():
     """Runs PyInstaller using the existing spec file."""
@@ -40,5 +30,5 @@ if __name__ == "__main__":
     # Ensure we are in the script's directory
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     
-    clean()
+    clean_project()
     build()

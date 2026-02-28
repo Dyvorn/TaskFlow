@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Callable
 # ═══════════════════════════════════════════════════════════════════════════
 
 APP_NAME = "TaskFlow"
-APP_VERSION = "9.0"
+APP_VERSION = "10.0"
 DATA_DIR_NAME = "TaskFlow_Data"
 
 # Theme colors

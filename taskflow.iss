@@ -5,8 +5,8 @@
 ; Defines - Central place for app info
 ; ------------------------------------------------------------------
 #define MyAppName "TaskFlow"
-#define MyAppVersion "9.0"
-#define MyAppPublisher "Dyvorn"
+#define MyAppVersion "10.0"
+#define MyAppPublisher "Refined"
 #define MyAppURL "https://github.com/Dyvorn/TaskFlow"
 #define MyAppExeName "TaskFlow.exe"
 
