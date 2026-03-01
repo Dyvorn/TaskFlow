@@ -36,7 +36,6 @@ from PyQt6.QtCore import (
     QPoint,
     QParallelAnimationGroup,
     QPointF,
-    QStackedLayout,
     pyqtSignal, 
     QUrl,
     QMimeData,
@@ -90,6 +89,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QSystemTrayIcon,
     QLayout,
+    QStackedLayout,
 )
 
 try:
@@ -1719,6 +1719,63 @@ class VoiceWorker(QThread):
         except:
             pass
 
+class BreathingCircle(QWidget):
+    """
+    A widget that displays a breathing animation (expanding/contracting circle).
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.scale_factor = 1.0
+        self.anim = QVariantAnimation()
+        self.anim.setDuration(8000)  # 4s in, 4s out
+        self.anim.setStartValue(1.0)
+        self.anim.setKeyValueAt(0.5, 1.5) # Expand to 1.5x
+        self.anim.setEndValue(1.0)
+        self.anim.setLoopCount(-1)
+        self.anim.valueChanged.connect(self._update_scale)
+        self.text = "Breathe In"
+
+    def _update_scale(self, value):
+        self.scale_factor = value
+        # Update text based on phase
+        progress = self.anim.currentTime() / self.anim.duration()
+        if progress < 0.5:
+            self.text = "Breathe In"
+        else:
+            self.text = "Breathe Out"
+        self.update()
+
+    def start_animation(self):
+        self.anim.start()
+
+    def stop_animation(self):
+        self.anim.stop()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        center = rect.center()
+        # Base radius
+        base_radius = min(rect.width(), rect.height()) / 6
+        radius = base_radius * self.scale_factor
+        
+        # Draw circle
+        color = QColor("#4ECDC4") # Teal
+        color.setAlpha(150)
+        painter.setBrush(color)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(center, int(radius), int(radius))
+        
+        # Draw text
+        painter.setPen(QColor(255, 255, 255))
+        f = painter.font()
+        f.setPointSize(16)
+        f.setBold(True)
+        painter.setFont(f)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text)
+
 # ============================================================================
 # SECTION 5: TASK LIST WIDGETS (TODAY / WEEK / SOMEDAY / PROJECTS)
 # ============================================================================
@@ -2609,11 +2666,13 @@ class ProjectTaskListWidget(QWidget):
         self,
         state: Dict[str, Any],
         save_callback,
+        ai_engine=None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
         self.state = state
         self._save_callback = save_callback
+        self.ai_engine = ai_engine
         self._project_id: Optional[str] = None
 
         self._build_ui()
@@ -2635,6 +2694,14 @@ class ProjectTaskListWidget(QWidget):
         self.info_label = QLabel("No project selected.")
         self.info_label.setStyleSheet(f"color: {TEXT_GRAY};")
         info_row.addWidget(self.info_label, 1)
+
+        # AI Suggest Button
+        self.btn_suggest = QPushButton("✨ Suggest Tasks")
+        self.btn_suggest.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_suggest.setToolTip("Use AI to generate tasks for this project")
+        self.btn_suggest.clicked.connect(self._on_suggest_tasks)
+        self.btn_suggest.setVisible(False) # Hidden by default until project selected
+        info_row.addWidget(self.btn_suggest)
 
         self.btn_send_today = QPushButton("Send selected to Today")
         self.btn_send_today.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2761,6 +2828,7 @@ class ProjectTaskListWidget(QWidget):
         self.btn_send_today.setEnabled(enabled)
         self.btn_mark_all.setEnabled(enabled)
         self.btn_clear_completed.setEnabled(enabled)
+        self.btn_suggest.setEnabled(enabled)
         self.tasks_list.setEnabled(enabled)
 
     # ────────────────────────────────────────────────────────────────────
@@ -2771,11 +2839,28 @@ class ProjectTaskListWidget(QWidget):
         text = self.quick_add_input.text().strip()
         if not text or not self._project_id:
             return
+            
+        # AI Enrichment
+        difficulty = 1
+        xp = 10
+        duration = 0
+        category = "Work" # Default for projects
+        
+        if self.ai_engine:
+            difficulty = self.ai_engine.analyze_task_complexity(text)
+            xp = difficulty * 15
+            duration = self.ai_engine.estimate_duration(text)
+            # We could predict category, but usually projects imply a category context
+
         task = add_task(
             self.state,
             text=text,
             section="Someday",
             project_id=self._project_id,
+            category=category,
+            difficulty=difficulty,
+            xpReward=xp,
+            estimatedDuration=duration
         )
         
         # Dopamine: Flash input success (Consistent with main list)
@@ -2939,6 +3024,31 @@ class ProjectTaskListWidget(QWidget):
         self._save_callback()
         self.refresh()
 
+    def _on_suggest_tasks(self) -> None:
+        if not self._project_id or not self.ai_engine:
+            return
+            
+        proj = get_project_by_id(self.state, self._project_id)
+        if not proj: return
+        
+        suggestions = self.ai_engine.generate_project_tasks(proj.get("name", ""))
+        if not suggestions:
+            return
+            
+        for text in suggestions:
+            add_task(
+                self.state,
+                text=text,
+                section="Someday",
+                project_id=self._project_id
+            )
+        self._save_callback()
+        self.refresh()
+        
+        # Feedback
+        if self.window():
+            self.window().show_toast(f"Added {len(suggestions)} suggested tasks.")
+
 class SearchWidget(QWidget):
     """
     Global search page to find tasks across all sections.
@@ -3022,10 +3132,11 @@ class JournalWidget(QWidget):
     """
     Rich text daily journal with formatting and a cleaner UI.
     """
-    def __init__(self, state: Dict[str, Any], save_callback, parent: Optional[QWidget] = None):
+    def __init__(self, state: Dict[str, Any], save_callback, ai_engine=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.state = state
         self._save_callback = save_callback
+        self.ai_engine = ai_engine
         self._current_date = today_str()
         self._build_ui()
         self.refresh()
@@ -3098,6 +3209,14 @@ class JournalWidget(QWidget):
         self.combo_size.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 4px;")
         self.combo_size.currentTextChanged.connect(self._change_font_size)
         tb_layout.addWidget(self.combo_size)
+
+        # AI Insight Button
+        btn_ai = QPushButton("✨ AI Insight")
+        btn_ai.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_ai.setToolTip("Get AI feedback on your entry")
+        btn_ai.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 4px; padding: 4px 8px; font-weight: bold;")
+        btn_ai.clicked.connect(self._on_ai_insight)
+        tb_layout.addWidget(btn_ai)
 
         # Saved Indicator
         self.lbl_saved = QLabel("Saved")
@@ -3219,6 +3338,17 @@ class JournalWidget(QWidget):
         fmt.setFontPointSize(size)
         self.editor.mergeCurrentCharFormat(fmt)
         self.editor.setFocus()
+
+    def _on_ai_insight(self):
+        text = self.editor.toPlainText().strip()
+        if not text:
+            return
+        
+        if self.ai_engine:
+            insight = self.ai_engine.analyze_journal_sentiment(text)
+            QMessageBox.information(self, "AI Insight", insight)
+        else:
+            QMessageBox.information(self, "AI Insight", "AI Engine not available.")
 
 # ============================================================================
 # SECTION 6: HUB WINDOW - LAYOUT, NAVIGATION & PAGES
@@ -3925,7 +4055,7 @@ class HubWindow(QMainWindow):
         self.page_today = TaskListWidget(self.state, "Today", self.schedule_save)
         self.page_week = TaskListWidget(self.state, "This Week", self.schedule_save)
         self.page_someday = TaskListWidget(self.state, "Someday", self.schedule_save)
-        self.page_journal = JournalWidget(self.state, self.schedule_save)
+        self.page_journal = JournalWidget(self.state, self.schedule_save, self.ai_engine)
         
         # Connect Focus Signals
         for page in (self.page_today, self.page_week, self.page_someday):
@@ -4156,7 +4286,7 @@ class HubWindow(QMainWindow):
         self.project_detail_title.setObjectName("PageHeader")
         project_detail_layout.addWidget(self.project_detail_title)
 
-        self.project_task_widget = ProjectTaskListWidget(self.state, self.schedule_save)
+        self.project_task_widget = ProjectTaskListWidget(self.state, self.schedule_save, self.ai_engine)
         project_detail_layout.addWidget(self.project_task_widget)
 
         content.addWidget(self.project_detail, 1)
@@ -4590,6 +4720,38 @@ class HubWindow(QMainWindow):
         dlg = QuickTipsDialog(self)
         dlg.exec()
         self._set_button_highlight(self.btn_tips, False)
+
+    def _build_panic_page(self) -> None:
+        self.page_panic = QWidget()
+        layout = QVBoxLayout(self.page_panic)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(40)
+        
+        lbl = QLabel("Panic Relief")
+        lbl.setStyleSheet(f"color: {GOLD}; font-size: 28px; font-weight: bold;")
+        layout.addWidget(lbl, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        self.panic_background = BreathingCircle()
+        self.panic_background.setMinimumSize(400, 400)
+        layout.addWidget(self.panic_background, 1)
+        
+        lbl_instr = QLabel("Follow the circle. Breathe in as it expands, out as it shrinks.")
+        lbl_instr.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
+        layout.addWidget(lbl_instr, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        btn_exit = QPushButton("I'm feeling better")
+        btn_exit.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_exit.setFixedSize(200, 50)
+        btn_exit.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 25px; font-size: 16px; border: 1px solid {GLASS_BORDER};")
+        btn_exit.clicked.connect(self.exit_panic_mode)
+        layout.addWidget(btn_exit, 0, Qt.AlignmentFlag.AlignCenter)
+
+    def enter_panic_mode(self) -> None:
+        self.nav_frame.setVisible(False)
+        self._switch_page(self.page_panic)
+        self.panic_background.start_animation()
+        # Play calming sound if available
+        self._play_soundscape("Rain")
 
     def _build_zen_page(self):
         self.page_zen = QWidget()
@@ -5350,6 +5512,7 @@ class HubWindow(QMainWindow):
         self.project_detail_title.setText(proj.get("name", "Untitled"))
         self.project_task_widget.set_project(pid)
         self.state["widgetCurrentProjectId"] = pid
+        self.project_task_widget.btn_suggest.setVisible(True) # Show suggest button when project selected
         self.schedule_save()
 
     # ────────────────────────────────────────────────────────────────────

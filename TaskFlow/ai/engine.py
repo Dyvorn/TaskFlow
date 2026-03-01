@@ -300,7 +300,14 @@ class AIEngine:
             try:
                 created_dt = datetime.fromisoformat(t.get("createdAt", ""))
                 days_old = (datetime.now() - created_dt).days
-                score += min(days_old, 5) # Cap at 5 to avoid old tasks always winning
+                
+                if t.get("important"):
+                    # Neglected important task -> Boost urgency significantly
+                    score += days_old * 2
+                else:
+                    # Fresh tasks get a small momentum bonus
+                    if days_old < 3:
+                        score += 5
             except:
                 pass
 
@@ -311,32 +318,46 @@ class AIEngine:
 
     def analyze_task_complexity(self, text: str) -> int:
         """
-        Estimates difficulty (1-5) based on keywords and length.
+        Estimates difficulty (1-5) based on keywords, length, and cognitive load.
         1: Trivial, 2: Easy, 3: Medium, 4: Hard, 5: Epic
         """
         text = text.lower()
+        words = text.split()
         score = 1
         
-        # Length heuristic
-        if len(text.split()) > 8:
+        # 1. Length heuristic (longer tasks often imply more detail/steps)
+        if len(words) > 12:
+            score += 2
+        elif len(words) > 6:
             score += 1
             
-        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop"]
-        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare"]
+        # 2. Scope Keywords
+        epic_keywords = ["entire", "whole", "complete", "overhaul", "rewrite", "migration", "launch"]
+        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop", "implement"]
+        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare", "draft"]
         
-        # Keyword heuristics
-        if any(k in text for k in hard_keywords):
+        if any(k in text for k in epic_keywords):
+            score += 3
+        elif any(k in text for k in hard_keywords):
             score += 2
         elif any(k in text for k in medium_keywords):
             score += 1
             
-        # Time heuristics (if user mentions time)
-        if "hour" in text or "hr" in text:
+        # 3. Time heuristics (explicit mentions)
+        if "days" in text or "week" in text:
+            score += 3
+        elif "hours" in text or "hr" in text:
             score += 1
-        if "day" in text or "week" in text:
-            score += 2
+        elif "min" in text or "quick" in text:
+            score -= 1 # Explicitly short
             
-        # Cap at 5
+        # 4. Cognitive Load (Abstract vs Concrete)
+        # "Think about", "Decide", "Strategy" imply high cognitive load
+        cognitive_heavy = ["decide", "strategy", "architecture", "solve", "debug", "figure out", "understand"]
+        if any(k in text for k in cognitive_heavy):
+            score += 1
+
+        # Cap at 5, Min 1
         return min(5, max(1, score))
 
     def generate_subtasks(self, text: str) -> List[str]:
@@ -385,4 +406,60 @@ class AIEngine:
         if any(k in text for k in ["project", "build", "refactor"]):
             return 120
             
-        return 0
+        # Fallback to complexity-based estimation if no keywords found
+        complexity = self.analyze_task_complexity(text)
+        # 1:15m, 2:30m, 3:45m, 4:90m, 5:180m
+        base_map = {1: 15, 2: 30, 3: 45, 4: 90, 5: 180}
+        return base_map.get(complexity, 30)
+
+    def analyze_journal_sentiment(self, text: str) -> str:
+        """Simple sentiment/reflection analysis for journal entries."""
+        text = text.lower()
+        
+        themes = []
+        if any(w in text for w in ["sad", "tired", "stressed", "anxious", "bad", "fail", "overwhelmed"]):
+            themes.append("negative")
+        if any(w in text for w in ["happy", "great", "excited", "good", "win", "success", "proud"]):
+            themes.append("positive")
+        if any(w in text for w in ["busy", "work", "deadline", "rush", "late"]):
+            themes.append("busy")
+        if any(w in text for w in ["learn", "study", "read", "grow"]):
+            themes.append("growth")
+            
+        # Combined reasoning
+        if "negative" in themes and "busy" in themes:
+            return "It seems like work pressure is weighing you down. When we are overwhelmed, our brain needs a hard stop. Can you pick just ONE thing to finish today and forgive yourself for the rest?"
+        elif "negative" in themes:
+            return "I hear that things are tough right now. It's okay to not be okay. Sometimes the most productive thing you can do is rest. What does your body need right now?"
+        elif "positive" in themes and "growth" in themes:
+            return "You're on fire! It sounds like you're making progress and learning. Capture this feeling—what's the main lesson you want to remember from today?"
+        elif "positive" in themes:
+            return "It's great to see you in high spirits! Success builds momentum. How can you use this energy to tackle something you've been putting off?"
+        elif "growth" in themes:
+            return "Learning is a journey. Even if it feels slow, you are moving forward. What's one concept that clicked for you today?"
+        elif "busy" in themes:
+             return "Sounds like a busy time. Don't forget to breathe. Is there anything you can delegate or delay to tomorrow?"
+        else:
+            return "Writing is a powerful tool for clarity. What is the one thing you want to focus on after this?"
+
+    def generate_project_tasks(self, project_name: str) -> List[str]:
+        """Generates a list of tasks for a new project based on its name."""
+        project_name = project_name.lower()
+        if "website" in project_name or "app" in project_name or "code" in project_name:
+            return ["Define requirements", "Design UI/UX", "Set up repository", "Implement core features", "Write tests", "Deploy"]
+        elif "vacation" in project_name or "trip" in project_name or "travel" in project_name:
+            return ["Choose dates", "Book flights", "Book accommodation", "Create itinerary", "Pack luggage"]
+        elif "party" in project_name or "event" in project_name or "birthday" in project_name:
+            return ["Set date and time", "Create guest list", "Send invitations", "Plan menu/food", "Buy decorations"]
+        elif "move" in project_name or "house" in project_name or "apartment" in project_name:
+            return ["Sort belongings", "Buy packing supplies", "Pack rooms", "Hire movers", "Clean old place", "Update address"]
+        elif "learn" in project_name or "course" in project_name:
+            return ["Find resources", "Create study schedule", "Complete module 1", "Practice exercises", "Review notes"]
+        else:
+            # Generic fallback based on verbs
+            if "write" in project_name:
+                return ["Outline content", "Draft first version", "Review and edit", "Finalize"]
+            elif "build" in project_name or "make" in project_name:
+                return ["Design/Plan", "Gather materials", "Construct", "Test/Verify"]
+            else:
+                return ["Brainstorm ideas", "Create project plan", "Execute first step", "Review progress"]
