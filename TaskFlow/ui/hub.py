@@ -40,6 +40,7 @@ from PyQt6.QtCore import (
     QUrl,
     QMimeData,
     QThread,
+    QAbstractAnimation,
 )
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtGui import (
@@ -55,6 +56,7 @@ from PyQt6.QtGui import (
     QTextListFormat,
     QTextCharFormat,
     QDrag,
+    QPixmap,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -260,9 +262,22 @@ class LiquidProgressBar(QWidget):
         self.setMaximumHeight(12)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
+        self._anim = QVariantAnimation()
+        self._anim.setDuration(1000)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim.valueChanged.connect(self._update_val)
+        
     def set_progress(self, value):
         """Set progress value (0-100)"""
-        self.progress = min(100, max(0, value))
+        target = min(100, max(0, value))
+        if target != self.progress:
+            self._anim.stop()
+            self._anim.setStartValue(self.progress)
+            self._anim.setEndValue(target)
+            self._anim.start()
+
+    def _update_val(self, val):
+        self.progress = val
         self.update()
     
     def paintEvent(self, event):
@@ -587,7 +602,7 @@ class ShadowedDialog(QDialog):
             QFrame#ShadowFrame {{
                 background-color: {CARD_BG};
                 border: 1px solid {GLASS_BORDER};
-                border-radius: 16px;
+                border-radius: 20px;
             }}
         """)
     
@@ -648,13 +663,13 @@ class WelcomeDialog(ShadowedDialog):
             QLineEdit, QComboBox {{ 
                 background-color: rgba(0,0,0,0.3); 
                 color: {TEXT_WHITE}; 
-                border: 1px solid {HOVER_BG}; 
-                border-radius: 6px; 
-                padding: 6px; 
+                border: 1px solid rgba(255, 255, 255, 0.1); 
+                border-radius: 10px; 
+                padding: 8px 12px; 
             }}
             QLineEdit:focus, QComboBox:focus {{ border: 1px solid {GOLD}; }}
             QPushButton {{
-                background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 16px; border: 1px solid {GLASS_BORDER};
+                background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 8px 16px; border: 1px solid {GLASS_BORDER};
             }}
             QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; border: none; }}
         """)
@@ -714,9 +729,9 @@ class DailyPlanningDialog(ShadowedDialog):
             QSpinBox {{
                 background-color: rgba(0,0,0,0.3);
                 color: {TEXT_WHITE};
-                border-radius: 6px;
-                border: 1px solid {HOVER_BG};
-                padding: 2px 6px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                padding: 6px 12px;
             }}
         """)
 
@@ -745,14 +760,14 @@ class FeedbackDialog(ShadowedDialog):
         # GitHub Issues
         btn_gh = QPushButton("🐞 Report Bug / 💡 Feature Request (GitHub)")
         btn_gh.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_gh.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 12px; border: 1px solid {GLASS_BORDER}; text-align: left; font-weight: bold;")
+        btn_gh.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 12px; padding: 12px; border: 1px solid {GLASS_BORDER}; text-align: left; font-weight: bold;")
         btn_gh.clicked.connect(self._open_github)
         self.add_widget(btn_gh)
 
         # Email
         btn_email = QPushButton("📧 Send Email")
         btn_email.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_email.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 12px; border: 1px solid {GLASS_BORDER}; text-align: left; font-weight: bold;")
+        btn_email.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 12px; padding: 12px; border: 1px solid {GLASS_BORDER}; text-align: left; font-weight: bold;")
         btn_email.clicked.connect(self._open_email)
         self.add_widget(btn_email)
 
@@ -760,7 +775,7 @@ class FeedbackDialog(ShadowedDialog):
 
         btn_close = QPushButton("Close")
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_close.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 6px; padding: 8px;")
+        btn_close.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 10px; padding: 8px 16px;")
         btn_close.clicked.connect(self.accept)
         self.add_widget(btn_close)
 
@@ -776,6 +791,45 @@ class FeedbackDialog(ShadowedDialog):
         url = "mailto:?subject=TaskFlow Feedback"
         open_url_safe(url)
         self.accept()
+
+class SmoothProgressBar(QProgressBar):
+    """ProgressBar with smooth animation when value changes."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._anim = QPropertyAnimation(self, b"value")
+        self._anim.setDuration(600)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def setValueSmooth(self, value):
+        if value != self.value():
+            self._anim.stop()
+            self._anim.setStartValue(self.value())
+            self._anim.setEndValue(value)
+            self._anim.start()
+        else:
+            super().setValue(value)
+
+class AnimatedNumberLabel(QLabel):
+    """Label that counts up/down to a target number."""
+    def __init__(self, prefix="", suffix="", parent=None):
+        super().__init__(parent)
+        self.prefix = prefix
+        self.suffix = suffix
+        self._current_val = 0
+        self._anim = QVariantAnimation()
+        self._anim.setDuration(1000)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._anim.valueChanged.connect(self._update_text)
+
+    def set_value(self, value):
+        self._anim.stop()
+        self._anim.setStartValue(self._current_val)
+        self._anim.setEndValue(value)
+        self._anim.start()
+
+    def _update_text(self, value):
+        self._current_val = value
+        self.setText(f"{self.prefix}{int(value)}{self.suffix}")
 
 class QuickTipsDialog(ShadowedDialog):
     """
@@ -859,7 +913,7 @@ class QuickTipsDialog(ShadowedDialog):
 
         btn_close = QPushButton("Got it")
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_close.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 10px;")
+        btn_close.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 10px;")
         btn_close.clicked.connect(self.accept)
         self.add_widget(btn_close)
 
@@ -879,7 +933,7 @@ class BackupManagerDialog(ShadowedDialog):
         self.add_widget(QLabel("Available Backups"))
         
         self.list = QListWidget()
-        self.list.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {HOVER_BG}; border-radius: 6px;")
+        self.list.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {HOVER_BG}; border-radius: 10px; padding: 5px;")
         self._refresh_list()
         self.add_widget(self.list)
 
@@ -891,7 +945,7 @@ class BackupManagerDialog(ShadowedDialog):
         btn_restore.clicked.connect(self._restore_backup)
         self.add_widget(btn_restore)
 
-        self.setStyleSheet(f"{self.styleSheet()} QLabel {{ color: {TEXT_WHITE}; }} QPushButton {{ background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 8px; }} QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; }}")
+        self.setStyleSheet(f"{self.styleSheet()} QLabel {{ color: {TEXT_WHITE}; }} QPushButton {{ background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 8px; }} QPushButton:hover {{ background-color: {GOLD}; color: {DARK_BG}; }}")
 
     def _refresh_list(self):
         self.list.clear()
@@ -940,8 +994,8 @@ class BrainDumpDialog(ShadowedDialog):
             QTextEdit {{
                 background-color: rgba(0, 0, 0, 0.3);
                 color: {TEXT_WHITE};
-                border: 1px solid {HOVER_BG};
-                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
                 padding: 10px;
                 font-size: 14px;
             }}
@@ -977,10 +1031,10 @@ class BrainDumpDialog(ShadowedDialog):
         # Style buttons
         for btn in buttons.buttons():
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 16px; border: 1px solid {GLASS_BORDER};")
+            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 8px 16px; border: 1px solid {GLASS_BORDER};")
         
         # Highlight primary
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 6px; padding: 6px 16px; font-weight: bold; border: none;")
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 10px; padding: 8px 16px; font-weight: bold; border: none;")
         
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -1084,12 +1138,12 @@ class SomedayReviewDialog(ShadowedDialog):
         btn_close = QPushButton("Done")
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.clicked.connect(self.accept)
-        btn_close.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 8px 16px; border: 1px solid {GLASS_BORDER};")
+        btn_close.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 8px 16px; border: 1px solid {GLASS_BORDER};")
         self.add_widget(btn_close)
 
     def _add_task_row(self, task):
         frame = QFrame()
-        frame.setStyleSheet(f"background-color: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; border: 1px solid {HOVER_BG};")
+        frame.setStyleSheet(f"background-color: rgba(0,0,0,0.2); border-radius: 12px; padding: 10px; border: 1px solid {HOVER_BG};")
         fl = QVBoxLayout(frame)
         fl.setSpacing(8)
         
@@ -1207,7 +1261,7 @@ class WeeklyReviewDialog(ShadowedDialog):
         # Style buttons
         for btn in buttons.buttons():
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 16px; border: 1px solid {GLASS_BORDER};")
+            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 8px 16px; border: 1px solid {GLASS_BORDER};")
             
         self.add_widget(buttons)
 
@@ -1223,6 +1277,18 @@ class MoodGraphWidget(QWidget):
         self.state = state
         self.setMinimumHeight(100)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.reveal_progress = 0.0
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.reveal_progress = 0.0
+        anim = QVariantAnimation(self)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setDuration(1000)
+        anim.setEasingCurve(QEasingCurve.Type.OutQuart)
+        anim.valueChanged.connect(lambda v: setattr(self, 'reveal_progress', v) or self.update())
+        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -1268,7 +1334,7 @@ class MoodGraphWidget(QWidget):
                 color = QColor(TEXT_GRAY)
                 color.setAlpha(60)
             else:
-                h = int(score / 4 * max_h)
+                h = int((score / 4 * max_h) * self.reveal_progress)
                 if score <= 1:
                     color = QColor("#ff6b6b")  # red-ish for heavy days
                 elif score == 2:
@@ -1302,6 +1368,18 @@ class HabitGraphWidget(QWidget):
         self.state = state
         self.setMinimumHeight(100)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.reveal_progress = 0.0
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.reveal_progress = 0.0
+        anim = QVariantAnimation(self)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setDuration(1000)
+        anim.setEasingCurve(QEasingCurve.Type.OutQuart)
+        anim.valueChanged.connect(lambda v: setattr(self, 'reveal_progress', v) or self.update())
+        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -1328,7 +1406,7 @@ class HabitGraphWidget(QWidget):
             day_checks = checks.get(d_str, {})
             completed = sum(1 for v in day_checks.values() if v)
             ratio = completed / active_count
-            h = int(ratio * max_h)
+            h = int((ratio * max_h) * self.reveal_progress)
 
             if h <= 0:
                 # draw a faint baseline tick for no completion
@@ -1479,6 +1557,18 @@ class HeatmapWidget(QWidget):
         self.state = state
         self.setMinimumHeight(100)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.reveal_progress = 0.0
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.reveal_progress = 0.0
+        anim = QVariantAnimation(self)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setDuration(1000)
+        anim.setEasingCurve(QEasingCurve.Type.OutQuart)
+        anim.valueChanged.connect(lambda v: setattr(self, 'reveal_progress', v) or self.update())
+        anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -1803,7 +1893,7 @@ class TaskCalendarWidget(QCalendarWidget):
                 background-color: transparent;
                 selection-background-color: {HOVER_BG};
                 selection-color: {GOLD};
-                border-radius: 6px;
+                border-radius: 8px;
             }}
             QCalendarWidget QMenu {{ color: {TEXT_WHITE}; background-color: {CARD_BG}; }}
             QCalendarWidget QSpinBox {{ color: {TEXT_WHITE}; background-color: {DARK_BG}; selection-background-color: {GOLD}; selection-color: {DARK_BG}; }}
@@ -1944,7 +2034,7 @@ class TaskListWidget(QWidget):
                 color: {TEXT_GRAY};
                 font-size: 12px;
                 background-color: {HOVER_BG};
-                border-radius: 10px;
+                border-radius: 12px;
                 padding: 2px 8px;
             }}
             """
@@ -1962,7 +2052,7 @@ class TaskListWidget(QWidget):
                     background-color: {HOVER_BG};
                     color: {GOLD};
                     font-weight: bold;
-                    border-radius: 12px;
+                    border-radius: 14px;
                     padding: 4px 10px;
                     border: 1px solid {GLASS_BORDER};
                 }}
@@ -2003,7 +2093,7 @@ class TaskListWidget(QWidget):
                     background-color: {HOVER_BG};
                     color: {GOLD};
                     font-weight: bold;
-                    border-radius: 12px;
+                    border-radius: 14px;
                     padding: 4px 10px;
                     border: 1px solid {GLASS_BORDER};
                 }}
@@ -2047,9 +2137,9 @@ class TaskListWidget(QWidget):
             f"""
             QLineEdit {{
                 background-color: rgba(0, 0, 0, 0.3);
-                border: 1px solid {HOVER_BG};
-                border-radius: 6px;
-                padding: 4px 8px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+                padding: 8px 12px;
                 color: {TEXT_WHITE};
             }}
             """
@@ -2226,7 +2316,7 @@ class TaskListWidget(QWidget):
             QLineEdit {{
                 background-color: rgba(255, 215, 0, 0.15);
                 border: 1px solid {GOLD};
-                border-radius: 6px;
+                border-radius: 10px;
                 padding: 4px 8px;
                 color: {TEXT_WHITE};
             }}
@@ -2727,9 +2817,9 @@ class ProjectTaskListWidget(QWidget):
             f"""
             QLineEdit {{
                 background-color: rgba(0, 0, 0, 0.3);
-                border: 1px solid {HOVER_BG};
-                border-radius: 6px;
-                padding: 4px 8px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 10px;
+                padding: 8px 12px;
                 color: {TEXT_WHITE};
             }}
             """
@@ -2870,7 +2960,7 @@ class ProjectTaskListWidget(QWidget):
             QLineEdit {{
                 background-color: rgba(255, 215, 0, 0.15);
                 border: 1px solid {GOLD};
-                border-radius: 6px;
+                border-radius: 10px;
                 padding: 4px 8px;
                 color: {TEXT_WHITE};
             }}
@@ -3075,7 +3165,7 @@ class SearchWidget(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search tasks...")
-        self.search_input.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {HOVER_BG}; border-radius: 6px; padding: 8px;")
+        self.search_input.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 8px 12px;")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(self._perform_search)
         layout.addWidget(self.search_input)
@@ -3150,7 +3240,7 @@ class JournalWidget(QWidget):
         left_panel = QFrame()
         left_panel.setObjectName("GlassCard")
         left_panel.setFixedWidth(200)
-        left_panel.setStyleSheet(f"#GlassCard {{ background-color: rgba(0,0,0,0.2); border-right: 1px solid {GLASS_BORDER}; border-radius: 0px; }}")
+        left_panel.setStyleSheet(f"#GlassCard {{ background-color: rgba(0,0,0,0.2); border-right: 1px solid {GLASS_BORDER}; border-radius: 16px; }}")
         l_left = QVBoxLayout(left_panel)
         l_left.setContentsMargins(0, 10, 0, 10)
         
@@ -3182,7 +3272,7 @@ class JournalWidget(QWidget):
 
         # --- Toolbar ---
         toolbar = QFrame()
-        toolbar.setStyleSheet(f"background-color: {HOVER_BG}; border-radius: 8px; padding: 4px;")
+        toolbar.setStyleSheet(f"background-color: {HOVER_BG}; border-radius: 12px; padding: 4px;")
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(4, 4, 4, 4)
         tb_layout.setSpacing(6)
@@ -3206,7 +3296,7 @@ class JournalWidget(QWidget):
         self.combo_size.addItems(["12", "14", "16", "18", "24"])
         self.combo_size.setCurrentText("14")
         self.combo_size.setFixedWidth(60)
-        self.combo_size.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 4px;")
+        self.combo_size.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 8px;")
         self.combo_size.currentTextChanged.connect(self._change_font_size)
         tb_layout.addWidget(self.combo_size)
 
@@ -3214,7 +3304,7 @@ class JournalWidget(QWidget):
         btn_ai = QPushButton("✨ AI Insight")
         btn_ai.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_ai.setToolTip("Get AI feedback on your entry")
-        btn_ai.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 4px; padding: 4px 8px; font-weight: bold;")
+        btn_ai.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 8px; padding: 4px 12px; font-weight: bold;")
         btn_ai.clicked.connect(self._on_ai_insight)
         tb_layout.addWidget(btn_ai)
 
@@ -3230,7 +3320,7 @@ class JournalWidget(QWidget):
         self.editor = QTextEdit()
         self.editor.setPlaceholderText("Write your thoughts here...")
         self.editor.textChanged.connect(self._on_text_changed)
-        self.editor.setStyleSheet(f"QTextEdit {{ background-color: rgba(0,0,0,0.2); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 12px; padding: 16px; font-size: 14px; selection-background-color: {GOLD}; selection-color: {DARK_BG}; }}")
+        self.editor.setStyleSheet(f"QTextEdit {{ background-color: rgba(0,0,0,0.2); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 16px; padding: 16px; font-size: 14px; selection-background-color: {GOLD}; selection-color: {DARK_BG}; }}")
         l_right.addWidget(self.editor)
         
         layout.addWidget(right_panel, 1)
@@ -3585,81 +3675,107 @@ class HubWindow(QMainWindow):
             }}
             QLabel#TitleLabel {{
                 color: {GOLD};
-                font-size: 20px;
-                font-weight: bold;
+                font-size: 22px;
+                font-weight: 800;
+                letter-spacing: 1px;
             }}
             QLabel#PageHeader {{
-                font-size: 20px;
-                font-weight: bold;
-                color: {GOLD};
+                font-size: 24px;
+                font-weight: 700;
+                color: {TEXT_WHITE};
                 background: transparent;
+                margin-bottom: 10px;
             }}
             QFrame#GlassCard {{
                 background-color: {GLASS_BG};
-                border: 1px solid {GLASS_BORDER};
-                border-radius: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 20px;
             }}
             QFrame#NavBar {{
-                background-color: rgba(16, 16, 18, 220);
-                border-right: 1px solid {GLASS_BORDER};
+                background-color: rgba(12, 12, 14, 0.95);
+                border-right: 1px solid rgba(255, 255, 255, 0.05);
             }}
             /* Sidebar Buttons */
             QFrame#NavBar QPushButton {{
                 text-align: left;
-                padding-left: 16px;
+                padding: 10px 16px;
                 border: none;
                 background-color: transparent;
-                border-radius: 6px;
+                border-radius: 10px;
                 font-weight: 600;
+                color: {TEXT_GRAY};
             }}
             QFrame#NavBar QPushButton:hover {{
-                background-color: {HOVER_BG};
+                background-color: rgba(255, 255, 255, 0.05);
+                color: {TEXT_WHITE};
             }}
             QFrame#NavBar QPushButton:checked {{
-                background-color: {HOVER_BG};
+                background-color: rgba(255, 215, 0, 0.1);
                 color: {GOLD};
-                border-left: 3px solid {GOLD};
-                border-top-left-radius: 0;
-                border-bottom-left-radius: 0;
+                border: 1px solid rgba(255, 215, 0, 0.2);
             }}
             QLabel {{
                 color: {TEXT_WHITE};
             }}
-            QTextEdit, QComboBox {{
+            QTextEdit, QComboBox, QLineEdit, QSpinBox {{
                 background-color: rgba(0, 0, 0, 0.3);
                 color: {TEXT_WHITE};
-                border-radius: 8px;
-                border: 1px solid {HOVER_BG};
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                padding: 8px 12px;
+            }}
+            QTextEdit:focus, QComboBox:focus, QLineEdit:focus, QSpinBox:focus {{
+                border: 1px solid {GOLD};
+                background-color: rgba(0, 0, 0, 0.3);
             }}
             QPushButton {{
-                background-color: rgba(255, 255, 255, 0.05);
+                background-color: rgba(255, 255, 255, 0.06);
                 color: {TEXT_WHITE};
-                border-radius: 8px;
-                border: 1px solid {HOVER_BG};
-                padding: 6px 12px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                padding: 8px 16px;
+                font-weight: 600;
             }}
             QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 0.15);
+                background-color: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(255, 255, 255, 0.1);
             }}
             QPushButton:pressed {{
-                background-color: rgba(255, 255, 255, 0.25);
+                background-color: rgba(255, 255, 255, 0.04);
             }}
             QListWidget {{
                 background-color: transparent;
                 color: {TEXT_WHITE};
                 border: none;
+                outline: none;
+            }}
+            QListWidget::item {{
+                padding: 8px;
+                border-radius: 8px;
+                margin-bottom: 4px;
+            }}
+            QListWidget::item:selected {{
+                background-color: rgba(255, 215, 0, 0.1);
+                border: 1px solid rgba(255, 215, 0, 0.2);
+                color: {TEXT_WHITE};
+            }}
+            QListWidget::item:hover:!selected {{
+                background-color: rgba(255, 255, 255, 0.04);
             }}
             /* Custom Scrollbars */
             QScrollBar:vertical {{
                 border: none;
-                background: {DARK_BG};
-                width: 8px;
+                background: transparent;
+                width: 6px;
                 margin: 0px;
             }}
             QScrollBar::handle:vertical {{
-                background: {HOVER_BG};
+                background: rgba(255, 255, 255, 0.1);
                 min-height: 20px;
-                border-radius: 4px;
+                border-radius: 3px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: rgba(255, 255, 255, 0.2);
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
@@ -3721,11 +3837,12 @@ class HubWindow(QMainWindow):
         self.btn_tips = QPushButton("💡 Tips")
         self.btn_settings = QPushButton("⚙️ Settings")
         self.btn_feedback = QPushButton("💬 Feedback")
+        self.btn_support = QPushButton("❤️ Support Me")
         self.btn_check_updates = QPushButton("🔄 Check updates")
         self.btn_quit = QPushButton("🚪 Exit Hub")
 
-        # Add Settings, Feedback, Tips
-        for btn in (self.btn_settings, self.btn_feedback, self.btn_tips):
+        # Add Settings, Support, Feedback, Tips
+        for btn in (self.btn_settings, self.btn_support, self.btn_feedback, self.btn_tips):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             nav_layout.addWidget(btn)
 
@@ -3755,6 +3872,7 @@ class HubWindow(QMainWindow):
         self._build_stats_page()
         self._build_scheduled_page()
         self._build_settings_page()
+        self._build_support_page()
         self._build_panic_page()
         self._build_zen_page()
         self.page_search = SearchWidget(self.state, self.schedule_save)
@@ -3771,6 +3889,7 @@ class HubWindow(QMainWindow):
         self.stack.addWidget(self.page_journal)
         self.stack.addWidget(self.page_stats)
         self.stack.addWidget(self.page_settings)
+        self.stack.addWidget(self.page_support)
         self.stack.addWidget(self.page_panic)
         self.stack.addWidget(self.page_profile)
         self.stack.addWidget(self.page_zen)
@@ -3787,6 +3906,7 @@ class HubWindow(QMainWindow):
             self.page_journal: self.btn_journal,
             self.page_stats: self.btn_stats,
             self.page_settings: self.btn_settings,
+            self.page_support: self.btn_support,
             self.page_panic: self.btn_panic,
             self.page_profile: self.btn_profile,
             self.page_search: self.btn_search,
@@ -3803,6 +3923,7 @@ class HubWindow(QMainWindow):
         self.btn_stats.clicked.connect(lambda: self._switch_page(self.page_stats))
         self.btn_profile.clicked.connect(lambda: self._switch_page(self.page_profile))
         self.btn_settings.clicked.connect(lambda: self._switch_page(self.page_settings))
+        self.btn_support.clicked.connect(lambda: self._switch_page(self.page_support))
         self.btn_feedback.clicked.connect(self._open_feedback_dialog)
         self.btn_tips.clicked.connect(self._open_tips_dialog)
         self.btn_search.clicked.connect(lambda: self._switch_page(self.page_search))
@@ -3859,7 +3980,7 @@ class HubWindow(QMainWindow):
         self.lbl_level.setStyleSheet(f"color: {GOLD}; font-weight: bold; font-size: 12px;")
         xp_container.addWidget(self.lbl_level)
         
-        self.xp_bar = QProgressBar()
+        self.xp_bar = SmoothProgressBar()
         self.xp_bar.setFixedHeight(6)
         self.xp_bar.setFixedWidth(120)
         self.xp_bar.setTextVisible(False)
@@ -3876,14 +3997,14 @@ class HubWindow(QMainWindow):
         right_col.setAlignment(Qt.AlignmentFlag.AlignRight)
         
         stats_row = QHBoxLayout()
-        self.lbl_streak = QLabel("🔥 0")
+        self.lbl_streak = AnimatedNumberLabel("🔥 ", "")
         self.lbl_streak.setStyleSheet(f"color: {GOLD}; font-size: 16px; font-weight: bold; margin-right: 10px;")
         stats_row.addWidget(self.lbl_streak)
 
         btn_plan = QPushButton("Plan")
         btn_plan.setToolTip("Run Daily Planning")
         btn_plan.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_plan.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 4px 12px; border: 1px solid {GLASS_BORDER}; font-size: 12px;")
+        btn_plan.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 4px 12px; border: 1px solid {GLASS_BORDER}; font-size: 12px;")
         btn_plan.clicked.connect(lambda: self._run_daily_planning(force=True))
         stats_row.addWidget(btn_plan)
         
@@ -3928,7 +4049,7 @@ class HubWindow(QMainWindow):
         
         btn_open_today = QPushButton("Open Today View →")
         btn_open_today.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_open_today.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 8px; border: 1px solid {GLASS_BORDER};")
+        btn_open_today.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 12px; padding: 8px; border: 1px solid {GLASS_BORDER};")
         btn_open_today.clicked.connect(lambda: self._switch_page(self.page_today))
         layout.addWidget(btn_open_today)
         return card
@@ -3999,7 +4120,7 @@ class HubWindow(QMainWindow):
         
         btn_brain_dump = QPushButton("🧠 Brain Dump")
         btn_brain_dump.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_brain_dump.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; padding: 8px; border: 1px solid {GLASS_BORDER};")
+        btn_brain_dump.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 12px; padding: 8px; border: 1px solid {GLASS_BORDER};")
         btn_brain_dump.clicked.connect(self._on_brain_dump)
         cap_row.addWidget(btn_brain_dump)
         
@@ -4007,7 +4128,7 @@ class HubWindow(QMainWindow):
         self.btn_voice = QPushButton("🎙️")
         self.btn_voice.setFixedSize(40, 32)
         self.btn_voice.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_voice.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 8px; border: 1px solid {GLASS_BORDER}; font-size: 16px;")
+        self.btn_voice.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 12px; border: 1px solid {GLASS_BORDER}; font-size: 16px;")
         self.btn_voice.clicked.connect(self._on_voice_input)
         cap_row.addWidget(self.btn_voice)
         
@@ -4072,7 +4193,7 @@ class HubWindow(QMainWindow):
         self.btn_sched_toggle = QPushButton("Show List View")
         self.btn_sched_toggle.setCheckable(True)
         self.btn_sched_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_sched_toggle.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 6px; padding: 6px 12px; border: 1px solid {GLASS_BORDER};")
+        self.btn_sched_toggle.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; padding: 6px 12px; border: 1px solid {GLASS_BORDER};")
         self.btn_sched_toggle.toggled.connect(self._toggle_scheduled_view)
         header.addStretch()
         header.addWidget(self.btn_sched_toggle)
@@ -4124,7 +4245,7 @@ class HubWindow(QMainWindow):
         self.cal_quick_add = QLineEdit()
         self.cal_quick_add.setPlaceholderText("Add task to this date...")
         self.cal_quick_add.returnPressed.connect(self._on_cal_quick_add)
-        self.cal_quick_add.setStyleSheet(f"background-color: rgba(0,0,0,0.3); border: 1px solid {HOVER_BG}; border-radius: 6px; padding: 6px; color: {TEXT_WHITE};")
+        self.cal_quick_add.setStyleSheet(f"background-color: rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 8px; color: {TEXT_WHITE};")
         list_layout.addWidget(self.cal_quick_add)
         
         cal_layout.addWidget(list_container)
@@ -4492,7 +4613,7 @@ class HubWindow(QMainWindow):
         btn_open_data = QPushButton("Open Data Folder (Edit .json)")
         btn_open_data.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_open_data.clicked.connect(self._open_data_folder)
-        btn_open_data.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 6px; padding: 8px;")
+        btn_open_data.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 10px; padding: 8px;")
         l_card.addWidget(btn_open_data)
 
         l_card.addStretch(1)
@@ -4635,10 +4756,13 @@ class HubWindow(QMainWindow):
         self._set_button_highlight(self.btn_feedback, False)
         self._set_button_highlight(self.btn_tips, False)
         self._set_button_highlight(self.btn_settings, False)
+        self._set_button_highlight(self.btn_support, False)
         
         # Apply highlight to Settings if navigating to settings page
         if page is self.page_settings:
             self._set_button_highlight(self.btn_settings, True)
+        elif page is self.page_support:
+            self._set_button_highlight(self.btn_support, True)
 
         # Only animate and refresh if actually switching pages
         if self.stack.currentWidget() is page:
@@ -4700,7 +4824,7 @@ class HubWindow(QMainWindow):
             btn.setStyleSheet(f"""
                 background-color: {HOVER_BG};
                 color: {TEXT_WHITE};
-                border-radius: 6px;
+                border-radius: 10px;
                 font-weight: 600;
                 padding-left: 16px;
                 border: none;
@@ -4720,6 +4844,104 @@ class HubWindow(QMainWindow):
         dlg = QuickTipsDialog(self)
         dlg.exec()
         self._set_button_highlight(self.btn_tips, False)
+
+    def _build_support_page(self) -> None:
+        self.page_support = QWidget()
+        layout = QVBoxLayout(self.page_support)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(20)
+
+        header = QLabel("Support Me ❤️")
+        header.setObjectName("PageHeader")
+        layout.addWidget(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        c_layout = QVBoxLayout(content)
+        c_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        c_layout.setSpacing(20)
+
+        # Card
+        card = QFrame()
+        card.setObjectName("GlassCard")
+        l_card = QVBoxLayout(card)
+        l_card.setContentsMargins(30, 30, 30, 30)
+        l_card.setSpacing(20)
+        l_card.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Intro
+        lbl_intro = QLabel("Hi! I'm the developer of TaskFlow.\nIf you enjoy using this app, please consider supporting its development!")
+        lbl_intro.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_intro.setWordWrap(True)
+        lbl_intro.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 16px;")
+        l_card.addWidget(lbl_intro)
+
+        l_card.addSpacing(10)
+
+        # Buy Me a Coffee
+        btn_coffee = QPushButton("☕ Buy Me a Coffee")
+        btn_coffee.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_coffee.setFixedSize(220, 50)
+        btn_coffee.setStyleSheet(f"background-color: #FFDD00; color: #000000; border-radius: 25px; font-weight: bold; font-size: 16px; border: none;")
+        btn_coffee.clicked.connect(lambda: open_url_safe("buymeacoffee.com/Refined")) 
+        l_card.addWidget(btn_coffee)
+
+        l_card.addSpacing(20)
+
+        # Socials
+        lbl_social = QLabel("Connect with me:")
+        lbl_social.setStyleSheet(f"color: {TEXT_GRAY}; font-weight: bold;")
+        l_card.addWidget(lbl_social)
+
+        social_layout = QHBoxLayout()
+        social_layout.setSpacing(15)
+        social_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        def create_social_btn(text, url, color):
+            btn = QPushButton(text)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedSize(120, 40)
+            btn.setStyleSheet(f"color: {color}; background: rgba(255,255,255,0.05); font-weight: bold; border: 1px solid {color}; border-radius: 20px;")
+            btn.clicked.connect(lambda: open_url_safe(url))
+            return btn
+
+        social_layout.addWidget(create_social_btn("GitHub", "https://github.com/Dyvorn", "#ffffff"))
+        social_layout.addWidget(create_social_btn("Youtube", "https://www.youtube.com/channel/UCGe5VOk80siQe0r2OfQQWPw", "#CD201F"))
+        
+        
+        l_card.addLayout(social_layout)
+
+        l_card.addSpacing(20)
+
+        # QR Code
+        lbl_qr_title = QLabel("Scan to Support")
+        lbl_qr_title.setStyleSheet(f"color: {TEXT_GRAY}; margin-bottom: 10px;")
+        l_card.addWidget(lbl_qr_title)
+
+        lbl_qr = QLabel()
+        lbl_qr.setFixedSize(200, 200)
+        lbl_qr.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Check for asset
+        qr_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "bmc_qr.png")
+        if os.path.exists(qr_path):
+            pixmap = QPixmap(qr_path)
+            lbl_qr.setPixmap(pixmap.scaled(190, 190, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            lbl_qr.setStyleSheet(f"background-color: white; border-radius: 10px; border: 4px solid {GOLD};")
+        else:
+            lbl_qr.setText("QR Code\n(Add 'bmc_qr.png'\nto assets folder)")
+            lbl_qr.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 10px; border: 2px dashed {TEXT_GRAY}; font-weight: bold; text-align: center;")
+
+        l_card.addWidget(lbl_qr)
+
+        c_layout.addWidget(card)
+        
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
 
     def _build_panic_page(self) -> None:
         self.page_panic = QWidget()
@@ -5235,9 +5457,9 @@ class HubWindow(QMainWindow):
         level = int(1 + (xp / 500)) # Simple level formula
         current_level_xp = xp % 500
         
-        self.lbl_streak.setText(f"🔥 {streak}")
+        self.lbl_streak.set_value(streak)
         self.lbl_level.setText(f"Lvl {level}")
-        self.xp_bar.setValue(int((current_level_xp / 500) * 100))
+        self.xp_bar.setValueSmooth(int((current_level_xp / 500) * 100))
         self.xp_bar.setToolTip(f"{current_level_xp} / 500 XP to Level {level + 1}")
         
         # Update Greeting

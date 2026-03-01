@@ -1,6 +1,7 @@
 import json
 import torch
 import shutil
+import urllib.parse
 from pathlib import Path
 from typing import Dict, Optional, List
 from datetime import datetime
@@ -463,3 +464,51 @@ class AIEngine:
                 return ["Design/Plan", "Gather materials", "Construct", "Test/Verify"]
             else:
                 return ["Brainstorm ideas", "Create project plan", "Execute first step", "Review progress"]
+
+    def process_external_task(self, task_data: Dict) -> Dict:
+        """
+        Enriches a task from an external source (like Email) with AI predictions
+        and integration links (Calendar, Maps).
+        """
+        text = task_data.get("text", "")
+        context = task_data.get("context", {})
+
+        # 1. Predict Category using AI
+        category = self.predict_category(text, context)
+        
+        # 2. Estimate Metadata
+        complexity = self.analyze_task_complexity(text)
+        duration = self.estimate_duration(text)
+        subtasks = self.generate_subtasks(text)
+
+        # 3. Generate Integration Links
+        integrations = []
+        
+        # Google Maps Integration
+        location = task_data.get("extracted_location")
+        if location:
+            encoded_loc = urllib.parse.quote(location)
+            integrations.append({
+                "type": "google_maps",
+                "label": f"Open '{location}' in Maps",
+                "url": f"https://www.google.com/maps/search/?api=1&query={encoded_loc}"
+            })
+
+        # Calendar Integration
+        date_hint = task_data.get("extracted_date")
+        if date_hint:
+            integrations.append({
+                "type": "calendar",
+                "label": f"Schedule for {date_hint}",
+                "action": "open_calendar_modal",
+                "suggested_time": date_hint
+            })
+
+        return {
+            **task_data,
+            "ai_category": category,
+            "ai_complexity": complexity,
+            "ai_duration": duration,
+            "ai_subtasks": subtasks,
+            "integrations": integrations
+        }
