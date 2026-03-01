@@ -92,6 +92,7 @@ from PyQt6.QtWidgets import (
     QSystemTrayIcon,
     QLayout,
     QStackedLayout,
+    QSplitter,
 )
 
 try:
@@ -3688,8 +3689,8 @@ class HubWindow(QMainWindow):
             }}
             QFrame#GlassCard {{
                 background-color: {GLASS_BG};
-                border: 1px solid rgba(255, 255, 255, 0.05);
-                border-radius: 20px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 24px;
             }}
             QFrame#NavBar {{
                 background-color: rgba(12, 12, 14, 0.95);
@@ -3698,21 +3699,21 @@ class HubWindow(QMainWindow):
             /* Sidebar Buttons */
             QFrame#NavBar QPushButton {{
                 text-align: left;
-                padding: 10px 16px;
+                padding: 12px 16px;
                 border: none;
                 background-color: transparent;
-                border-radius: 10px;
+                border-radius: 12px;
                 font-weight: 600;
                 color: {TEXT_GRAY};
             }}
             QFrame#NavBar QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 0.05);
+                background-color: rgba(255, 255, 255, 0.08);
                 color: {TEXT_WHITE};
             }}
             QFrame#NavBar QPushButton:checked {{
-                background-color: rgba(255, 215, 0, 0.1);
+                background-color: rgba(255, 215, 0, 0.15);
                 color: {GOLD};
-                border: 1px solid rgba(255, 215, 0, 0.2);
+                border: 1px solid rgba(255, 215, 0, 0.3);
             }}
             QLabel {{
                 color: {TEXT_WHITE};
@@ -3720,7 +3721,7 @@ class HubWindow(QMainWindow):
             QTextEdit, QComboBox, QLineEdit, QSpinBox {{
                 background-color: rgba(0, 0, 0, 0.3);
                 color: {TEXT_WHITE};
-                border-radius: 10px;
+                border-radius: 12px;
                 border: 1px solid rgba(255, 255, 255, 0.08);
                 padding: 8px 12px;
             }}
@@ -3731,14 +3732,14 @@ class HubWindow(QMainWindow):
             QPushButton {{
                 background-color: rgba(255, 255, 255, 0.06);
                 color: {TEXT_WHITE};
-                border-radius: 10px;
+                border-radius: 12px;
                 border: 1px solid rgba(255, 255, 255, 0.05);
-                padding: 8px 16px;
+                padding: 10px 18px;
                 font-weight: 600;
             }}
             QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 0.12);
-                border: 1px solid rgba(255, 255, 255, 0.1);
+                background-color: rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.12);
             }}
             QPushButton:pressed {{
                 background-color: rgba(255, 255, 255, 0.04);
@@ -4056,7 +4057,17 @@ class HubWindow(QMainWindow):
 
     def _build_home_page(self) -> None:
         self.page_home = QWidget()
-        layout = QVBoxLayout(self.page_home)
+        outer_layout = QVBoxLayout(self.page_home)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent;")
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(20)
 
@@ -4157,6 +4168,9 @@ class HubWindow(QMainWindow):
         self.quote_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.quote_label.setStyleSheet(f"color: {TEXT_GRAY}; font-style: italic; margin-top: 10px;")
         layout.addWidget(self.quote_label)
+
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll)
 
     def _edit_primary_goal(self):
         """Allow user to edit the main goal directly from the dashboard."""
@@ -4355,13 +4369,14 @@ class HubWindow(QMainWindow):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        content = QHBoxLayout()
-        layout.addLayout(content, 1)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(4)
+        splitter.setStyleSheet("QSplitter::handle { background-color: rgba(255,255,255,0.05); }")
 
         # Left card: list of projects
         card_plist = QFrame()
         card_plist.setObjectName("GlassCard")
-        card_plist.setFixedWidth(280)
+        card_plist.setMinimumWidth(250)
         l_plist = QVBoxLayout(card_plist)
         l_plist.setContentsMargins(12, 12, 12, 12)
         l_plist.setSpacing(8)
@@ -4394,7 +4409,7 @@ class HubWindow(QMainWindow):
         btns_proj.addWidget(self.btn_delete_project)
         l_plist.addLayout(btns_proj)
 
-        content.addWidget(card_plist)
+        splitter.addWidget(card_plist)
 
         # Right card: project tasks
         self.project_detail = QFrame()
@@ -4410,7 +4425,10 @@ class HubWindow(QMainWindow):
         self.project_task_widget = ProjectTaskListWidget(self.state, self.schedule_save, self.ai_engine)
         project_detail_layout.addWidget(self.project_task_widget)
 
-        content.addWidget(self.project_detail, 1)
+        splitter.addWidget(self.project_detail)
+        splitter.setStretchFactor(1, 1)
+
+        layout.addWidget(splitter)
 
         # Connect
         self.btn_add_project.clicked.connect(self._on_add_project)
@@ -4420,7 +4438,17 @@ class HubWindow(QMainWindow):
 
     def _build_stats_page(self) -> None:
         self.page_stats = QWidget()
-        layout = QVBoxLayout(self.page_stats)
+        outer_layout = QVBoxLayout(self.page_stats)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent;")
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
@@ -4525,9 +4553,22 @@ class HubWindow(QMainWindow):
         self.habits_header_label = QLabel()
         self.habit_message = QLabel()
 
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll)
+
     def _build_settings_page(self) -> None:
         self.page_settings = QWidget()
-        layout = QVBoxLayout(self.page_settings)
+        outer_layout = QVBoxLayout(self.page_settings)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent;")
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
@@ -4624,6 +4665,9 @@ class HubWindow(QMainWindow):
         l_card.addWidget(lbl_ver)
 
         layout.addWidget(card)
+
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll)
 
     def _on_settings_changed(self):
         settings = self.state.setdefault("settings", {})
