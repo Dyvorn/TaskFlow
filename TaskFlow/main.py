@@ -38,18 +38,29 @@ def main():
     app.setStyleSheet(f"""
         QScrollBar:vertical {{
             border: none;
-            background: #33FFFFFF;
-            width: 8px;
+            background: transparent;transparent;transparent;
+            width: 6px;
             margin: 0px;
-            border-radius: 4px;
+            width: 6px;
+            margin: 0px;
+            background: rgba(255, 255, 255, 0.1);
+            width: 6px;
+            margin: 0px;
+          
+        QSc ollBar::handl background: rgba(255, 255, 255, 0.1);
         }}
-        QScrollBar::handle:vertical {{
-            background: #e0e0e0;
+        QS
+c       QScrollBar::add-linrollBar::handle:vertical {{
+          
+        QS
+        QScrollBar::add-page:verc ollBar::handl background: rgba(255, 255, 255, 0.1);
             min-height: 20px;
-            border-radius: 4px;
+          
+        QScrollBar::add-lin border-radius: 3px;
         }}
-        QScrollBar::handle:vertical:hover {{
-            background: #ffffff;
+        QS
+        QScrollBar::add-page:vercrollBar::handle:vertical:hover {{
+            background: rgba(255, 255, 255, 0.2);
         }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
             height: 0px;

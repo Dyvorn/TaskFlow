@@ -761,13 +761,6 @@ class FeedbackDialog(ShadowedDialog):
         btn_gh.clicked.connect(self._open_github)
         self.add_widget(btn_gh)
 
-        # Email
-        btn_email = QPushButton("📧 Send Email")
-        btn_email.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_email.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 12px; padding: 12px; border: 1px solid {GLASS_BORDER}; text-align: left; font-weight: bold;")
-        btn_email.clicked.connect(self._open_email)
-        self.add_widget(btn_email)
-
         self.add_stretch()
 
         btn_close = QPushButton("Close")
@@ -780,12 +773,6 @@ class FeedbackDialog(ShadowedDialog):
 
     def _open_github(self):
         url = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/issues"
-        open_url_safe(url)
-        self.accept()
-
-    def _open_email(self):
-        # Generic mailto
-        url = "mailto:?subject=TaskFlow Feedback"
         open_url_safe(url)
         self.accept()
 
@@ -3759,6 +3746,9 @@ class HubWindow(QMainWindow):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
             }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
             /* Checkboxes */
             QCheckBox {{
                 color: {TEXT_WHITE};
@@ -4919,7 +4909,6 @@ class HubWindow(QMainWindow):
         l_card = QVBoxLayout(card)
         l_card.setContentsMargins(30, 30, 30, 30)
         l_card.setSpacing(20)
-        l_card.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Intro
         lbl_intro = QLabel("Hi! I'm the developer of TaskFlow.\nIf you enjoy using this app, please consider supporting its development!")
@@ -4935,15 +4924,15 @@ class HubWindow(QMainWindow):
         btn_coffee.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_coffee.setFixedSize(220, 50)
         btn_coffee.setStyleSheet(f"background-color: #FFDD00; color: #000000; border-radius: 25px; font-weight: bold; font-size: 16px; border: none;")
-        btn_coffee.clicked.connect(lambda: open_url_safe("buymeacoffee.com/Refined")) 
-        l_card.addWidget(btn_coffee)
+        btn_coffee.clicked.connect(lambda: open_url_safe("https://buymeacoffee.com/refined")) 
+        l_card.addWidget(btn_coffee, 0, Qt.AlignmentFlag.AlignCenter)
 
         l_card.addSpacing(20)
 
         # Socials
         lbl_social = QLabel("Connect with me:")
         lbl_social.setStyleSheet(f"color: {TEXT_GRAY}; font-weight: bold;")
-        l_card.addWidget(lbl_social)
+        l_card.addWidget(lbl_social, 0, Qt.AlignmentFlag.AlignCenter)
 
         social_layout = QHBoxLayout()
         social_layout.setSpacing(15)
@@ -4960,7 +4949,6 @@ class HubWindow(QMainWindow):
         social_layout.addWidget(create_social_btn("GitHub", "https://github.com/Dyvorn", "#ffffff"))
         social_layout.addWidget(create_social_btn("Youtube", "https://www.youtube.com/channel/UCGe5VOk80siQe0r2OfQQWPw", "#CD201F"))
         
-        
         l_card.addLayout(social_layout)
 
         l_card.addSpacing(20)
@@ -4968,25 +4956,26 @@ class HubWindow(QMainWindow):
         # QR Code
         lbl_qr_title = QLabel("Scan to Support")
         lbl_qr_title.setStyleSheet(f"color: {TEXT_GRAY}; margin-bottom: 10px;")
-        l_card.addWidget(lbl_qr_title)
+        l_card.addWidget(lbl_qr_title, 0, Qt.AlignmentFlag.AlignCenter)
 
         lbl_qr = QLabel()
-        lbl_qr.setFixedSize(200, 200)
+        lbl_qr.setMinimumSize(200, 200)
         lbl_qr.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # Check for asset
         qr_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "bmc_qr.png")
         if os.path.exists(qr_path):
             pixmap = QPixmap(qr_path)
-            lbl_qr.setPixmap(pixmap.scaled(190, 190, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            lbl_qr.setStyleSheet(f"background-color: white; border-radius: 10px; border: 4px solid {GOLD};")
+            lbl_qr.setPixmap(pixmap.scaled(180, 180, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            lbl_qr.setStyleSheet(f"background-color: white; border-radius: 16px; border: 4px solid {GOLD}; padding: 5px;")
         else:
             lbl_qr.setText("QR Code\n(Add 'bmc_qr.png'\nto assets folder)")
             lbl_qr.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 10px; border: 2px dashed {TEXT_GRAY}; font-weight: bold; text-align: center;")
 
-        l_card.addWidget(lbl_qr)
+        l_card.addWidget(lbl_qr, 0, Qt.AlignmentFlag.AlignCenter)
 
         c_layout.addWidget(card)
+        c_layout.addStretch()
         
         scroll.setWidget(content)
         layout.addWidget(scroll)
