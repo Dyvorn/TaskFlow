@@ -3672,7 +3672,7 @@ class HubWindow(QMainWindow):
                 color: {TEXT_GRAY};
             }}
             QFrame#NavBar QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 0.08);
+                background-color: {HOVER_BG};
                 color: {TEXT_WHITE};
             }}
             QFrame#NavBar QPushButton:checked {{
@@ -3703,11 +3703,11 @@ class HubWindow(QMainWindow):
                 font-weight: 600;
             }}
             QPushButton:hover {{
-                background-color: rgba(255, 255, 255, 0.15);
+                background-color: {HOVER_BG};
                 border: 1px solid rgba(255, 255, 255, 0.12);
             }}
             QPushButton:pressed {{
-                background-color: rgba(255, 255, 255, 0.04);
+                background-color: {PRESSED_BG};
             }}
             QListWidget {{
                 background-color: transparent;

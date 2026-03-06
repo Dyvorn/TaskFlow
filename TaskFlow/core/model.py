@@ -25,12 +25,12 @@ DATA_DIR_NAME = "TaskFlow_Data"
 GOLD = "#ffd700"
 DARK_BG = "#121212"
 CARD_BG = "#1E1E1E"
-HOVER_BG = "#33FFFFFF"
+HOVER_BG = "rgba(255, 255, 255, 0.15)"
 GLASS_BG = "rgba(25, 25, 32, 180)"
 GLASS_BORDER = "rgba(255, 255, 255, 25)"
-PRESSED_BG = "#55FFFFFF"
+PRESSED_BG = "rgba(255, 255, 255, 0.25)"
 TEXT_WHITE = "#e0e0e0"
-TEXT_GRAY = "#cccccc"
+TEXT_GRAY = "#a0a0a0"
 
 # Sections used by the hub
 SECTIONS = ["Today", "Tomorrow", "This Week", "Someday", "Scheduled", "Archived"]
