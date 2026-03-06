@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict, Optional
 from datetime import datetime
+import dateparser.search
 
 class EmailService:
     """
@@ -54,8 +55,8 @@ class EmailService:
         }
 
     def _extract_location(self, text: str) -> Optional[str]:
-        # Heuristic: Look for "at [Capitalized Words]" to guess a location
-        match = re.search(r"\bat\s+((?:[A-Z][a-zA-Z0-9']+\s?)+)", text)
+        # Heuristic: Look for "at [Capitalized Words]" or "in [Capitalized Words]" to guess a location
+        match = re.search(r"\b(?:at|in)\s+((?:[A-Z][a-zA-Z0-9']+\s?)+)", text)
         if match:
             candidate = match.group(1).strip()
             if candidate.lower() not in ["the", "a", "an", "my", "our", "least", "most"]:
@@ -63,16 +64,12 @@ class EmailService:
         return None
 
     def _extract_date_hint(self, text: str) -> Optional[str]:
-        # Heuristic: Look for common time keywords
-        text_lower = text.lower()
-        keywords = ["today", "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-        for k in keywords:
-            if k in text_lower:
-                return k
-        
-        # Look for simple time patterns like "10 AM"
-        time_match = re.search(r"\d{1,2}(?::\d{2})?\s?(?:am|pm|AM|PM)", text)
-        if time_match:
-            return time_match.group(0)
-            
+        # Heuristic: Use dateparser.search to find date/time expressions in text.
+        # This is much more robust than keyword/regex matching and can find
+        # phrases like "tomorrow at 10 AM", "next Friday", or "in 3 hours".
+        date_matches = dateparser.search.search_dates(text)
+        if date_matches:
+            # search_dates returns a list of tuples: (string, datetime_obj).
+            # We return the found string, which acts as the "hint".
+            return date_matches[0][0]
         return None

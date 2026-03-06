@@ -87,7 +87,7 @@ class MonkeyTester:
             print("Monkey test completed successfully!")
             
             # Check for non-fatal errors in logs
-            keywords = ["error", "exception", "failed", "warning", "critical", "qt warning", "qt critical", "qt fatal"]
+            keywords = ["error", "exception", "failed", "warning", "critical", "fatal"]
             issues = []
             for log in stdout_capturer.captured_logs + stderr_capturer.captured_logs:
                 if any(k in log.lower() for k in keywords):
@@ -103,7 +103,7 @@ class MonkeyTester:
                 msg.setIcon(QMessageBox.Icon.Information)
                 msg.setWindowTitle("Monkey Tester")
                 msg.setText("No crashes or errors detected.")
-                msg.setInformativeText("Refine existing and implement new stuff.")
+                msg.setInformativeText("The application remained stable during the test.")
             msg.exec()
             
             self.window.close()
@@ -146,8 +146,10 @@ class MonkeyTester:
                     rect = w.visualItemRect(w.item(row))
                     QTest.mouseClick(w.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
                     
-        except Exception:
-            # Ignore interaction errors (e.g. widget disappeared)
+        except Exception as e:
+            # Ignore interaction errors (e.g. widget disappeared), but log them
+            # to stderr for debugging the monkey itself.
+            print(f"Monkey interaction failed on {w}: {e}", file=sys.stderr)
             pass
 
 if __name__ == "__main__":
@@ -181,7 +183,21 @@ if __name__ == "__main__":
     
     # 6. Start Monkey
     monkey = MonkeyTester(window)
-    # Give the app a moment to initialize before starting chaos
-    QTimer.singleShot(3500, monkey.start) # Increased delay for post-load tasks
+
+    def wait_for_app_ready():
+        """
+        Polls until the application has no active modal widgets (e.g., popups).
+        This is more robust than a fixed delay.
+        """
+        modal_widget = QApplication.activeModalWidget()
+        if modal_widget is not None:
+            # App is still busy with a popup, wait and check again.
+            QTimer.singleShot(500, wait_for_app_ready)
+        else:
+            # No modal widgets, safe to start the test.
+            monkey.start()
+
+    # Start polling after a short delay to allow initial popups to appear.
+    QTimer.singleShot(1000, wait_for_app_ready)
     
     sys.exit(app.exec())

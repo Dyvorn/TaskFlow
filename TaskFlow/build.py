@@ -106,14 +106,14 @@ def build():
             print(f"ℹ️  Ready to compile installer. Open '{os.path.basename(iss_path)}' with Inno Setup.")
 
         # Create Zip Archive
-        print("📦 Creating Zip archive...")
+        print("📦 Creating release zip archive...")
         shutil.make_archive(
-            base_name=os.path.join(dist_dir, "TaskFlow_v9.0"), 
+            base_name=os.path.join(dist_dir, "TaskFlow_release"), 
             format='zip', 
             root_dir=dist_dir, 
             base_dir='TaskFlow'
         )
-        print("✅ Zip created successfully.")
+        print("✅ Release zip created successfully.")
         
     except Exception as e:
         print(f"❌ Build Failed: {e}")

@@ -1792,8 +1792,12 @@ class BreathingCircle(QWidget):
 
     def _update_scale(self, value):
         self.scale_factor = value
-        # Update text based on phase
-        progress = self.anim.currentTime() / self.anim.duration()
+        # Update text based on phase.
+        # Using currentLoopTime() is crucial for animations with infinite loops,
+        # as currentTime() would otherwise grow indefinitely and break the progress calculation.
+        loop_duration = self.anim.duration()
+        if loop_duration == 0: return # Avoid division by zero
+        progress = self.anim.currentLoopTime() / loop_duration
         if progress < 0.5:
             self.text = "Breathe In"
         else:
@@ -5006,7 +5010,7 @@ class HubWindow(QMainWindow):
         layout.addWidget(btn_exit, 0, Qt.AlignmentFlag.AlignCenter)
 
     def enter_panic_mode(self) -> None:
-        self.nav_frame.setVisible(False)
+        self.nav_scroll_area.setVisible(False)
         self._switch_page(self.page_panic)
         self.panic_background.start_animation()
         # Play calming sound if available
@@ -5220,7 +5224,7 @@ class HubWindow(QMainWindow):
             self.zen_lbl_note.setVisible(False)
 
         # Hide sidebar for focus
-        self.nav_frame.setVisible(False)
+        self.nav_scroll_area.setVisible(False)
         self.btn_focus.setChecked(True)
 
         # Restore sound preference
@@ -5461,7 +5465,7 @@ class HubWindow(QMainWindow):
         self._stop_soundscape()
         if self._panic_breathing_timer:
             self._panic_breathing_timer.stop()
-        self.nav_frame.setVisible(True)
+        self.nav_scroll_area.setVisible(True)
         self._switch_page(self.page_home)
 
     def exit_zen_mode(self):
@@ -5475,7 +5479,7 @@ class HubWindow(QMainWindow):
         self._zen_task_id = None
         if hasattr(self, "_zen_timer"):
             self._zen_timer.stop()
-        self.nav_frame.setVisible(True)
+        self.nav_scroll_area.setVisible(True)
         self.btn_focus.setChecked(False)
         self._switch_page(self.page_home)
 
