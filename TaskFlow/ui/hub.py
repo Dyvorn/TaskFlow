@@ -890,26 +890,7 @@ class QuickTipsDialog(ShadowedDialog):
 
         c_layout.addStretch()
         scroll.setWidget(content)
-        
-        # Style the scrollbar
-        scrollbar = scroll.verticalScrollBar()
-        scrollbar.setStyleSheet(f"""
-            QScrollBar:vertical {{
-                border: none;
-                background: {HOVER_BG};
-                width: 8px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: #e0e0e0;
-                min-height: 20px;
-                border-radius: 4px;
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-        """)
-        
+
         self.add_widget(scroll)
 
         btn_close = QPushButton("Got it")
@@ -3790,10 +3771,15 @@ class HubWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(12)
 
-        # Left navigation
+        # Left navigation in a scroll area
+        self.nav_scroll_area = QScrollArea()
+        self.nav_scroll_area.setWidgetResizable(True)
+        self.nav_scroll_area.setFixedWidth(180)
+        self.nav_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.nav_scroll_area.setStyleSheet("background: transparent; border: none;")
+
         self.nav_frame = QFrame()
         self.nav_frame.setObjectName("NavBar")
-        self.nav_frame.setFixedWidth(180)
         nav_layout = QVBoxLayout(self.nav_frame)
         nav_layout.setContentsMargins(10, 20, 10, 20)
         nav_layout.setSpacing(12)
@@ -3860,7 +3846,8 @@ class HubWindow(QMainWindow):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             nav_layout.addWidget(btn)
 
-        root.addWidget(self.nav_frame)
+        self.nav_scroll_area.setWidget(self.nav_frame)
+        root.addWidget(self.nav_scroll_area)
 
         # Right pages
         self.stack = QStackedWidget()
@@ -4850,8 +4837,8 @@ class HubWindow(QMainWindow):
 
     def _toggle_focus_mode(self) -> None:
         """Toggle the visibility of the sidebar."""
-        visible = self.nav_frame.isVisible()
-        self.nav_frame.setVisible(not visible)
+        visible = self.nav_scroll_area.isVisible()
+        self.nav_scroll_area.setVisible(not visible)
         self.btn_focus.setChecked(visible) # If it was visible, it's now hidden (checked state implies 'Focus Mode Active')
         
         if visible:

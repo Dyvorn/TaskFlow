@@ -33,6 +33,31 @@ def main():
     # 1. Setup Application
     app = QApplication(sys.argv)
     app.setApplicationName("TaskFlow")
+
+    # Global stylesheet for consistency
+    app.setStyleSheet(f"""
+        QScrollBar:vertical {{
+            border: none;
+            background: #33FFFFFF;
+            width: 8px;
+            margin: 0px;
+            border-radius: 4px;
+        }}
+        QScrollBar::handle:vertical {{
+            background: #e0e0e0;
+            min-height: 20px;
+            border-radius: 4px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: #ffffff;
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0px;
+        }}
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
+    """)
     
     # Prevent app from closing when splash screen closes before main window opens
     app.setQuitOnLastWindowClosed(False)
