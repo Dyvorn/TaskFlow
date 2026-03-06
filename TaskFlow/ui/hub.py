@@ -197,12 +197,8 @@ from core.model import (
     get_activity_heatmap_data,
     calculate_xp_for_task,
 )
-
-from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
-try:
-    from .coach import CoachWidget
-except ImportError:
-    from ui.coach import CoachWidget
+from ui.shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
+from ui.coach import CoachWidget
 
 # --- Voice Input Imports ---
 try:
@@ -3680,7 +3676,8 @@ class HubWindow(QMainWindow):
             /* Sidebar Buttons */
             QFrame#NavBar QPushButton {{
                 text-align: left;
-                padding: 12px 16px;
+                padding: 10px 16px;
+                padding: 10px 12px;
                 border: none;
                 background-color: transparent;
                 border-radius: 12px;
@@ -3762,6 +3759,25 @@ class HubWindow(QMainWindow):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
             }}
+            /* Checkboxes */
+            QCheckBox {{
+                color: {TEXT_WHITE};
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 18px;
+                height: 18px;
+                border-radius: 4px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                background-color: rgba(0, 0, 0, 0.3);
+            }}
+            QCheckBox::indicator:hover {{
+                border: 1px solid {GOLD};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {GOLD};
+                border: 1px solid {GOLD};
+            }}
             """
         )
 
@@ -3777,6 +3793,7 @@ class HubWindow(QMainWindow):
         self.nav_scroll_area.setFixedWidth(180)
         self.nav_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         self.nav_scroll_area.setStyleSheet("background: transparent; border: none;")
+        self.nav_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.nav_frame = QFrame()
         self.nav_frame.setObjectName("NavBar")
