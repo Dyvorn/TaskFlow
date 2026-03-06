@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer, QRect
 
 # Import the UI
-from ui.hub import HubWindow, SplashWindow, SPLASH_DURATION_MS
+from ui.hub import HubWindow, SplashWindow
 
 # Import Data Model
 from core.model import get_data_paths, load_state, save_state, rollover_tasks
@@ -34,40 +34,27 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("TaskFlow")
 
-    # Global stylesheet for consistency
-    app.setStyleSheet(f"""
-        QScrollBar:vertical {{
+    # Global stylesheet for consistency (fixed syntax)
+    app.setStyleSheet("""
+        QScrollBar:vertical {
             border: none;
-            background: transparent;transparent;transparent;
+            background: transparent;
             width: 6px;
             margin: 0px;
-            width: 6px;
-            margin: 0px;
+        }
+        QScrollBar::handle:vertical {
             background: rgba(255, 255, 255, 0.1);
-            width: 6px;
-            margin: 0px;
-          
-        QSc ollBar::handl background: rgba(255, 255, 255, 0.1);
-        }}
-        QS
-c       QScrollBar::add-linrollBar::handle:vertical {{
-          
-        QS
-        QScrollBar::add-page:verc ollBar::handl background: rgba(255, 255, 255, 0.1);
             min-height: 20px;
-          
-        QScrollBar::add-lin border-radius: 3px;
-        }}
-        QS
-        QScrollBar::add-page:vercrollBar::handle:vertical:hover {{
+            border-radius: 3px;
+        }
+        QScrollBar::handle:vertical:hover {
             background: rgba(255, 255, 255, 0.2);
-        }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-            height: 0px;
-        }}
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+        }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
             background: none;
-        }}
+            height: 0px;
+        }
     """)
     
     # Prevent app from closing when splash screen closes before main window opens
@@ -89,15 +76,15 @@ c       QScrollBar::add-linrollBar::handle:vertical {{
     # Track timing for smooth progress
     start_time = time.time()
     min_duration_ms = 3000  # Minimum 3 seconds
-    ai_engine = [None]  # Store AI engine when ready
-    ai_ready = [False]  # Flag to track if AI loading is done
-    finish_loading_called = [False]  # Track if we've called finish_loading
+    ai_engine = None  # Store AI engine when ready
+    ai_ready = False  # Flag to track if AI loading is done
+    finish_loading_called = False  # Track if we've called finish_loading
     
     # Start progress animation (smooth linear fill over minimum duration)
     progress_timer = QTimer()
     
     # Prepare Hub Window variable (closure access)
-    hub_window = [None]
+    hub_window = None
     
     # Calculate target geometry for the transition
     settings = state.get("settings", {})
@@ -121,29 +108,30 @@ c       QScrollBar::add-linrollBar::handle:vertical {{
 
     def on_transition_done():
         """Called when splash morphing is complete."""
-        if hub_window[0]:
-            if start_maximized:
-                hub_window[0].showMaximized()
-            else:
-                hub_window[0].show()
-                hub_window[0].setGeometry(target_rect)
-            
-            # Start popups (Welcome, Daily Plan) only NOW that the Hub is visible
-            hub_window[0].start_post_load_tasks()
-            
+        # By the time this is called, hub_window is guaranteed to be created.
+        if start_maximized:
+            hub_window.showMaximized()
+        else:
+            hub_window.show()
+            hub_window.setGeometry(target_rect)
+        
+        # Start popups (Welcome, Daily Plan) only NOW that the Hub is visible
+        hub_window.start_post_load_tasks()
+        
         splash.close()
 
     def update_progress():
+        nonlocal finish_loading_called, hub_window
         elapsed_ms = (time.time() - start_time) * 1000
         
-        if ai_ready[0] and elapsed_ms >= min_duration_ms and not finish_loading_called[0]:
+        if ai_ready and elapsed_ms >= min_duration_ms and not finish_loading_called:
             # AI is ready AND minimum duration has passed
             splash.set_progress(100)
-            finish_loading_called[0] = True
+            finish_loading_called = True
             progress_timer.stop()
             
             # Create Hub Window NOW (so it's ready)
-            hub_window[0] = HubWindow(state, paths, ai_engine[0])
+            hub_window = HubWindow(state, paths, ai_engine)
             
             # Start smooth transition
             splash.transition_to_main(target_rect, on_transition_done)
@@ -159,12 +147,13 @@ c       QScrollBar::add-linrollBar::handle:vertical {{
     import threading
     
     def load_ai():
+        nonlocal ai_engine, ai_ready
         try:
-            ai_engine[0] = AIEngine(user_id="user_123", state=state)
+            ai_engine = AIEngine(user_id="user_123", state=state)
         except Exception as e:
             print(f"DEBUG: AI engine error: {e}")
         finally:
-            ai_ready[0] = True
+            ai_ready = True
     
     ai_thread = threading.Thread(target=load_ai, daemon=True)
     ai_thread.start()
