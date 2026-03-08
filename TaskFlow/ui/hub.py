@@ -1832,6 +1832,48 @@ class BreathingCircle(QWidget):
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text)
 
 # ============================================================================
+# SECTION 5: CUSTOM WIDGETS FOR UI ENHANCEMENT
+# ============================================================================
+
+class ZenTimerWidget(QWidget):
+    """A circular progress widget for the Zen timer."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(280, 280)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._progress = 1.0 # 1.0 to 0.0
+        self._text = "25:00"
+
+    def set_progress(self, progress: float):
+        self._progress = progress
+        self.update()
+
+    def set_text(self, text: str):
+        self._text = text
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        center = rect.center()
+        radius = int(min(rect.width(), rect.height()) / 2 - 12)
+
+        painter.setPen(QPen(QColor(HOVER_BG), 12, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawEllipse(center, radius, radius)
+
+        if self._progress > 0:
+            pen = QPen(QColor(GOLD), 12, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            span = int(self._progress * 360 * 16)
+            painter.drawArc(rect.adjusted(12, 12, -12, -12), 90 * 16, -span)
+
+        painter.setPen(QColor(GOLD))
+        painter.setFont(QFont("Arial", 60, QFont.Weight.Bold))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._text)
+
+# ============================================================================
 # SECTION 5: TASK LIST WIDGETS (TODAY / WEEK / SOMEDAY / PROJECTS)
 # ============================================================================
 
@@ -2274,6 +2316,9 @@ class TaskListWidget(QWidget):
             estimatedDuration=duration
         )
         
+        if self.window() and hasattr(self.window(), "_play_sfx"):
+            self.window()._play_sfx("add")
+
         # Dopamine: Flash input success
         original_style = self.quick_add_input.styleSheet()
         self.quick_add_input.setStyleSheet(
@@ -2317,11 +2362,9 @@ class TaskListWidget(QWidget):
         is_completing = not task.get("completed", False)
 
         if is_completing:
-            if winsound:
-                try: winsound.MessageBeep(winsound.MB_OK)
-                except: pass
-            
             # Trigger confetti via main window
+            if self.window() and hasattr(self.window(), "_play_sfx"):
+                self.window()._play_sfx("complete")
             if self.window() and hasattr(self.window(), "celebrate"):
                 self.window().celebrate()
 
@@ -3587,17 +3630,37 @@ class HubWindow(QMainWindow):
 
     def _init_audio(self):
         self.media_player = None
+        self.sfx_player = None
         if QMediaPlayer and QAudioOutput:
+            # Player for long-form soundscapes
             self.media_player = QMediaPlayer()
             self.audio_output = QAudioOutput()
             self.media_player.setAudioOutput(self.audio_output)
             
-            # Load saved volume
+            # Player for short sound effects
+            self.sfx_player = QMediaPlayer()
+            self.sfx_audio_output = QAudioOutput()
+            self.sfx_player.setAudioOutput(self.sfx_audio_output)
+            self.sfx_audio_output.setVolume(0.6) # Effects shouldn't be too loud
+
+            # Load saved volume for soundscapes
             saved_volume = self.state.get("settings", {}).get("zenVolume", 0.5)
             self.audio_output.setVolume(saved_volume)
             
             if hasattr(self, "slider_volume"):
                 self.slider_volume.setValue(int(saved_volume * 100))
+
+    def _play_sfx(self, sound_name: str):
+        """Plays a short sound effect from the assets/sounds folder."""
+        if not self.sfx_player: return
+        filename = f"{sound_name}.wav"
+        base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        sound_path = os.path.join(base_dir, "assets", "sounds", filename)
+        if not os.path.exists(sound_path) and not getattr(sys, 'frozen', False):
+            sound_path = os.path.join(os.path.dirname(__file__), "..", "assets", "sounds", filename)
+        if os.path.exists(sound_path):
+            self.sfx_player.setSource(QUrl.fromLocalFile(sound_path))
+            self.sfx_player.play()
 
     def _prevent_sleep(self):
         """Prevent the system from sleeping during a Zen session."""
@@ -4806,8 +4869,17 @@ class HubWindow(QMainWindow):
         if self.stack.currentWidget() is page:
             return
 
+        self._play_sfx("swoosh")
         self.stack.setCurrentWidget(page)
-        AnimationManager.fade_in(self.stack, duration=PAGE_FADE_DURATION_MS)
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity")
+        anim.setDuration(ANIM_DURATION_MEDIUM)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(lambda: page.setGraphicsEffect(None) if page.graphicsEffect() else None)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
         if page is self.page_home:
             self._refresh_home()
@@ -5037,10 +5109,14 @@ class HubWindow(QMainWindow):
         self.zen_lbl_note.setVisible(False)
         layout.addWidget(self.zen_lbl_note)
         
-        self.zen_timer_lbl = QLabel("25:00")
-        self.zen_timer_lbl.setStyleSheet(f"color: {GOLD}; font-size: 80px; font-weight: bold;")
-        self.zen_timer_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.zen_timer_lbl)
+        self.zen_lbl_status = QLabel("")
+        self.zen_lbl_status.setStyleSheet(f"color: {GOLD}; font-size: 18px; font-weight: bold; margin: 5px;")
+        self.zen_lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zen_lbl_status.setVisible(False)
+        layout.addWidget(self.zen_lbl_status)
+
+        self.zen_timer_widget = ZenTimerWidget()
+        layout.addWidget(self.zen_timer_widget, 0, Qt.AlignmentFlag.AlignCenter)
         
         # Break Controls
         break_layout = QHBoxLayout()
@@ -5238,15 +5314,19 @@ class HubWindow(QMainWindow):
         if checked:
             self.btn_pomodoro.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; border-radius: 15px; padding: 8px 16px; font-weight: bold;")
             self._pomodoro_count = 0
+            self._update_pomodoro_label()
             self._start_zen_timer(25, "focus")
         else:
             self.btn_pomodoro.setStyleSheet(f"background-color: rgba(255,255,255,0.1); color: {TEXT_WHITE}; border-radius: 15px; padding: 8px 16px;")
+            self.zen_lbl_status.setVisible(False)
 
     def _start_manual_timer(self, minutes: int, session_type: str):
         """Starts a timer and disables Pomodoro mode since this is a manual override."""
         if hasattr(self, "btn_pomodoro"):
             self.btn_pomodoro.setChecked(False)
         self._pomodoro_mode = False
+        if hasattr(self, "zen_lbl_status"):
+            self.zen_lbl_status.setVisible(False)
         self._start_zen_timer(minutes, session_type)
 
     def _start_zen_timer(self, minutes: int, session_type: str = "focus"):
@@ -5265,6 +5345,7 @@ class HubWindow(QMainWindow):
         self._zen_timer.timeout.connect(self._update_zen_timer)
         self._zen_timer.start(500) # More frequent updates
         self._update_zen_timer() # Update label immediately
+        self.zen_timer_widget.set_progress(1.0)
 
     def _update_zen_timer(self):
         if not hasattr(self, "_zen_end_time"):
@@ -5275,9 +5356,12 @@ class HubWindow(QMainWindow):
         if remaining > 0:
             m = int(remaining) // 60
             s = int(remaining) % 60
-            self.zen_timer_lbl.setText(f"{m:02}:{s:02}")
+            self.zen_timer_widget.set_text(f"{m:02}:{s:02}")
+            progress = remaining / (self._zen_session_duration * 60)
+            self.zen_timer_widget.set_progress(progress)
         else:
-            self.zen_timer_lbl.setText("00:00")
+            self.zen_timer_widget.set_text("00:00")
+            self.zen_timer_widget.set_progress(0)
             self._zen_timer.stop()
             self._allow_sleep()
 
@@ -5325,22 +5409,27 @@ class HubWindow(QMainWindow):
             # Determine break length (Long break every 4th session)
             is_long = (self._pomodoro_count % 4 == 0)
             duration = 15 if is_long else 5
+            break_name = "Long Break" if is_long else "Short Break"
             
-            reply = QMessageBox.question(self, "Pomodoro Focus Complete", f"Great job! You've completed {self._pomodoro_count} session(s).\nStart {duration}m break?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                self._start_zen_timer(duration, "break")
-            else:
-                self.btn_pomodoro.setChecked(False)
-                self._stop_soundscape()
+            self.show_toast(f"Focus complete! Starting {break_name} ({duration}m).")
+            self._start_zen_timer(duration, "break")
         else: # was break
-            reply = QMessageBox.question(self, "Break Over", "Ready to focus again (25m)?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            self.show_toast("Break over! Starting Focus (25m).")
+            self._start_zen_timer(25, "focus")
+        
+        self._update_pomodoro_label()
+
+    def _update_pomodoro_label(self):
+        if not self._pomodoro_mode: return
+        
+        if self._zen_session_type == "focus":
+            cycle = (self._pomodoro_count % 4) + 1
+            text = f"🍅 Focus Session {cycle}/4"
+        else:
+            text = "☕ Break Time"
             
-            if reply == QMessageBox.StandardButton.Yes:
-                self._start_zen_timer(25, "focus")
-            else:
-                self.btn_pomodoro.setChecked(False)
-                self._stop_soundscape()
+        self.zen_lbl_status.setText(text)
+        self.zen_lbl_status.setVisible(True)
 
     def _on_zen_distraction(self):
         text = self.zen_distraction.text().strip()
@@ -5469,6 +5558,8 @@ class HubWindow(QMainWindow):
         self._pomodoro_mode = False
         if hasattr(self, "btn_pomodoro"):
             self.btn_pomodoro.setChecked(False)
+        if hasattr(self, "zen_lbl_status"):
+            self.zen_lbl_status.setVisible(False)
         self._update_zen_background("Silent") # Reset background
         self._stop_soundscape()
         self._allow_sleep()
@@ -5629,6 +5720,7 @@ class HubWindow(QMainWindow):
         self.schedule_save()
         self._refresh_home()
         if checked:
+            self._play_sfx("complete")
             self.celebrate()
 
     def _mood_message_for_value(self, value: str) -> str:
