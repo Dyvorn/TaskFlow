@@ -355,6 +355,9 @@ class WidgetWindow(QWidget):
         if not text:
             return
             
+        if self._hub and hasattr(self._hub, "_play_sfx"):
+            self._hub._play_sfx("add")
+
         # Use shared parser
         meta = parse_task_input(text)
         
@@ -439,6 +442,9 @@ class WidgetWindow(QWidget):
             self.tasks_list.setItemWidget(item, row)
 
     def _on_widget_task_toggle(self, task_id: str):
+        if self._hub and hasattr(self._hub, "_play_sfx"):
+            self._hub._play_sfx("complete")
+
         for i in range(self.tasks_list.count()):
             item = self.tasks_list.item(i)
             if item.data(Qt.ItemDataRole.UserRole) == task_id:
@@ -541,15 +547,15 @@ class WidgetWindow(QWidget):
         # Calculate target X based on side and expansion state
         if expanded:
             target_x = self._expanded_anchor_x(self._docked_side, geo)
-            easing = QEasingCurve.Type.OutCubic
-            duration = ANIM_DURATION_MEDIUM
+            easing = QEasingCurve.Type.OutBack
+            duration = ANIM_DURATION_MEDIUM + 100
             # Expand: show content immediately (slide in)
             self.bump.hide()
             self.content_wrap.show()
         else:
             target_x = self._collapsed_anchor_x(self._docked_side, geo)
-            easing = QEasingCurve.Type.InCubic # Accelerate into ramp
-            duration = ANIM_DURATION_MEDIUM + 80
+            easing = QEasingCurve.Type.InBack
+            duration = ANIM_DURATION_MEDIUM + 100
             # Collapse: hide content immediately, show bump (slide out)
             self.content_wrap.hide()
             self.bump.show()
