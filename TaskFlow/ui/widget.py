@@ -54,12 +54,17 @@ from core.model import (
     toggle_task_completed,
     add_task,
     delete_task,
-    parse_task_input,
     current_time_of_day,
     get_today_mood,
+    today_str,
 )
 
 from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
+
+try:
+    from core.processor import CommandParser
+except ImportError:
+    CommandParser = None
 
 
 WIDGET_WIDTH = 320
@@ -89,6 +94,11 @@ class WidgetWindow(QWidget):
         self.paths = paths
         self._save_callback = save_callback
         self._hub = hub_instance
+
+        if CommandParser:
+            self.command_parser = CommandParser()
+        else:
+            self.command_parser = None
 
         # collapse state
         settings = self.state.get("settings", {})
@@ -355,18 +365,37 @@ class WidgetWindow(QWidget):
         if not text:
             return
             
+        if not self.command_parser:
+            self.status_label.setText("Error: Command parser not loaded.")
+            return
+
         if self._hub and hasattr(self._hub, "_play_sfx"):
             self._hub._play_sfx("add")
 
         # Use shared parser
-        meta = parse_task_input(text)
+        actions = self.command_parser.parse(text)
+        if not actions:
+            return
+        action = actions[0]
+
+        if action.get("intent") != "create_task":
+            return
+
+        # Determine section
+        target_section = "Today"
+        schedule = None
+        if action.get("due_date"):
+            schedule = {"date": action["due_date"], "time": action.get("due_time")}
+            target_section = "Scheduled" if action["due_date"] > today_str() else "Today"
         
         add_task(
             self.state, 
-            text=meta["text"], 
-            section=meta["section"],
-            category=meta["category"],
-            important=meta["important"]
+            text=action["text"], 
+            section=target_section,
+            category=action.get("category"),
+            important=action.get("important", False),
+            tags=action.get("tags", []),
+            schedule=schedule
         )
         
         # Visual feedback: Flash input
@@ -380,8 +409,8 @@ class WidgetWindow(QWidget):
             self.quick_add_input.clear()
             self.quick_add_input.setVisible(False)
             self._refresh_tasks()
-            if meta["section"] != "Today":
-                self.status_label.setText(f"Added to {meta['section']}")
+            if target_section != "Today":
+                self.status_label.setText(f"Added to {target_section}")
                 
         QTimer.singleShot(250, finalize)
         self._refresh_tasks()

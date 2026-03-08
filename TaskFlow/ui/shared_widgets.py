@@ -4,8 +4,8 @@ import random
 import html
 from typing import Any, Dict, List, Optional, Callable
 
-from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
-from PyQt6.QtGui import QPainter, QColor, QCursor
+from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QVariantAnimation, QRectF
+from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame
 
 from core.model import (
@@ -89,6 +89,70 @@ class AnimationManager:
         group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
         return group
 
+class AnimatedCheckbox(QPushButton):
+    """A custom checkbox with a smooth fill animation."""
+    def __init__(self, checked: bool = False, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        super().setChecked(checked)
+        self.setFixedSize(24, 24)
+        self.setText("")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Animation state (0.0 = empty, 1.0 = filled)
+        self._anim_value = 1.0 if checked else 0.0
+        
+        self._anim = QVariantAnimation()
+        self._anim.setDuration(300)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutBack)
+        self._anim.valueChanged.connect(self._update_anim)
+
+    def setChecked(self, checked: bool):
+        if checked != self.isChecked():
+            self._anim.stop()
+            self._anim.setStartValue(self._anim_value)
+            self._anim.setEndValue(1.0 if checked else 0.0)
+            self._anim.start()
+        super().setChecked(checked)
+
+    def nextCheckState(self):
+        super().nextCheckState()
+        self.setChecked(self.isChecked())
+
+    def _update_anim(self, val):
+        self._anim_value = val
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        center = QPointF(rect.center())
+        radius = (min(rect.width(), rect.height()) / 2) - 2
+        
+        # Draw ring
+        painter.setPen(QPen(QColor(GOLD), 2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(center, radius, radius)
+        
+        # Draw fill
+        if self._anim_value > 0.05:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(GOLD))
+            r = radius * self._anim_value
+            painter.drawEllipse(center, r, r)
+            
+            # Draw checkmark
+            if self._anim_value > 0.6:
+                painter.setPen(QPen(QColor(DARK_BG), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                # Simple checkmark coordinates
+                p1 = QPointF(center.x() - 3, center.y())
+                p2 = QPointF(center.x() - 1, center.y() + 3)
+                p3 = QPointF(center.x() + 4, center.y() - 3)
+                painter.drawLine(p1, p2)
+                painter.drawLine(p2, p3)
+
 class TaskRowWidget(QWidget):
     """A standardized task row widget that emits signals for interactions."""
     toggled = pyqtSignal(str)
@@ -131,25 +195,8 @@ class TaskRowWidget(QWidget):
         hl.setContentsMargins(6, 2, 6, 2)
         hl.setSpacing(6)
 
-        chk = QPushButton("✔" if self.task.get("completed") else "")
-        chk.setFixedSize(QSize(22, 22))
-        chk.setCheckable(True)
-        chk.setChecked(self.task.get("completed", False))
-        chk.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: transparent;
-                border-radius: 11px;
-                border: 1px solid {HOVER_BG};
-                color: {GOLD};
-                font-weight: bold;
-            }}
-            QPushButton:checked {{
-                background-color: {GOLD};
-                color: {DARK_BG};
-            }}
-            """
-        )
+        chk = AnimatedCheckbox(checked=self.task.get("completed", False))
+        # No stylesheet needed for AnimatedCheckbox as it paints itself
 
         text_content = self.task.get("text", "")
         meta_info = []

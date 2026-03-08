@@ -6,8 +6,6 @@ import os
 import json
 import uuid
 import shutil
-import math
-import re
 import random
 import calendar
 from datetime import datetime, date, timedelta
@@ -45,6 +43,19 @@ MOTIVATIONAL_QUOTES = [
     "Rest is also part of the work.",
     "You got this.",
     "Your well-being comes first.",
+]
+
+# Journal prompts for encouragement
+JOURNAL_PROMPTS = [
+    "What's one thing that went well today?",
+    "What's taking up most of your headspace right now?",
+    "If you could do one thing differently today, what would it be?",
+    "What are you grateful for at this moment?",
+    "Describe a small moment of peace you experienced recently.",
+    "What is something you're looking forward to?",
+    "Write about a challenge you're facing and one small step to address it.",
+    "What does your ideal, restful day look like?",
+    "Acknowledge one feeling you have right now, without judgment.",
 ]
 
 # Modes: how the app "talks" to you based on mood + progress
@@ -138,51 +149,6 @@ def determine_today_mode(
         return MODE_WRAPUP
 
     return MODE_FOCUS
-
-
-def parse_task_input(text: str) -> Dict[str, Any]:
-    """
-    Parses a raw input string to extract text, section, category, and importance.
-    """
-    text = text.strip()
-    section = "Today" # Default
-    important = False
-    category = None
-    tags = []
-    
-    # Priority
-    if "!" in text or "urgent" in text.lower():
-        important = True
-        text = text.replace("!", "").replace("urgent", "", 1).strip()
-        
-    # Category hashtags
-    match = re.search(r"#(\w+)", text)
-    if match:
-        category = match.group(1)
-        text = text.replace(match.group(0), "").strip()
-
-    # Tags (@tag)
-    tags_found = re.findall(r"@(\w+)", text)
-    if tags_found:
-        tags = tags_found
-        text = re.sub(r"@(\w+)", "", text).strip()
-        
-    # Section keywords
-    lower = text.lower()
-    if "tomorrow" in lower: 
-        section = "Tomorrow"
-    elif "week" in lower and "next" not in lower: # "this week"
-        section = "This Week"
-    elif "someday" in lower: 
-        section = "Someday"
-        
-    return {
-        "text": text,
-        "section": section,
-        "category": category,
-        "important": important,
-        "tags": tags
-    }
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ANALYTICS HELPERS
@@ -297,6 +263,7 @@ def default_state() -> Dict[str, Any]:
     return {
         "version": APP_VERSION,
         "lastOpened": today_str(),
+        "lastSeenVersion": "0.0",
         "userProfile": {
             "name": "Friend",
             "role": "Generalist",
@@ -375,6 +342,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         if state[key] is None and isinstance(value, (dict, list)):
             state[key] = value
 
+    state.setdefault("lastSeenVersion", "0.0")
     if not isinstance(state.get("stats"), dict):
         state["stats"] = {}
     _ensure_nested_defaults(state["stats"], base["stats"])

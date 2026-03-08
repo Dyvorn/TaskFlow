@@ -194,6 +194,28 @@ class CommandParser:
         if match:
             task_text = match.group("task").strip()
             
+        # Extract metadata like the old parse_task_input
+        important = False
+        category = None
+        tags = []
+
+        # Priority
+        if "!" in task_text or "urgent" in task_text.lower():
+            important = True
+            task_text = task_text.replace("!", "").replace("urgent", "", 1).strip()
+            
+        # Category hashtags
+        match = re.search(r"#(\w+)", task_text)
+        if match:
+            category = match.group(1)
+            task_text = task_text.replace(match.group(0), "").strip()
+
+        # Tags (@tag)
+        tags_found = re.findall(r"@(\w+)", task_text)
+        if tags_found:
+            tags = tags_found
+            task_text = re.sub(r"@(\w+)", "", task_text).strip()
+
         # Extract Date/Time using dateparser
         due_date = None
         due_time = None
@@ -221,7 +243,10 @@ class CommandParser:
             "text": task_text.strip("."),
             "due_date": due_date,
             "due_time": due_time,
-            "original_text": text
+            "original_text": text,
+            "important": important,
+            "category": category,
+            "tags": tags
         }
 
 # --- Example Usage ---

@@ -144,6 +144,7 @@ from core.model import (
     SECTIONS,
     MOTIVATIONAL_QUOTES,
     MODE_RECOVERY,
+    JOURNAL_PROMPTS,
     MODE_FOCUS,
     MODE_WRAPUP,
     ANIM_DURATION_FAST,
@@ -188,7 +189,6 @@ from core.model import (
     create_timestamped_backup,
     get_backups,
     restore_backup,
-    parse_task_input,
     get_completion_rate,
     get_most_productive_hour,
     get_category_breakdown,
@@ -206,6 +206,7 @@ try:
     VOICE_AVAILABLE = True
 except ImportError:
     VOICE_AVAILABLE = False
+    CommandParser = None
 
 # ============================================================================
 # SECTION 2: APP CONFIGURATION & MODES
@@ -628,13 +629,13 @@ class WelcomeDialog(ShadowedDialog):
     """
     Start-of-Day screen to capture mood and main focus.
     """
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, user_name: str, parent: Optional[QWidget] = None):
         super().__init__(parent, "Welcome Back")
         self.setMinimumWidth(400)
 
         # Greeting
-        lbl_greet = QLabel(f"Good {current_time_of_day()}.")
-        lbl_greet.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
+        lbl_greet = QLabel(f"Good {current_time_of_day()}, {user_name}.")
+        lbl_greet.setStyleSheet(f"color: {GOLD}; font-size: 24px; font-weight: bold;")
         self.add_widget(lbl_greet)
 
         self.add_widget(QLabel("How are you feeling right now?"))
@@ -676,6 +677,35 @@ class WelcomeDialog(ShadowedDialog):
             "mood": self.mood_combo.currentText(),
             "primaryGoal": self.goal_input.text().strip()
         }
+
+class WhatsNewDialog(ShadowedDialog):
+    """Dialog to show release notes after an update."""
+    def __init__(self, version: str, notes: str, parent: Optional[QWidget] = None):
+        super().__init__(parent, "What's New")
+        self.resize(500, 400)
+        
+        title = QLabel(f"Welcome to Version {version}!")
+        title.setStyleSheet(f"color: {GOLD}; font-size: 22px; font-weight: bold;")
+        self.add_widget(title)
+        
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setText(notes)
+        text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: rgba(0,0,0,0.2);
+                color: {TEXT_GRAY};
+                border: none;
+                padding: 10px;
+                font-size: 14px;
+            }}
+        """)
+        self.add_widget(text_edit)
+        
+        btn_close = QPushButton("Got it!")
+        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_close.clicked.connect(self.accept)
+        self.add_widget(btn_close)
 
 # ============================================================================
 # SECTION 4: DIALOGS & SMALL VISUAL WIDGETS
@@ -1830,7 +1860,7 @@ class BreathingCircle(QWidget):
         # Draw text
         painter.setPen(QColor(255, 255, 255))
         f = painter.font()
-        f.setPointSize(16)
+        f.setPointSize(24)
         f.setBold(True)
         painter.setFont(f)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text)
@@ -2009,11 +2039,12 @@ class TaskListWidget(QWidget):
     """
     requestFocus = pyqtSignal(str)
 
-    def __init__(self, state: Dict[str, Any], section: str, save_callback, ai_engine=None, parent: Optional[QWidget] = None):
+    def __init__(self, state: Dict[str, Any], section: str, save_callback, command_parser, ai_engine=None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.state = state
         self.section = section
         self._save_callback = save_callback
+        self.command_parser = command_parser
         self.ai_engine = ai_engine
 
         self._build_ui()
@@ -2283,9 +2314,25 @@ class TaskListWidget(QWidget):
         if not text:
             return
             
-        # Use AI to infer category
-        category = "Personal" # Default
-        if self.ai_engine:
+        if not self.command_parser:
+            return
+
+        # Use CommandParser
+        actions = self.command_parser.parse(text)
+        if not actions:
+            return
+        
+        action = actions[0] # Process first command from input
+        
+        # For now, we only handle task creation here.
+        if action.get("intent") != "create_task":
+            # In the future, we could handle "new project" etc. from here.
+            self.window().show_toast(f"Can't do that from here, but I understood: {action['intent']}")
+            return
+
+        # Use AI to infer category if not specified by date parser or other means
+        category = "Personal"  # Default
+        if self.ai_engine and not action.get("category"):
             context = {
                 "time_of_day": current_time_of_day(),
                 "day_of_week": datetime.now().strftime("%A"),
@@ -2295,8 +2342,16 @@ class TaskListWidget(QWidget):
             if pred_cat:
                 category = pred_cat
         
-        # Simple section logic for now (can be expanded)
+        # Determine section
         target_section = self.section
+        schedule = None
+        if action.get("due_date"):
+            schedule = {"date": action["due_date"], "time": action.get("due_time")}
+            # If a date is set, it should go to Scheduled unless it's today
+            if action["due_date"] > today_str():
+                target_section = "Scheduled"
+            else:
+                target_section = "Today"
         
         # 10.0: AI Analysis
         difficulty = 1
@@ -2305,16 +2360,17 @@ class TaskListWidget(QWidget):
         
         if self.ai_engine:
             difficulty = self.ai_engine.analyze_task_complexity(text)
-            xp = difficulty * 15 # Higher scaling
+            xp = calculate_xp_for_task({"difficulty": difficulty})
             duration = self.ai_engine.estimate_duration(text)
         
         task = add_task(
             self.state, 
-            text=text, 
+            text=action["text"], 
             section=target_section, 
-            category=category, 
-            important=False,
-            schedule=None,
+            category=action.get("category") or category,
+            important=action.get("important", False),
+            tags=action.get("tags", []),
+            schedule=schedule,
             difficulty=difficulty,
             xpReward=xp,
             estimatedDuration=duration
@@ -2768,12 +2824,14 @@ class ProjectTaskListWidget(QWidget):
         self,
         state: Dict[str, Any],
         save_callback,
+        command_parser,
         ai_engine=None,
         parent: Optional[QWidget] = None,
     ):
         super().__init__(parent)
         self.state = state
         self._save_callback = save_callback
+        self.command_parser = command_parser
         self.ai_engine = ai_engine
         self._project_id: Optional[str] = None
 
@@ -2942,6 +3000,17 @@ class ProjectTaskListWidget(QWidget):
         if not text or not self._project_id:
             return
             
+        if not self.command_parser:
+            return
+
+        # NEW: Use CommandParser
+        actions = self.command_parser.parse(text)
+        if not actions:
+            return
+        action = actions[0]
+        
+        if action.get("intent") != "create_task":
+            return
         # AI Enrichment
         difficulty = 1
         xp = 10
@@ -2950,13 +3019,13 @@ class ProjectTaskListWidget(QWidget):
         
         if self.ai_engine:
             difficulty = self.ai_engine.analyze_task_complexity(text)
-            xp = difficulty * 15
+            xp = calculate_xp_for_task({"difficulty": difficulty})
             duration = self.ai_engine.estimate_duration(text)
             # We could predict category, but usually projects imply a category context
 
         task = add_task(
             self.state,
-            text=text,
+            text=action["text"],
             section="Someday",
             project_id=self._project_id,
             category=category,
@@ -3372,7 +3441,7 @@ class JournalWidget(QWidget):
 
         effect = QGraphicsOpacityEffect(self.editor)
         self.editor.setGraphicsEffect(effect)
-        anim_out = QPropertyAnimation(effect, b"opacity")
+        anim_out = QPropertyAnimation(effect, b"opacity", self)
         anim_out.setDuration(ANIM_DURATION_FAST)
         anim_out.setStartValue(1.0)
         anim_out.setEndValue(0.0)
@@ -3384,12 +3453,19 @@ class JournalWidget(QWidget):
             content = entry.get("text", "") if entry else ""
             
             # Smart load: HTML vs Plain Text
-            if "<!DOCTYPE HTML" in content or "<html>" in content:
+            if not content.strip():
+                self.editor.setPlainText("") # Clear any whitespace
+                if JOURNAL_PROMPTS:
+                    prompt = random.choice(JOURNAL_PROMPTS)
+                    self.editor.setPlaceholderText(f"✏️ {prompt}")
+                else:
+                    self.editor.setPlaceholderText("Write your thoughts here...")
+            elif "<!DOCTYPE HTML" in content or "<html>" in content:
                 self.editor.setHtml(content)
             else:
                 self.editor.setPlainText(content)
             self.editor.blockSignals(False)
-            anim_in = QPropertyAnimation(effect, b"opacity")
+            anim_in = QPropertyAnimation(effect, b"opacity", self)
             anim_in.setDuration(ANIM_DURATION_MEDIUM)
             anim_in.setStartValue(0.0)
             anim_in.setEndValue(1.0)
@@ -3472,6 +3548,10 @@ class HubWindow(QMainWindow):
         self.command_parser = None
         self._voice_worker = None
 
+        # Initialize CommandParser immediately for text features
+        if CommandParser:
+            self.command_parser = CommandParser()
+
         self._zen_task_id = None
         self._pomodoro_mode = False
         self._pomodoro_count = 0
@@ -3550,14 +3630,14 @@ class HubWindow(QMainWindow):
         """Starts background checks and dialogs after the window is fully visible."""
         self._check_updates_async()
         QTimer.singleShot(500, self._run_start_of_day_flow)
-        # Show a helpful tip after a short delay
+        # Show a helpful tip and "What's New" after a short delay
+        QTimer.singleShot(1500, self._check_for_whats_new)
         QTimer.singleShot(3000, self._show_tip_of_the_day)
 
     def _init_voice_ai(self):
-        """Loads the Whisper model in the background."""
+        """Loads the Whisper model and CommandParser in the background."""
         try:
             self.voice_listener = VoiceListener(model_size="tiny")
-            self.command_parser = CommandParser()
         except Exception as e:
             print(f"Failed to initialize Voice AI: {e}")
 
@@ -3730,13 +3810,13 @@ class HubWindow(QMainWindow):
             /* Sidebar Buttons */
             QFrame#NavBar QPushButton {{
                 text-align: left;
-                padding: 10px 16px;
-                padding: 10px 12px;
+                padding: 10px 16px 10px 12px;
                 border: none;
                 background-color: transparent;
                 border-radius: 12px;
                 font-weight: 600;
                 color: {TEXT_GRAY};
+                border-left: 3px solid transparent;
             }}
             QFrame#NavBar QPushButton:hover {{
                 background-color: {HOVER_BG};
@@ -3745,7 +3825,7 @@ class HubWindow(QMainWindow):
             QFrame#NavBar QPushButton:checked {{
                 background-color: rgba(255, 215, 0, 0.15);
                 color: {GOLD};
-                border: 1px solid rgba(255, 215, 0, 0.3);
+                border-left: 3px solid {GOLD};
             }}
             QLabel {{
                 color: {TEXT_WHITE};
@@ -4096,9 +4176,9 @@ class HubWindow(QMainWindow):
         self.btn_primary_goal.clicked.connect(self._edit_primary_goal)
         layout.addWidget(self.btn_primary_goal)
         
-        self.today_summary_line = QLabel("Loading...")
-        self.today_summary_line.setStyleSheet(f"color: {TEXT_GRAY}; margin-top: 5px;")
-        layout.addWidget(self.today_summary_line)
+        self.today_summary_line_label = QLabel("Loading...")
+        self.today_summary_line_label.setStyleSheet(f"color: {TEXT_GRAY}; margin-top: 5px;")
+        layout.addWidget(self.today_summary_line_label)
         
         layout.addSpacing(15)
         layout.addWidget(QLabel("Up Next:"))
@@ -4248,9 +4328,9 @@ class HubWindow(QMainWindow):
             self._refresh_home()
 
     def _build_task_pages(self) -> None:
-        self.page_today = TaskListWidget(self.state, "Today", self.schedule_save)
-        self.page_week = TaskListWidget(self.state, "This Week", self.schedule_save)
-        self.page_someday = TaskListWidget(self.state, "Someday", self.schedule_save)
+        self.page_today = TaskListWidget(self.state, "Today", self.schedule_save, self.command_parser, self.ai_engine)
+        self.page_week = TaskListWidget(self.state, "This Week", self.schedule_save, self.command_parser, self.ai_engine)
+        self.page_someday = TaskListWidget(self.state, "Someday", self.schedule_save, self.command_parser, self.ai_engine)
         self.page_journal = JournalWidget(self.state, self.schedule_save, self.ai_engine)
         
         # Connect Focus Signals
@@ -4331,8 +4411,7 @@ class HubWindow(QMainWindow):
         list_view_layout = QVBoxLayout(self.view_list)
         list_view_layout.setContentsMargins(0, 0, 0, 0)
         
-        # We reuse TaskListWidget but for "Scheduled" section
-        self.scheduled_list_widget = TaskListWidget(self.state, "Scheduled", self.schedule_save, self.ai_engine)
+        self.scheduled_list_widget = TaskListWidget(self.state, "Scheduled", self.schedule_save, self.command_parser, self.ai_engine)
         list_view_layout.addWidget(self.scheduled_list_widget)
         
         self.sched_stack.addWidget(self.view_list)
@@ -4400,20 +4479,24 @@ class HubWindow(QMainWindow):
         text = self.cal_quick_add.text().strip()
         if not text: return
         
-        date_str = self.calendar.selectedDate().toString(Qt.DateFormat.ISODate)
+        # Use CommandParser
+        actions = self.command_parser.parse(text)
+        if not actions: return
+        action = actions[0]
         
-        # Use shared parser for smart entry
-        meta = parse_task_input(text)
-        category = meta.get("category")
-        important = meta.get("important", False)
+        if action.get("intent") != "create_task": return
+
+        # The parser might find its own date, but we override with the calendar date.
+        date_str = self.calendar.selectedDate().toString(Qt.DateFormat.ISODate)
+        schedule = {"date": date_str, "time": action.get("due_time")}
         
         add_task(
             self.state,
-            text=meta["text"],
+            text=action["text"],
             section="Scheduled",
-            category=category,
-            important=important,
-            schedule={"date": date_str}
+            category=action.get("category"),
+            important=action.get("important", False),
+            schedule=schedule
         )
         
         if date_str == today_str():
@@ -4483,7 +4566,7 @@ class HubWindow(QMainWindow):
         self.project_detail_title.setObjectName("PageHeader")
         project_detail_layout.addWidget(self.project_detail_title)
 
-        self.project_task_widget = ProjectTaskListWidget(self.state, self.schedule_save, self.ai_engine)
+        self.project_task_widget = ProjectTaskListWidget(self.state, self.schedule_save, self.command_parser, self.ai_engine)
         project_detail_layout.addWidget(self.project_task_widget)
 
         splitter.addWidget(self.project_detail)
@@ -4877,7 +4960,7 @@ class HubWindow(QMainWindow):
         self.stack.setCurrentWidget(page)
         effect = QGraphicsOpacityEffect(page)
         page.setGraphicsEffect(effect)
-        anim = QPropertyAnimation(effect, b"opacity")
+        anim = QPropertyAnimation(effect, b"opacity", self)
         anim.setDuration(ANIM_DURATION_MEDIUM)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
@@ -4940,7 +5023,7 @@ class HubWindow(QMainWindow):
                 color: {TEXT_WHITE};
                 border-radius: 10px;
                 font-weight: 600;
-                padding-left: 16px;
+                padding: 10px 16px 10px 16px;
                 border: none;
                 text-align: left;
             """)
@@ -5060,24 +5143,20 @@ class HubWindow(QMainWindow):
         self.page_panic = QWidget()
         layout = QVBoxLayout(self.page_panic)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(40)
+        layout.setSpacing(20)
         
-        lbl = QLabel("Panic Relief")
-        lbl.setStyleSheet(f"color: {GOLD}; font-size: 28px; font-weight: bold;")
-        layout.addWidget(lbl, 0, Qt.AlignmentFlag.AlignCenter)
+        lbl_guide = QLabel("Let's ground ourselves. Follow the rhythm.")
+        lbl_guide.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 16px; margin-bottom: 20px;")
+        layout.addWidget(lbl_guide, 0, Qt.AlignmentFlag.AlignCenter)
         
         self.panic_background = BreathingCircle()
         self.panic_background.setMinimumSize(400, 400)
-        layout.addWidget(self.panic_background, 1)
-        
-        lbl_instr = QLabel("Follow the circle. Breathe in as it expands, out as it shrinks.")
-        lbl_instr.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 14px;")
-        layout.addWidget(lbl_instr, 0, Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.panic_background, 1, Qt.AlignmentFlag.AlignCenter)
         
         btn_exit = QPushButton("I'm feeling better")
         btn_exit.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_exit.setFixedSize(200, 50)
-        btn_exit.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 25px; font-size: 16px; border: 1px solid {GLASS_BORDER};")
+        btn_exit.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 25px; font-size: 16px; border: 1px solid {GLASS_BORDER}; margin-top: 20px;")
         btn_exit.clicked.connect(self.exit_panic_mode)
         layout.addWidget(btn_exit, 0, Qt.AlignmentFlag.AlignCenter)
 
@@ -5090,6 +5169,7 @@ class HubWindow(QMainWindow):
 
     def _build_zen_page(self):
         self.page_zen = QWidget()
+        self.page_zen.setObjectName("ZenPage")
         layout = QVBoxLayout(self.page_zen)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(20)
@@ -5219,12 +5299,12 @@ class HubWindow(QMainWindow):
         sound_layout.addStretch()
 
     def _update_zen_background(self, soundscape: str):
-        """Changes the background of the Zen page based on the soundscape."""
-        style = f"background-color: {DARK_BG};" # Default
         """Changes the background of the Zen page with a fade animation."""
         # If an animation is already running, let it finish to avoid glitches.
-        if self.page_zen.graphicsEffect() is not None:
-            return
+        if self.page_zen.graphicsEffect() is not None and isinstance(self.page_zen.graphicsEffect(), QGraphicsOpacityEffect):
+             # This check is a bit weak, but it's to prevent overlapping animations.
+             # A more robust solution would use a state flag.
+             return
         style = f"background-color: {DARK_BG};"  # Default
         
         image_map = {
@@ -5437,57 +5517,68 @@ class HubWindow(QMainWindow):
 
     def _on_zen_distraction(self):
         text = self.zen_distraction.text().strip()
-        if text:
-            # Add to ideas
-            add_idea(self.state, f"Zen Thought: {text}")
-            self.schedule_save()
-            self.zen_distraction.clear()
-            # Visual feedback
-            self.show_toast("Saved to Ideas! Stay focused.")
         if not text:
             return
 
-        # Parse input
-        meta = parse_task_input(text)
+        # NEW: Use CommandParser
+        actions = self.command_parser.parse(text)
+        if not actions:
+            return
+        action = actions[0]
+
+        if action.get("intent") != "create_task":
+            self.show_toast("Captured as a simple idea.")
+            add_idea(self.state, text)
+            self.schedule_save()
+            self.zen_distraction.clear()
+            return
+
+        # Determine section
+        target_section = "Today"
+        schedule = None
+        if action.get("due_date"):
+            schedule = {"date": action["due_date"], "time": action.get("due_time")}
+            target_section = "Scheduled" if action["due_date"] > today_str() else "Today"
         
         # AI Enrichment
         difficulty = 1
         xp = 10
         duration = 0
+        category = None
         
         if self.ai_engine:
             # Predict Category if missing
-            if not meta["category"]:
-                context = {
-                    "time_of_day": current_time_of_day(),
-                    "day_of_week": datetime.now().strftime("%A"),
-                    "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
-                }
-                meta["category"] = self.ai_engine.predict_category(meta["text"], context)
+            context = {
+                "time_of_day": current_time_of_day(),
+                "day_of_week": datetime.now().strftime("%A"),
+                "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+            }
+            category = self.ai_engine.predict_category(action["text"], context)
             
             # Analyze Complexity & Duration
-            difficulty = self.ai_engine.analyze_task_complexity(meta["text"])
-            xp = difficulty * 15
-            duration = self.ai_engine.estimate_duration(meta["text"])
+            difficulty = self.ai_engine.analyze_task_complexity(action["text"])
+            xp = calculate_xp_for_task({"difficulty": difficulty})
+            duration = self.ai_engine.estimate_duration(action["text"])
 
         # Add as task
         add_task(
             self.state,
-            text=meta["text"],
-            section=meta["section"],
-            category=meta["category"],
-            important=meta["important"],
-            tags=meta.get("tags", []),
+            text=action["text"],
+            section=target_section,
+            category=action.get("category") or category,
+            important=action.get("important", False),
+            tags=action.get("tags", []),
             difficulty=difficulty,
             xpReward=xp,
-            estimatedDuration=duration
+            estimatedDuration=duration,
+            schedule=schedule,
         )
 
         self.schedule_save()
         self.zen_distraction.clear()
         
         # Visual feedback
-        self.show_toast(f"Saved to {meta['section']}! Stay focused.")
+        self.show_toast(f"Saved to {target_section}! Stay focused.")
 
     def _on_soundscape_changed(self, text):
         self.state.setdefault("settings", {})["zenSoundscape"] = text
@@ -5615,7 +5706,7 @@ class HubWindow(QMainWindow):
             summary_line = f"{done} of {total} tasks done"
             if important_left > 0:
                 summary_line += f" · {important_left} important left."
-        self.today_summary_line.setText(summary_line)
+        self.today_summary_line_label.setText(summary_line)
 
         # Show Primary Goal
         daily_logs = stats.get("dailyLogs", {})
@@ -5941,38 +6032,51 @@ class HubWindow(QMainWindow):
             lines = [l.strip() for l in text.split('\n') if l.strip()]
             
             for line in lines:
-                # Use shared parser from core.model
-                meta = parse_task_input(line)
+                # Use CommandParser to interpret the line
+                actions = []
+                if self.command_parser:
+                    actions = self.command_parser.parse(line)
                 
-                # AI Category Prediction
-                if use_ai and self.ai_engine and not meta["category"]:
-                    context = {
-                        "time_of_day": current_time_of_day(),
-                        "day_of_week": datetime.now().strftime("%A"),
-                        "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
-                    }
-                    meta["category"] = self.ai_engine.predict_category(meta["text"], context)
+                # Fallback if parser returns nothing (or parser missing)
+                if not actions:
+                    actions = [{"intent": "create_task", "text": line}]
+
+                for action in actions:
+                    if action.get("intent") != "create_task":
+                        continue
+
+                    task_text = action.get("text", line)
+                    category = action.get("category")
+                    
+                    # AI Category Prediction if missing
+                    if use_ai and self.ai_engine and not category:
+                        context = {
+                            "time_of_day": current_time_of_day(),
+                            "day_of_week": datetime.now().strftime("%A"),
+                            "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+                        }
+                        category = self.ai_engine.predict_category(task_text, context)
                 
-                # AI Complexity
-                diff = 1
-                xp = 10
-                dur = 0
-                if self.ai_engine:
-                    diff = self.ai_engine.analyze_task_complexity(meta["text"])
-                    xp = diff * 15
-                    dur = self.ai_engine.estimate_duration(meta["text"])
-                
-                t = add_task(
-                    self.state, 
-                    text=meta["text"], 
-                    section=meta["section"], 
-                    category=meta["category"], 
-                    important=meta["important"],
-                    difficulty=diff,
-                    xpReward=xp,
-                    estimatedDuration=dur
-                )
-                created_ids.append(t["id"])
+                    # AI Complexity
+                    diff = 1
+                    xp = 10
+                    dur = 0
+                    if self.ai_engine:
+                        diff = self.ai_engine.analyze_task_complexity(task_text)
+                        xp = calculate_xp_for_task({"difficulty": diff})
+                        dur = self.ai_engine.estimate_duration(task_text)
+                    
+                    t = add_task(
+                        self.state, 
+                        text=task_text, 
+                        section="Today", # Default to Today for brain dump, or logic to parse 'tomorrow'
+                        category=category, 
+                        important=action.get("important", False),
+                        difficulty=diff,
+                        xpReward=xp,
+                        estimatedDuration=dur
+                    )
+                    created_ids.append(t["id"])
             
             self.schedule_save()
             
@@ -6202,7 +6306,7 @@ class HubWindow(QMainWindow):
         today = today_str()
         daily_logs = self.state.setdefault("stats", {}).setdefault("dailyLogs", {})
         if today not in daily_logs:
-            dlg = WelcomeDialog(self)
+            dlg = WelcomeDialog(get_user_name(self.state), self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 data = dlg.get_data()
                 daily_logs[today] = data
@@ -6262,6 +6366,32 @@ class HubWindow(QMainWindow):
     def schedule_save(self) -> None:
         self._save_timer.start()
         self.data_changed.emit()
+
+    def _check_for_whats_new(self):
+        """Shows release notes if the app version has changed."""
+        last_seen_version = self.state.get("lastSeenVersion", "0.0")
+        
+        if is_newer_version(APP_VERSION, last_seen_version):
+            notes = "No release notes found."
+            try:
+                # Path logic from build script
+                base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+                notes_path = os.path.join(base_path, "release_notes.txt")
+                if not os.path.exists(notes_path) and not getattr(sys, 'frozen', False):
+                    notes_path = os.path.join(os.path.dirname(__file__), "..", "release_notes.txt")
+                
+                if os.path.exists(notes_path):
+                    with open(notes_path, "r", encoding="utf-8") as f:
+                        notes = f.read()
+            except Exception as e:
+                notes = f"Could not load release notes: {e}"
+
+            dlg = WhatsNewDialog(APP_VERSION, notes, self)
+            dlg.exec()
+            
+            # Update state and save
+            self.state["lastSeenVersion"] = APP_VERSION
+            self.schedule_save()
 
     def _do_save(self) -> None:
         # Persist window geometry
