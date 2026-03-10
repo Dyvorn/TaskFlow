@@ -195,7 +195,12 @@ from core.model import (
     get_productivity_score,
     get_hourly_activity,
     get_activity_heatmap_data,
-    calculate_xp_for_task,
+)
+from core.model import (
+    update_task_text,
+    update_task_section,
+    update_task_importance,
+    assign_task_to_project,
 )
 from ui.shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
 from ui.coach import CoachWidget
@@ -274,12 +279,19 @@ class LiquidProgressBar(QWidget):
             self._anim.setEndValue(target)
             self._anim.start()
 
+    def hideEvent(self, event):
+        self._anim.stop()
+        super().hideEvent(event)
+
     def _update_val(self, val):
         self.progress = val
         self.update()
     
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         rect = self.rect()
         width = rect.width()
@@ -304,6 +316,7 @@ class LiquidProgressBar(QWidget):
             gold_color = QColor(GOLD)
             gold_color.setAlpha(220)
             painter.fillRect(QRectF(0, 0, fill_width, height), gold_color)
+        painter.end()
 
 
 class SplashWindow(QMainWindow):
@@ -1052,6 +1065,9 @@ class WaveformWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         w = self.width()
@@ -1071,6 +1087,7 @@ class WaveformWidget(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setOpacity(0.4 + (scaled * 0.6))
             painter.drawRoundedRect(QRectF(x + 1, y, bar_w - 2, bar_h), 2, 2)
+        painter.end()
 
 class VoiceDialog(ShadowedDialog):
     """
@@ -1287,6 +1304,9 @@ class MoodGraphWidget(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         rect = self.rect()
@@ -1349,6 +1369,7 @@ class MoodGraphWidget(QWidget):
         # Baseline
         painter.setBrush(QBrush(QColor(HOVER_BG)))
         painter.drawRect(QRectF(2, rect.height() - 2, rect.width() - 4, 2))
+        painter.end()
 
 
 class HabitGraphWidget(QWidget):
@@ -1378,6 +1399,9 @@ class HabitGraphWidget(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         rect = self.rect()
@@ -1419,6 +1443,7 @@ class HabitGraphWidget(QWidget):
 
         painter.setBrush(QBrush(QColor(HOVER_BG)))
         painter.drawRect(QRectF(2, rect.height() - 2, rect.width() - 4, 2))
+        painter.end()
 
 class CategoryGraphWidget(QWidget):
     """
@@ -1432,6 +1457,9 @@ class CategoryGraphWidget(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
         
@@ -1439,6 +1467,7 @@ class CategoryGraphWidget(QWidget):
         if not data:
             painter.setPen(QColor(TEXT_GRAY))
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, "No categorized data yet.")
+            painter.end()
             return
 
         total = sum(data.values())
@@ -1462,6 +1491,7 @@ class CategoryGraphWidget(QWidget):
             painter.drawRoundedRect(100, y, bar_width, bar_height, 4, 4)
             
             y += bar_height + spacing
+        painter.end()
 
 class ProductivityScoreWidget(QWidget):
     """
@@ -1476,6 +1506,9 @@ class ProductivityScoreWidget(QWidget):
     def paintEvent(self, event) -> None:
         score = get_productivity_score(self.state)
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         rect = self.rect()
@@ -1505,6 +1538,7 @@ class ProductivityScoreWidget(QWidget):
         f.setBold(False)
         painter.setFont(f)
         painter.drawText(rect.adjusted(0, 40, 0, 0), Qt.AlignmentFlag.AlignCenter, "Daily Score")
+        painter.end()
 
 class HourlyChartWidget(QWidget):
     """
@@ -1518,6 +1552,9 @@ class HourlyChartWidget(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
         
@@ -1542,6 +1579,7 @@ class HourlyChartWidget(QWidget):
             if h % 6 == 0:
                 painter.setPen(QColor(TEXT_GRAY))
                 painter.drawText(QRectF(h * bar_width, rect.height() - 12, bar_width * 2, 12), Qt.AlignmentFlag.AlignLeft, f"{h:02}")
+        painter.end()
 
 class HeatmapWidget(QWidget):
     """
@@ -1567,6 +1605,9 @@ class HeatmapWidget(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         data = get_activity_heatmap_data(self.state)
@@ -1599,6 +1640,7 @@ class HeatmapWidget(QWidget):
                 painter.setBrush(color)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(x, y, cell_size, cell_size, 2, 2)
+        painter.end()
 
 class ToastOverlay(QWidget):
     """
@@ -1737,48 +1779,18 @@ class VoiceWorker(QThread):
             return
 
         # 1. Record
-        audio_path = "temp_voice.wav"
-        
-        # We implement the recording loop here to emit amplitude signals
-        if pyaudio:
-            try:
-                chunk = 1024
-                fmt = pyaudio.paInt16
-                chans = 1
-                rate = 16000
-                
-                p = pyaudio.PyAudio()
-                stream = p.open(format=fmt, channels=chans, rate=rate, input=True, frames_per_buffer=chunk)
-                
-                frames = []
-                for _ in range(0, int(rate / chunk * self.duration)):
-                    data = stream.read(chunk)
-                    frames.append(data)
-                    
-                    # Calculate RMS amplitude
-                    shorts = struct.unpack("%dh" % (len(data) // 2), data)
-                    sum_squares = sum(s**2 for s in shorts)
-                    rms = math.sqrt(sum_squares / len(shorts))
-                    self.amplitude.emit(min(1.0, rms / 32768.0))
-                
-                stream.stop_stream()
-                stream.close()
-                p.terminate()
-                
-                with wave.open(audio_path, 'wb') as wf:
-                    wf.setnchannels(chans)
-                    wf.setsampwidth(p.get_sample_size(fmt))
-                    wf.setframerate(rate)
-                    wf.writeframes(b''.join(frames))
-            except Exception as e:
-                self.error.emit(f"Recording error: {e}")
-                return
-        else:
-            # Fallback if pyaudio missing (though VoiceListener checks it too)
-            audio_path = self.listener.record_audio(duration=self.duration)
-            if not audio_path:
-                self.error.emit("Recording failed. Check microphone.")
-                return
+        temp_audio_file = "temp_voice.wav"
+
+        # The listener now handles recording and amplitude reporting via a callback
+        audio_path = self.listener.record_audio(
+            output_filename=temp_audio_file,
+            duration=self.duration,
+            amplitude_callback=self.amplitude.emit
+        )
+
+        if not audio_path:
+            self.error.emit("Recording failed. Check microphone.")
+            return
 
         # 2. Transcribe
         text = self.listener.transcribe(audio_path)
@@ -1842,6 +1854,9 @@ class BreathingCircle(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         rect = self.rect()
@@ -1864,6 +1879,7 @@ class BreathingCircle(QWidget):
         f.setBold(True)
         painter.setFont(f)
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text)
+        painter.end()
 
 # ============================================================================
 # SECTION 5: CUSTOM WIDGETS FOR UI ENHANCEMENT
@@ -1888,6 +1904,9 @@ class ZenTimerWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         rect = self.rect()
@@ -1906,6 +1925,7 @@ class ZenTimerWidget(QWidget):
         painter.setPen(QColor(GOLD))
         painter.setFont(QFont("Arial", 60, QFont.Weight.Bold))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._text)
+        painter.end()
 
 # ============================================================================
 # SECTION 5: TASK LIST WIDGETS (TODAY / WEEK / SOMEDAY / PROJECTS)
@@ -1999,7 +2019,27 @@ class TaskCalendarWidget(QCalendarWidget):
         else:
             super().dropEvent(event)
 
-class ReorderableListWidget(QListWidget):
+class DynamicListWidget(QListWidget):
+    """
+    A QListWidget that resizes items on window resize to support word-wrapping.
+    """
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        width = self.viewport().width()
+        for i in range(self.count()):
+            item = self.item(i)
+            widget = self.itemWidget(item)
+            if widget:
+                widget.setFixedWidth(width)
+                item.setSizeHint(widget.sizeHint())
+                widget.setMinimumWidth(0)
+                widget.setMaximumWidth(16777215)
+
+class ReorderableListWidget(DynamicListWidget):
     """
     A QListWidget that supports internal drag-and-drop reordering.
     """
@@ -2359,8 +2399,8 @@ class TaskListWidget(QWidget):
         duration = 0
         
         if self.ai_engine:
-            difficulty = self.ai_engine.analyze_task_complexity(text)
-            xp = calculate_xp_for_task({"difficulty": difficulty})
+            difficulty = self.ai_engine.insights.analyze_task_complexity(text)
+            xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": difficulty})
             duration = self.ai_engine.estimate_duration(text)
         
         task = add_task(
@@ -2429,7 +2469,7 @@ class TaskListWidget(QWidget):
                 self.window().celebrate()
 
             # 10.0: XP Reward
-            xp_gain = calculate_xp_for_task(task)
+            xp_gain = self.window().ai_engine.insights.calculate_xp_for_task(task)
             stats = self.state.setdefault("stats", {})
             old_xp = stats.get("xp", 0)
             new_xp = old_xp + xp_gain
@@ -2581,8 +2621,7 @@ class TaskListWidget(QWidget):
             self, "Rename task", "New name:", text=current_text
         )
         if ok and new_text.strip():
-            task["text"] = new_text.strip()
-            task["updatedAt"] = now_iso()
+            update_task_text(self.state, task_id, new_text.strip())
             self._save_callback()
             self.refresh()
 
@@ -2633,32 +2672,17 @@ class TaskListWidget(QWidget):
         )
         if not task:
             return
-        task["important"] = important
-        task["updatedAt"] = now_iso()
+        update_task_importance(self.state, task_id, important)
         self._save_callback()
         self.refresh()
 
     def _move_task_section(self, task_id: str, new_section: str) -> None:
-        if new_section not in SECTIONS:
-            return
-        task = next(
-            (t for t in self.state.get("tasks", []) if t.get("id") == task_id), None
-        )
-        if not task:
-            return
-        task["section"] = new_section
-        task["updatedAt"] = now_iso()
+        update_task_section(self.state, task_id, new_section)
         self._save_callback()
         self.refresh()
 
     def _assign_task_project(self, task_id: str, project_id: Optional[str]) -> None:
-        task = next(
-            (t for t in self.state.get("tasks", []) if t.get("id") == task_id), None
-        )
-        if not task:
-            return
-        task["projectId"] = project_id
-        task["updatedAt"] = now_iso()
+        assign_task_to_project(self.state, task_id, project_id)
         self._save_callback()
         self.refresh()
 
@@ -2905,7 +2929,7 @@ class ProjectTaskListWidget(QWidget):
         layout.addWidget(self.empty_label)
 
         # Task list
-        self.tasks_list = QListWidget()
+        self.tasks_list = DynamicListWidget()
         self.tasks_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.tasks_list.setStyleSheet(
             "QListWidget { background-color: transparent; border: none; }"
@@ -3019,7 +3043,7 @@ class ProjectTaskListWidget(QWidget):
         
         if self.ai_engine:
             difficulty = self.ai_engine.analyze_task_complexity(text)
-            xp = calculate_xp_for_task({"difficulty": difficulty})
+            xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": difficulty})
             duration = self.ai_engine.estimate_duration(text)
             # We could predict category, but usually projects imply a category context
 
@@ -3174,24 +3198,19 @@ class ProjectTaskListWidget(QWidget):
         if not task: return
         new_text, ok = QInputDialog.getText(self, "Rename task", "New name:", text=task.get("text", ""))
         if ok and new_text.strip():
-            task["text"] = new_text.strip()
-            task["updatedAt"] = now_iso()
+            update_task_text(self.state, task_id, new_text.strip())
             self._save_callback()
             self.refresh()
 
     def _toggle_important(self, task_id: str) -> None:
         task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
         if not task: return
-        task["important"] = not task.get("important")
-        task["updatedAt"] = now_iso()
+        update_task_importance(self.state, task_id, not task.get("important", False))
         self._save_callback()
         self.refresh()
 
     def _move_task_section(self, task_id: str, new_section: str) -> None:
-        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
-        if not task: return
-        task["section"] = new_section
-        task["updatedAt"] = now_iso()
+        update_task_section(self.state, task_id, new_section)
         self._save_callback()
         self.refresh()
 
@@ -3251,7 +3270,7 @@ class SearchWidget(QWidget):
         self.search_input.textChanged.connect(self._perform_search)
         layout.addWidget(self.search_input)
 
-        self.results_list = QListWidget()
+        self.results_list = DynamicListWidget()
         self.results_list.setStyleSheet(f"QListWidget {{ background: transparent; border: none; }} QListWidget::item:selected {{ background-color: {HOVER_BG}; border-radius: 8px; }}")
         layout.addWidget(self.results_list, 1)
         
@@ -4991,7 +5010,7 @@ class HubWindow(QMainWindow):
         elif page is self.page_settings:
             self._refresh_settings()
         elif page is self.page_profile:
-            self.page_profile.refresh()
+            self.page_profile.refresh(self.state)
         elif page is self.page_search:
             self.page_search.search_input.setFocus()
 
@@ -5556,8 +5575,8 @@ class HubWindow(QMainWindow):
             category = self.ai_engine.predict_category(action["text"], context)
             
             # Analyze Complexity & Duration
-            difficulty = self.ai_engine.analyze_task_complexity(action["text"])
-            xp = calculate_xp_for_task({"difficulty": difficulty})
+            difficulty = self.ai_engine.insights.analyze_task_complexity(action["text"])
+            xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": difficulty})
             duration = self.ai_engine.estimate_duration(action["text"])
 
         # Add as task
@@ -6060,10 +6079,9 @@ class HubWindow(QMainWindow):
                     # AI Complexity
                     diff = 1
                     xp = 10
-                    dur = 0
                     if self.ai_engine:
-                        diff = self.ai_engine.analyze_task_complexity(task_text)
-                        xp = calculate_xp_for_task({"difficulty": diff})
+                        diff = self.ai_engine.insights.analyze_task_complexity(task_text)
+                        xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": diff})
                         dur = self.ai_engine.estimate_duration(task_text)
                     
                     t = add_task(
@@ -6153,6 +6171,28 @@ class HubWindow(QMainWindow):
         self.schedule_save()
         self._refresh_home()
         self.confetti.burst()
+
+    def break_down_task_by_id(self, task_id: str):
+        """Finds a task by ID and triggers the AI breakdown for it."""
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task or not self.ai_engine:
+            return
+            
+        subtasks_text = self.ai_engine.generate_subtasks(task.get("text", ""))
+        
+        if not subtasks_text:
+            self.show_toast("Could not generate subtasks.")
+            return
+            
+        for st_text in subtasks_text:
+            add_subtask(
+                self.state,
+                parent_task_id=task_id,
+                text=st_text
+            )
+            
+        self.schedule_save()
+        self.show_toast(f"Created {len(subtasks_text)} subtasks for '{task['text']}'.")
 
     def _process_voice_action(self, action):
         """Executes a single parsed voice action."""

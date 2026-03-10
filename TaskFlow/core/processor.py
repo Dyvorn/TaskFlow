@@ -2,9 +2,11 @@ import os
 import re
 import wave
 import json
+import math
+import struct
 import time
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 
 # --- Dependency Checks ---
 try:
@@ -46,7 +48,8 @@ class VoiceListener:
             self.model = None
 
     def record_audio(self, output_filename: str = "temp_voice.wav", duration: int = 5, 
-                     chunk: int = 1024, format=None, channels: int = 1, rate: int = 16000) -> Optional[str]:
+                     chunk: int = 1024, format=None, channels: int = 1, rate: int = 16000,
+                     amplitude_callback: Optional[Callable[[float], None]] = None) -> Optional[str]:
         """
         Records audio from the default microphone for a fixed duration.
         Returns the path to the saved WAV file.
@@ -74,6 +77,13 @@ class VoiceListener:
             for _ in range(0, int(rate / chunk * duration)):
                 data = stream.read(chunk)
                 frames.append(data)
+
+                if amplitude_callback:
+                    # Calculate RMS amplitude and call callback
+                    shorts = struct.unpack(f"%dh" % (len(data) // 2), data)
+                    sum_squares = sum(s**2 for s in shorts)
+                    rms = math.sqrt(sum_squares / len(shorts))
+                    amplitude_callback(min(1.0, rms / 32768.0))
 
             print("Recording finished.")
 

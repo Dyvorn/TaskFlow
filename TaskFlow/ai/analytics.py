@@ -120,6 +120,38 @@ def find_stale_tasks(state: dict) -> list:
         
     return suggestions
 
+def find_task_churn(state: dict) -> list:
+    """Finds tasks that are repeatedly moved, suggesting they might be stuck."""
+    suggestions = []
+    activity_log = state.get("activityLog", [])
+    
+    # Group move actions by task ID
+    moved_tasks = defaultdict(list)
+    for entry in activity_log:
+        if entry.get("action") == "moved" and entry.get("entityType") == "task":
+            moved_tasks[entry.get("entityId")].append(entry)
+            
+    for task_id, moves in moved_tasks.items():
+        if len(moves) > 3: # More than 3 moves might indicate churn
+            # Check if it's a back-and-forth pattern, e.g., Today -> Someday -> Today
+            if len(moves) > 2:
+                sections = [m['details']['to'] for m in moves if m.get('details')]
+                if len(sections) > 2 and sections[-1] == sections[-3]:
+                    # Find the actual task to get its text
+                    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+                    if task and not task.get("completed"):
+                        suggestion_id = _get_suggestion_id('SUGGEST_BREAKDOWN_STUCK_TASK', task_id)
+                        suggestion = {
+                            'id': suggestion_id,
+                            'type': 'SUGGEST_BREAKDOWN_STUCK_TASK',
+                            'text': f"I noticed the task <b>'{task['text']}'</b> keeps getting moved. Is it too big? Maybe breaking it down into smaller steps would help.",
+                            'task_id': task_id,
+                            'confidence': len(moves)
+                        }
+                        suggestions.append(suggestion)
+    
+    return suggestions
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
@@ -128,6 +160,7 @@ def generate_suggestions(state: dict) -> list:
     all_suggestions.extend(find_recurring_task_patterns(state))
     all_suggestions.extend(analyze_mood_patterns(state))
     all_suggestions.extend(find_stale_tasks(state))
+    all_suggestions.extend(find_task_churn(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]

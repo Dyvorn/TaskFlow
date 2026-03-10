@@ -125,6 +125,9 @@ class AnimatedCheckbox(QPushButton):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         rect = self.rect()
@@ -152,6 +155,7 @@ class AnimatedCheckbox(QPushButton):
                 p3 = QPointF(center.x() + 4, center.y() - 3)
                 painter.drawLine(p1, p2)
                 painter.drawLine(p2, p3)
+        painter.end()
 
 class TaskRowWidget(QWidget):
     """A standardized task row widget that emits signals for interactions."""
@@ -329,8 +333,12 @@ class ConfettiOverlay(QWidget):
     def paintEvent(self, event):
         if not self.particles: return
         painter = QPainter(self)
+        if not painter.isActive():
+            return
+            
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         for p in self.particles:
             painter.setBrush(p["color"])
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
+        painter.end()

@@ -1,9 +1,10 @@
 import json
 import torch
 import shutil
+import random
 import urllib.parse
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from datetime import datetime
 
 from core.model import today_str
@@ -13,6 +14,117 @@ from .pipeline import TaskPipeline
 from .trainer import UserTrainer, TrainingWorker
 import ai.analytics as analytics
 
+class TaskInsights:
+    """
+    A collection of heuristic-based methods for analyzing and generating task-related data.
+    This is separated from the main AIEngine to group non-ML AI features.
+    """
+    def analyze_task_complexity(self, text: str) -> int:
+        """
+        Estimates difficulty (1-5) based on keywords, length, and cognitive load.
+        1: Trivial, 2: Easy, 3: Medium, 4: Hard, 5: Epic
+        """
+        text = text.lower()
+        words = text.split()
+        score = 1
+        
+        # 1. Length heuristic (longer tasks often imply more detail/steps)
+        if len(words) > 12:
+            score += 2
+        elif len(words) > 6:
+            score += 1
+            
+        # 2. Scope Keywords
+        epic_keywords = ["entire", "whole", "complete", "overhaul", "rewrite", "migration", "launch"]
+        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop", "implement"]
+        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare", "draft"]
+        
+        if any(k in text for k in epic_keywords):
+            score += 3
+        elif any(k in text for k in hard_keywords):
+            score += 2
+        elif any(k in text for k in medium_keywords):
+            score += 1
+            
+        # 3. Time heuristics (explicit mentions)
+        if "days" in text or "week" in text:
+            score += 3
+        elif "hours" in text or "hr" in text:
+            score += 1
+        elif "min" in text or "quick" in text:
+            score -= 1 # Explicitly short
+            
+        # 4. Cognitive Load (Abstract vs Concrete)
+        # "Think about", "Decide", "Strategy" imply high cognitive load
+        cognitive_heavy = ["decide", "strategy", "architecture", "solve", "debug", "figure out", "understand"]
+        if any(k in text for k in cognitive_heavy):
+            score += 1
+
+        # Cap at 5, Min 1
+        return min(5, max(1, score))
+
+    def generate_subtasks(self, text: str) -> List[str]:
+        """
+        Returns a list of suggested subtasks based on the parent task text.
+        Uses heuristics for now, can be upgraded to LLM later.
+        """
+        text = text.lower()
+        
+        if "report" in text or "paper" in text:
+            return ["Research topic", "Create outline", "Draft introduction", "Write body paragraphs", "Review and edit"]
+        elif "presentation" in text or "slides" in text:
+            return ["Outline key points", "Gather visuals/data", "Create slides", "Practice delivery"]
+        elif "meeting" in text:
+            return ["Prepare agenda", "Send invites", "Prepare notes"]
+        elif "clean" in text or "tidy" in text:
+            return ["Clear surfaces", "Dust", "Vacuum/Sweep", "Take out trash"]
+        elif "shop" in text or "groceries" in text:
+            return ["Check fridge", "Make list", "Go to store"]
+        elif "learn" in text or "study" in text:
+            return ["Find resources/tutorial", "Set up environment", "Practice exercises", "Review notes"]
+        elif "fix" in text or "debug" in text:
+            return ["Reproduce issue", "Analyze logs", "Implement fix", "Test solution"]
+        elif "email" in text:
+            return ["Draft content", "Proofread", "Send"]
+        elif "trip" in text or "travel" in text:
+            return ["Book tickets", "Book accommodation", "Pack bags", "Check documents"]
+        
+        # Generic breakdown
+        return ["Step 1: Preparation", "Step 2: Execution", "Step 3: Review"]
+
+    def estimate_duration(self, text: str) -> int:
+        """
+        Returns estimated duration in minutes based on text.
+        Returns 0 if no estimate could be made.
+        """
+        text = text.lower()
+        
+        # Explicit time mentions could be parsed here, but for now we use heuristics
+        if any(k in text for k in ["quick", "call", "email", "check", "pay"]):
+            return 15
+        if any(k in text for k in ["meeting", "review", "clean", "fix", "write"]):
+            return 30
+        if any(k in text for k in ["report", "presentation", "design", "study"]):
+            return 60
+        if any(k in text for k in ["project", "build", "refactor"]):
+            return 120
+            
+        # Fallback to complexity-based estimation if no keywords found
+        complexity = self.analyze_task_complexity(text)
+        # 1:15m, 2:30m, 3:45m, 4:90m, 5:180m
+        base_map = {1: 15, 2: 30, 3: 45, 4: 90, 5: 180}
+        return base_map.get(complexity, 30)
+
+    def calculate_xp_for_task(self, task: Dict[str, Any]) -> int:
+        """Calculates XP based on difficulty and importance."""
+        base = task.get("xpReward", 10)
+        difficulty = task.get("difficulty", 1)
+        
+        # Multiplier for difficulty
+        multiplier = 1.0 + (0.5 * (difficulty - 1))
+        
+        return int(base * multiplier)
+
 class AIEngine:
     """
     Orchestrates all AI operations, including prediction, learning, and training.
@@ -21,7 +133,19 @@ class AIEngine:
         self.user_id = user_id
         self.state = state
         self.user_manager = UserManager()
+        self.insights = TaskInsights()
         self.user_path = self.user_manager.ensure_user_directory(user_id)
+        self._tips = [
+            "Use #hashtags in task input to auto-categorize them (e.g., 'Call mom #Personal').",
+            "Double-click any task to quickly rename it.",
+            "Right-click a task for more options like scheduling or moving it.",
+            "Use the Brain Dump feature on the Home page to quickly unload your mind.",
+            "Check the AI Coach page to teach the AI and see its recommendations.",
+            "You can drag and drop tasks to reorder them.",
+            "Press Ctrl+B to toggle Focus Mode and hide the sidebar.",
+            "The 'Zen Mode' helps you focus on just one task at a time.",
+            "Review your 'Someday' list occasionally to keep it fresh."
+        ]
         
         self._bootstrap_base_model()
         
@@ -32,6 +156,10 @@ class AIEngine:
         self._new_samples_counter = 0
         self._training_threshold = 10  # Auto-train after 10 new learned tasks
         self._training_worker: Optional[TrainingWorker] = None
+
+    def get_tip_of_the_day(self) -> str:
+        """Returns a random tip to display on startup."""
+        return random.choice(self._tips)
 
         self.load_pipeline_and_model()
 
@@ -255,7 +383,8 @@ class AIEngine:
 
     def get_proactive_suggestions(self, state: Optional[Dict] = None) -> List[Dict]:
         """Generates and returns actionable suggestions based on user history."""
-        return analytics.generate_suggestions(self.state)
+        target_state = state if state is not None else self.state
+        return analytics.generate_suggestions(target_state)
 
     def dismiss_suggestion(self, suggestion_id: str):
         """Adds a suggestion ID to the dismissed list to hide it."""
@@ -318,100 +447,13 @@ class AIEngine:
         return sorted(tasks, key=score_task, reverse=True)
 
     def analyze_task_complexity(self, text: str) -> int:
-        """
-        Estimates difficulty (1-5) based on keywords, length, and cognitive load.
-        1: Trivial, 2: Easy, 3: Medium, 4: Hard, 5: Epic
-        """
-        text = text.lower()
-        words = text.split()
-        score = 1
-        
-        # 1. Length heuristic (longer tasks often imply more detail/steps)
-        if len(words) > 12:
-            score += 2
-        elif len(words) > 6:
-            score += 1
-            
-        # 2. Scope Keywords
-        epic_keywords = ["entire", "whole", "complete", "overhaul", "rewrite", "migration", "launch"]
-        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop", "implement"]
-        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare", "draft"]
-        
-        if any(k in text for k in epic_keywords):
-            score += 3
-        elif any(k in text for k in hard_keywords):
-            score += 2
-        elif any(k in text for k in medium_keywords):
-            score += 1
-            
-        # 3. Time heuristics (explicit mentions)
-        if "days" in text or "week" in text:
-            score += 3
-        elif "hours" in text or "hr" in text:
-            score += 1
-        elif "min" in text or "quick" in text:
-            score -= 1 # Explicitly short
-            
-        # 4. Cognitive Load (Abstract vs Concrete)
-        # "Think about", "Decide", "Strategy" imply high cognitive load
-        cognitive_heavy = ["decide", "strategy", "architecture", "solve", "debug", "figure out", "understand"]
-        if any(k in text for k in cognitive_heavy):
-            score += 1
-
-        # Cap at 5, Min 1
-        return min(5, max(1, score))
+        return self.insights.analyze_task_complexity(text)
 
     def generate_subtasks(self, text: str) -> List[str]:
-        """
-        Returns a list of suggested subtasks based on the parent task text.
-        Uses heuristics for now, can be upgraded to LLM later.
-        """
-        text = text.lower()
-        
-        if "report" in text or "paper" in text:
-            return ["Research topic", "Create outline", "Draft introduction", "Write body paragraphs", "Review and edit"]
-        elif "presentation" in text or "slides" in text:
-            return ["Outline key points", "Gather visuals/data", "Create slides", "Practice delivery"]
-        elif "meeting" in text:
-            return ["Prepare agenda", "Send invites", "Prepare notes"]
-        elif "clean" in text or "tidy" in text:
-            return ["Clear surfaces", "Dust", "Vacuum/Sweep", "Take out trash"]
-        elif "shop" in text or "groceries" in text:
-            return ["Check fridge", "Make list", "Go to store"]
-        elif "learn" in text or "study" in text:
-            return ["Find resources/tutorial", "Set up environment", "Practice exercises", "Review notes"]
-        elif "fix" in text or "debug" in text:
-            return ["Reproduce issue", "Analyze logs", "Implement fix", "Test solution"]
-        elif "email" in text:
-            return ["Draft content", "Proofread", "Send"]
-        elif "trip" in text or "travel" in text:
-            return ["Book tickets", "Book accommodation", "Pack bags", "Check documents"]
-        
-        # Generic breakdown
-        return ["Step 1: Preparation", "Step 2: Execution", "Step 3: Review"]
+        return self.insights.generate_subtasks(text)
 
     def estimate_duration(self, text: str) -> int:
-        """
-        Returns estimated duration in minutes based on text.
-        Returns 0 if no estimate could be made.
-        """
-        text = text.lower()
-        
-        # Explicit time mentions could be parsed here, but for now we use heuristics
-        if any(k in text for k in ["quick", "call", "email", "check", "pay"]):
-            return 15
-        if any(k in text for k in ["meeting", "review", "clean", "fix", "write"]):
-            return 30
-        if any(k in text for k in ["report", "presentation", "design", "study"]):
-            return 60
-        if any(k in text for k in ["project", "build", "refactor"]):
-            return 120
-            
-        # Fallback to complexity-based estimation if no keywords found
-        complexity = self.analyze_task_complexity(text)
-        # 1:15m, 2:30m, 3:45m, 4:90m, 5:180m
-        base_map = {1: 15, 2: 30, 3: 45, 4: 90, 5: 180}
-        return base_map.get(complexity, 30)
+        return self.insights.estimate_duration(text)
 
     def analyze_journal_sentiment(self, text: str) -> str:
         """Simple sentiment/reflection analysis for journal entries."""
@@ -477,9 +519,9 @@ class AIEngine:
         category = self.predict_category(text, context)
         
         # 2. Estimate Metadata
-        complexity = self.analyze_task_complexity(text)
-        duration = self.estimate_duration(text)
-        subtasks = self.generate_subtasks(text)
+        complexity = self.insights.analyze_task_complexity(text)
+        duration = self.insights.estimate_duration(text)
+        subtasks = self.insights.generate_subtasks(text)
 
         # 3. Generate Integration Links
         integrations = []

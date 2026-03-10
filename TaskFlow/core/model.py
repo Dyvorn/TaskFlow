@@ -490,8 +490,10 @@ def set_today_mood(state: Dict[str, Any], value: str, note: str = "") -> None:
         if m.get("date") == today:
             m["value"] = value
             m["note"] = note
+            log_activity(state, "logged", "mood", today, {"value": value})
             return
     moods.append({"date": today, "value": value, "note": note})
+    log_activity(state, "logged", "mood", today, {"value": value})
 
 
 def get_today_habit_checks(state: Dict[str, Any]) -> Dict[str, bool]:
@@ -504,6 +506,8 @@ def set_habit_checked(state: Dict[str, Any], habit_id: str, checked: bool) -> No
     today = today_str()
     day = state.setdefault("habitChecks", {}).setdefault(today, {})
     day[habit_id] = checked
+    action = "checked" if checked else "unchecked"
+    log_activity(state, action, "habit", habit_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -662,6 +666,55 @@ def tasks_in_section(state: Dict[str, Any], section: str) -> List[Dict[str, Any]
             t.get("order", 0),
         ),
     )
+
+def update_task_text(state: Dict[str, Any], task_id: str, new_text: str) -> bool:
+    """Updates a task's text and logs the activity."""
+    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+    if not task:
+        return False
+    
+    if task.get("text", "") != new_text:
+        task["text"] = new_text
+        task["updatedAt"] = now_iso()
+        log_activity(state, "updated", "task", task_id, {"field": "text"})
+    return True
+
+def update_task_section(state: Dict[str, Any], task_id: str, new_section: str) -> bool:
+    """Moves a task to a new section and logs the activity."""
+    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+    if not task or new_section not in SECTIONS:
+        return False
+    
+    old_section = task.get("section", "")
+    if old_section != new_section:
+        task["section"] = new_section
+        task["updatedAt"] = now_iso()
+        log_activity(state, "moved", "task", task_id, {"from": old_section, "to": new_section})
+    return True
+
+def update_task_importance(state: Dict[str, Any], task_id: str, is_important: bool) -> bool:
+    """Updates a task's importance and logs the activity."""
+    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+    if not task:
+        return False
+    
+    if task.get("important", False) != is_important:
+        task["important"] = is_important
+        task["updatedAt"] = now_iso()
+        log_activity(state, "updated", "task", task_id, {"field": "important", "to": is_important})
+    return True
+
+def assign_task_to_project(state: Dict[str, Any], task_id: str, project_id: Optional[str]) -> bool:
+    """Assigns a task to a project and logs the activity."""
+    task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+    if not task:
+        return False
+        
+    if task.get("projectId") != project_id:
+        task["projectId"] = project_id
+        task["updatedAt"] = now_iso()
+        log_activity(state, "assigned", "task", task_id, {"field": "projectId", "to": project_id})
+    return True
 
 def add_subtask(state: Dict[str, Any], parent_task_id: str, text: str) -> Optional[Dict[str, Any]]:
     """Adds a subtask to a parent task."""
@@ -916,13 +969,3 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
         return True
     except Exception:
         return False
-
-def calculate_xp_for_task(task: Dict[str, Any]) -> int:
-    """Calculates XP based on difficulty and importance."""
-    base = task.get("xpReward", 10)
-    difficulty = task.get("difficulty", 1)
-    
-    # Multiplier for difficulty
-    multiplier = 1.0 + (0.5 * (difficulty - 1))
-    
-    return int(base * multiplier)

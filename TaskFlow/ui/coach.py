@@ -35,6 +35,9 @@ class SuggestionWidget(QFrame):
         elif s_type == 'REVIEW_STALE_TASKS':
             text = suggestion.get('text', "You have some old tasks.")
             accept_text = "👍 Review Now"
+        elif s_type == 'SUGGEST_BREAKDOWN_STUCK_TASK':
+            text = suggestion.get('text', "A task seems to be stuck.")
+            accept_text = "✨ Break Down"
         else:
             text = suggestion.get('text', "I have a suggestion for you.")
             accept_text = "✅ Accept"
@@ -150,7 +153,7 @@ class CoachWidget(QWidget):
         self.recommendations_list = QListWidget()
         layout.addWidget(self.recommendations_list, 1)
 
-    def refresh(self):
+    def refresh(self, state: dict = None):
         if not self.ai_engine:
             self.lbl_status.setText("Brain Status: Offline (Debug)")
             self.lbl_vocab.setText("Vocabulary: -")
@@ -189,7 +192,10 @@ class CoachWidget(QWidget):
                 
         # Update Recommendations
         self.recommendations_list.clear()
-        suggestions = self.ai_engine.get_proactive_suggestions()
+        suggestions = []
+        if state:
+            suggestions = self.ai_engine.get_proactive_suggestions(state)
+
         if not suggestions:
             item = QListWidgetItem("No recommendations right now. Keep using the app!")
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
@@ -280,6 +286,11 @@ class CoachWidget(QWidget):
             elif s_type == 'REVIEW_STALE_TASKS':
                 hub.open_page("someday")
                 self.message_requested.emit("Let's clear out some old ideas.")
+            elif s_type == 'SUGGEST_BREAKDOWN_STUCK_TASK':
+                task_id = suggestion.get('task_id')
+                if task_id and hasattr(hub, 'break_down_task_by_id'):
+                    hub.break_down_task_by_id(task_id)
+                    self.message_requested.emit("Let's break that down into smaller pieces.")
         
         # Dismiss the suggestion in both cases
         self.ai_engine.dismiss_suggestion(suggestion['id'])
