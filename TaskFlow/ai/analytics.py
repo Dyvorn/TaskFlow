@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 import re
 import hashlib
+from core.model import tasks_in_section, today_str
 
 def _get_suggestion_id(suggestion_type: str, text: str) -> str:
     """Creates a deterministic, unique ID for a suggestion."""
@@ -62,6 +63,24 @@ def find_recurring_task_patterns(state: dict) -> list:
             }
             suggestions.append(suggestion)
             continue # Don't suggest weekly if daily fits
+
+        # Check for weekly pattern
+        weekly_deltas = []
+        for i in range(len(tasks) - 1):
+            try:
+                d1 = datetime.fromisoformat(tasks[i]["completedAt"])
+                d2 = datetime.fromisoformat(tasks[i+1]["completedAt"])
+                delta = (d2 - d1).total_seconds() / 3600 # Delta in hours
+                weekly_deltas.append(delta)
+            except (ValueError, TypeError):
+                continue
+        
+        # Is it roughly weekly? (e.g., between 160 and 176 hours apart, which is 7 days +/- 8 hours)
+        if weekly_deltas and all(160 < d < 176 for d in weekly_deltas):
+            original_text = tasks[-1]['text']
+            suggestion = { 'id': _get_suggestion_id('SUGGEST_RECURRENCE_WEEKLY', text), 'type': 'SUGGEST_RECURRENCE', 'task_text': original_text, 'interval': 'weekly', 'confidence': len(tasks) }
+            suggestions.append(suggestion)
+
 
     return suggestions
 
@@ -152,6 +171,23 @@ def find_task_churn(state: dict) -> list:
     
     return suggestions
 
+def find_overload(state: dict) -> list:
+    """Detects if 'Today' is overloaded with tasks."""
+    suggestions = []
+    today_tasks = tasks_in_section(state, "Today")
+    incomplete = [t for t in today_tasks if not t.get("completed")]
+    
+    if len(incomplete) >= 8:
+        suggestion = {
+            'id': _get_suggestion_id('OVERLOAD_DETECTED', today_str()),
+            'type': 'SUGGEST_RESCHEDULE',
+            'text': f"You have {len(incomplete)} active tasks for Today. That might be a recipe for burnout. Want to move the 3 least important ones to Tomorrow?",
+            'confidence': 90
+        }
+        suggestions.append(suggestion)
+        
+    return suggestions
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
@@ -161,6 +197,7 @@ def generate_suggestions(state: dict) -> list:
     all_suggestions.extend(analyze_mood_patterns(state))
     all_suggestions.extend(find_stale_tasks(state))
     all_suggestions.extend(find_task_churn(state))
+    all_suggestions.extend(find_overload(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]

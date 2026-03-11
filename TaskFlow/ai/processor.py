@@ -1,101 +1,277 @@
-# ============================================================================
-# TASKFLOW - VOICE COMMAND PROCESSOR
-# ============================================================================
-
+import os
 import re
 import wave
-import pyaudio
+import json
+import math
+import struct
+import time
 from datetime import datetime
+from typing import List, Dict, Any, Optional, Callable
+
+# --- Dependency Checks ---
+try:
+    import pyaudio
+except ImportError:
+    pyaudio = None
 
 try:
-    from faster_whisper import WhisperModel
-    FASTER_WHISPER_AVAILABLE = True
+    from faster_whisper import WhisperModel # type: ignore
 except ImportError:
     WhisperModel = None
-    FASTER_WHISPER_AVAILABLE = False
-    print("Warning: 'faster_whisper' not installed. Voice features will be disabled.")
 
 try:
-    import dateparser
-    DATEPARSER_AVAILABLE = True
+    import dateparser # type: ignore
+    from dateparser.search import search_dates # type: ignore
 except ImportError:
     dateparser = None
-    DATEPARSER_AVAILABLE = False
-    print("Warning: 'dateparser' not installed. Date extraction will be limited.")
+    search_dates = None
+
 
 class VoiceListener:
     """
-    Handles audio recording and transcription using faster-whisper.
+    Handles audio recording and offline transcription using Faster-Whisper.
     """
-    def __init__(self, model_size="tiny"):
-        self.model_size = model_size
-        self.model = None
+    def __init__(self, model_size: str = "tiny", device: str = "cpu", compute_type: str = "int8"):
         self.load_error = None
-        if FASTER_WHISPER_AVAILABLE:
-            try:
-                print(f"Loading Whisper model '{model_size}' on cpu...")
-                self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            except Exception as e:
-                self.load_error = str(e)
-                print(f"Error loading Whisper model: {e}")
-        else:
-            self.load_error = "faster_whisper library not found."
+        if not WhisperModel:
+            print("Warning: 'faster_whisper' not installed. Voice features will be disabled.")
+            self.load_error = "faster_whisper not installed"
+            self.model = None
+            return
+        
+        print(f"Loading Whisper model '{model_size}' on {device}...")
+        try:
+            self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        except Exception as e:
+            print(f"Failed to load Whisper model: {e}")
+            self.load_error = str(e)
+            self.model = None
+
+    def record_audio(self, output_filename: str = "temp_voice.wav", duration: int = 5, 
+                     chunk: int = 1024, format=None, channels: int = 1, rate: int = 16000,
+                     amplitude_callback: Optional[Callable[[float], None]] = None) -> Optional[str]:
+        """
+        Records audio from the default microphone for a fixed duration.
+        Returns the path to the saved WAV file.
+        """
+        if not pyaudio:
+            print("Error: 'pyaudio' is not installed. Cannot record.")
+            return None
+            
+        if format is None:
+            format = pyaudio.paInt16
+
+        p = pyaudio.PyAudio()
+
+        print(f"Recording for {duration} seconds...")
+        try:
+            stream = p.open(format=format,
+                            channels=channels,
+                            rate=rate,
+                            input=True,
+                            frames_per_buffer=chunk)
+
+            frames = []
+
+            # Record loop
+            for _ in range(0, int(rate / chunk * duration)):
+                data = stream.read(chunk)
+                frames.append(data)
+
+                if amplitude_callback:
+                    # Calculate RMS amplitude and call callback
+                    shorts = struct.unpack(f"%dh" % (len(data) // 2), data)
+                    sum_squares = sum(s**2 for s in shorts)
+                    rms = math.sqrt(sum_squares / len(shorts))
+                    amplitude_callback(min(1.0, rms / 32768.0))
+
+            print("Recording finished.")
+
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+
+            # Save to file
+            wf = wave.open(output_filename, 'wb')
+            wf.setnchannels(channels)
+            wf.setsampwidth(p.get_sample_size(format))
+            wf.setframerate(rate)
+            wf.writeframes(b''.join(frames))
+            wf.close()
+            
+            return output_filename
+            
+        except Exception as e:
+            print(f"Recording error: {e}")
+            return None
 
     def transcribe(self, audio_path: str) -> str:
         """
         Transcribes the given audio file to text.
         """
         if not self.model:
-            return f"Error: Transcription model not loaded ({self.load_error})."
+            return "Error: Whisper model not loaded."
+            
+        if not os.path.exists(audio_path):
+            return "Error: Audio file not found."
+
         try:
-            segments, _ = self.model.transcribe(audio_path, beam_size=5)
-            transcription = " ".join([segment.text for segment in segments])
-            return transcription.strip()
+            segments, info = self.model.transcribe(audio_path, beam_size=5)
+            
+            # Collect all segments
+            full_text = " ".join([segment.text for segment in segments])
+            return full_text.strip()
         except Exception as e:
             return f"Transcription error: {e}"
 
+
 class CommandParser:
     """
-    Parses transcribed text to identify user intents and extract entities.
+    NLP Engine to parse natural language into structured actions.
+    Handles 'Brain Dumps' by splitting multiple commands.
     """
     def __init__(self):
-        # Keywords for different intents, ordered by priority
-        self.create_task_keywords = ["add task", "new task", "remind me to", "add", "create"]
-        self.create_project_keywords = ["new project", "create project"]
-        self.set_goal_keywords = ["my goal is", "main goal", "focus on"]
-        self.log_mood_keywords = ["i feel", "i'm feeling", "mood is"]
+        if not dateparser:
+            print("Warning: 'dateparser' not installed. Date extraction will be limited.")
 
-    def parse(self, text: str) -> list:
+        # Regex patterns for intent detection
+        self.patterns = {
+            "project": re.compile(r"\b(?:start|create|new)\s+project\s+(?:called|named)?\s*(?P<name>.+)", re.IGNORECASE),
+            "goal": re.compile(r"\b(?:set|my)\s+goal\s+(?:is|to)\s+(?P<goal>.+)", re.IGNORECASE),
+            "mood": re.compile(r"\b(?:i(?:'m| am)|feeling|feel)\s+(?P<mood>happy|sad|stressed|tired|great|good|bad|anxious|excited|motivated|low energy|okay)", re.IGNORECASE),
+            # Reminder pattern to clean up task text
+            "reminder": re.compile(r"\b(?:remind me to|don't forget to|i need to)\s+(?P<task>.+)", re.IGNORECASE),
+            "recurrence": re.compile(r"\b(?:every|each)\s+(?P<cycle>day|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)", re.IGNORECASE)
+        }
+        
+        # Splitter for brain dumps (e.g., "do X AND do Y")
+        self.split_pattern = re.compile(r"\s+(?:and|then|also|plus)\s+", re.IGNORECASE)
+
+    def parse(self, text: str) -> List[Dict[str, Any]]:
         """
-        Parses a string of text and returns a list of action dictionaries.
+        Main entry point. Takes raw text, splits it, and returns a list of action dicts.
         """
-        text = text.lower()
+        # 1. Split Brain Dump
+        raw_commands = self.split_pattern.split(text)
         actions = []
 
-        # --- Intent Matching ---
-        for keyword in self.create_task_keywords:
-            if text.startswith(keyword):
-                task_text = text.replace(keyword, "", 1).strip()
-                if task_text:
-                    actions.append({"intent": "create_task", "text": task_text})
-                    return actions
-
-        for keyword in self.create_project_keywords:
-            if text.startswith(keyword):
-                project_name = text.replace(keyword, "", 1).strip()
-                if project_name:
-                    actions.append({"intent": "create_project", "name": project_name})
-                    return actions
-
-        for keyword in self.set_goal_keywords:
-            if text.startswith(keyword):
-                goal_text = text.replace(keyword, "", 1).strip()
-                if goal_text:
-                    actions.append({"intent": "set_goal", "text": goal_text})
-                    return actions
-
-        # Default Fallback: If no other intent is found, assume it's a task.
-        if text and not actions:
-            actions.append({"intent": "create_task", "text": text})
-
+        for cmd in raw_commands:
+            cmd = cmd.strip()
+            if not cmd:
+                continue
+            
+            action = self._process_single_command(cmd)
+            if action:
+                actions.append(action)
+                
         return actions
+
+    def _process_single_command(self, text: str) -> Dict[str, Any]:
+        """Identifies intent and extracts entities for a single command string."""
+        
+        # 1. Check for Project Intent
+        match = self.patterns["project"].search(text)
+        if match:
+            return {
+                "intent": "create_project",
+                "name": match.group("name").strip().strip("."),
+                "original_text": text
+            }
+
+        # 2. Check for Goal Intent
+        match = self.patterns["goal"].search(text)
+        if match:
+            return {
+                "intent": "set_goal",
+                "text": match.group("goal").strip().strip("."),
+                "original_text": text
+            }
+
+        # 3. Check for Mood Intent
+        match = self.patterns["mood"].search(text)
+        if match:
+            mood_val = match.group("mood").lower().capitalize()
+            return {
+                "intent": "log_mood",
+                "value": mood_val,
+                "note": text,
+                "original_text": text
+            }
+
+        # 4. Default: Task Intent
+        task_text = text
+        # Clean up prefix like "Remind me to"
+        match = self.patterns["reminder"].search(text)
+        if match:
+            task_text = match.group("task").strip()
+            
+        # Extract metadata like the old parse_task_input
+        important = False
+        category = None
+        tags = []
+        recurrence = None
+
+        # Priority
+        if "!" in task_text or "urgent" in task_text.lower():
+            important = True
+            task_text = task_text.replace("!", "").replace("urgent", "", 1).strip()
+            
+        # Category hashtags
+        match = re.search(r"#(\w+)", task_text)
+        if match:
+            category = match.group(1)
+            task_text = task_text.replace(match.group(0), "").strip()
+
+        # Tags (@tag)
+        tags_found = re.findall(r"@(\w+)", task_text)
+        if tags_found:
+            tags = tags_found
+            task_text = re.sub(r"@(\w+)", "", task_text).strip()
+
+        # Recurrence (e.g. "Every day")
+        match = self.patterns["recurrence"].search(task_text)
+        if match:
+            cycle = match.group("cycle").lower()
+            # Remove the phrase from text
+            task_text = self.patterns["recurrence"].sub("", task_text).strip()
+            
+            if "day" in cycle:
+                recurrence = {"type": "daily"}
+            elif "week" in cycle or cycle in ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]:
+                recurrence = {"type": "weekly"}
+            elif "month" in cycle:
+                recurrence = {"type": "monthly"}
+
+        # Extract Date/Time using dateparser
+        due_date = None
+        due_time = None
+        
+        if search_dates:
+            # Find dates in the text
+            found_dates = search_dates(task_text, settings={'PREFER_DATES_FROM': 'future', 'RELATIVE_BASE': datetime.now()})
+            
+            if found_dates:
+                # Take the last found date (usually at the end of the sentence)
+                date_str, date_obj = found_dates[-1]
+                
+                # Remove the date string from the task text to clean it up
+                # (Case insensitive replace)
+                pattern = re.compile(re.escape(date_str), re.IGNORECASE)
+                task_text = pattern.sub("", task_text).strip()
+                
+                due_date = date_obj.date().isoformat()
+                # Only set time if it's specific (not default 00:00)
+                if date_obj.hour != 0 or date_obj.minute != 0:
+                    due_time = date_obj.strftime("%H:%M")
+
+        return {
+            "intent": "create_task",
+            "text": task_text.strip("."),
+            "due_date": due_date,
+            "due_time": due_time,
+            "original_text": text,
+            "important": important,
+            "category": category,
+            "tags": tags,
+            "recurrence": recurrence
+        }

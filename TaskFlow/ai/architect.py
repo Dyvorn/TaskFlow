@@ -24,7 +24,12 @@ class TaskBrain(nn.Module):
         combined_context_size = len(context_dims) * context_embedding_dim
         combined_size = hidden_size + combined_context_size
         
-        self.fc = nn.Linear(combined_size, num_classes)
+        # UPGRADE: Multi-Layer Perceptron for non-linear relationships
+        self.fc1 = nn.Linear(combined_size, hidden_size)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.3) # Prevent overfitting on small datasets
+        self.fc2 = nn.Linear(hidden_size, num_classes)
+        
         self.init_weights()
 
     def init_weights(self):
@@ -32,8 +37,10 @@ class TaskBrain(nn.Module):
         self.embedding.weight.data.uniform_(-initrange, initrange)
         for emb in self.context_embeddings:
             emb.weight.data.uniform_(-initrange, initrange)
-        self.fc.weight.data.uniform_(-initrange, initrange)
-        self.fc.bias.data.zero_()
+        self.fc1.weight.data.uniform_(-initrange, initrange)
+        self.fc1.bias.data.zero_()
+        self.fc2.weight.data.uniform_(-initrange, initrange)
+        self.fc2.bias.data.zero_()
 
     def forward(self, text_indices: torch.Tensor, offsets: torch.Tensor, context_indices: torch.Tensor) -> torch.Tensor:
         text_embedded = self.embedding(text_indices, offsets)
@@ -48,4 +55,8 @@ class TaskBrain(nn.Module):
         all_context_embedded = torch.cat(context_embeds, dim=1)
         combined = torch.cat((text_embedded, all_context_embedded), dim=1)
         
-        return self.fc(combined)
+        # Feed forward through MLP
+        x = self.fc1(combined)
+        x = self.relu(x)
+        x = self.dropout(x)
+        return self.fc2(x)

@@ -62,7 +62,7 @@ from core.model import (
 from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
 
 try:
-    from core.processor import CommandParser
+    from ai.processor import CommandParser
 except ImportError:
     CommandParser = None
 

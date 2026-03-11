@@ -2,7 +2,6 @@ import json
 import torch
 import shutil
 import random
-import urllib.parse
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 from datetime import datetime
@@ -35,9 +34,9 @@ class TaskInsights:
             score += 1
             
         # 2. Scope Keywords
-        epic_keywords = ["entire", "whole", "complete", "overhaul", "rewrite", "migration", "launch"]
-        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop", "implement"]
-        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare", "draft"]
+        epic_keywords = ["entire", "whole", "complete", "overhaul", "rewrite", "migration", "launch", "thesis", "dissertation", "infrastructure"]
+        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop", "implement", "debug", "audit"]
+        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare", "draft", "meeting", "discuss", "update"]
         
         if any(k in text for k in epic_keywords):
             score += 3
@@ -72,11 +71,17 @@ class TaskInsights:
         
         if "report" in text or "paper" in text:
             return ["Research topic", "Create outline", "Draft introduction", "Write body paragraphs", "Review and edit"]
-        elif "presentation" in text or "slides" in text:
+        elif "presentation" in text or "slides" in text or "deck" in text:
             return ["Outline key points", "Gather visuals/data", "Create slides", "Practice delivery"]
-        elif "meeting" in text:
+        elif "meeting" in text or "sync" in text:
             return ["Prepare agenda", "Send invites", "Prepare notes"]
-        elif "clean" in text or "tidy" in text:
+        elif "code" in text or "feature" in text or "api" in text:
+            return ["Define requirements", "Design architecture", "Implement core logic", "Write tests", "Refactor"]
+        elif "bug" in text or "error" in text or "fix" in text:
+            return ["Reproduce issue", "Check logs", "Identify root cause", "Apply fix", "Verify fix"]
+        elif "workout" in text or "gym" in text:
+            return ["Pack gear", "Warm up", "Main exercise", "Cool down/Stretch"]
+        elif "clean" in text or "tidy" in text or "house" in text:
             return ["Clear surfaces", "Dust", "Vacuum/Sweep", "Take out trash"]
         elif "shop" in text or "groceries" in text:
             return ["Check fridge", "Make list", "Go to store"]
@@ -102,9 +107,9 @@ class TaskInsights:
         # Explicit time mentions could be parsed here, but for now we use heuristics
         if any(k in text for k in ["quick", "call", "email", "check", "pay"]):
             return 15
-        if any(k in text for k in ["meeting", "review", "clean", "fix", "write"]):
+        if any(k in text for k in ["meeting", "review", "clean", "fix", "write", "read", "gym", "workout"]):
             return 30
-        if any(k in text for k in ["report", "presentation", "design", "study"]):
+        if any(k in text for k in ["report", "presentation", "design", "study", "code", "debug"]):
             return 60
         if any(k in text for k in ["project", "build", "refactor"]):
             return 120
@@ -152,16 +157,17 @@ class AIEngine:
         self.pipeline = TaskPipeline(self.user_path)
         self.model: Optional[TaskBrain] = None
         self.review_queue: List[Dict] = []
+        self.dynamic_threshold = 0.85  # Cache for the confidence threshold
 
         self._new_samples_counter = 0
         self._training_threshold = 10  # Auto-train after 10 new learned tasks
         self._training_worker: Optional[TrainingWorker] = None
 
+        self.load_pipeline_and_model()
+
     def get_tip_of_the_day(self) -> str:
         """Returns a random tip to display on startup."""
         return random.choice(self._tips)
-
-        self.load_pipeline_and_model()
 
     def _bootstrap_base_model(self):
         """Copies pre-trained assets to user directory if fresh."""
@@ -254,27 +260,33 @@ class AIEngine:
                         except: pass
                         print("Starting with random weights. Please run 'train_brain_model.py' to update the base model.")
         self.model.eval()
+        self._update_dynamic_threshold()
+
+    def _update_dynamic_threshold(self):
+        """
+        Calculates and caches the confidence threshold based on model maturity.
+        This should be called after loading or training the model.
+        """
+        base_threshold = 0.85
+        min_threshold = 0.60
+        vocab_size = len(self.pipeline.vocab)
+        # This still reads the file, but only on model load/train, not every prediction.
+        log_count = self.get_stats()["task_log_count"]
+
+        # Lower threshold by 0.05 for every 100 vocab words and 50 log entries
+        vocab_bonus = (vocab_size // 100) * 0.05
+        log_bonus = (log_count // 50) * 0.05
+
+        self.dynamic_threshold = max(min_threshold, base_threshold - vocab_bonus - log_bonus)
+        print(f"Updated dynamic confidence threshold to: {self.dynamic_threshold:.2f}")
 
     def predict_category(self, text: str, context: Optional[Dict] = None) -> Optional[str]:
         """Predicts the category for a given task text and context."""
         if not self.model or not text:
             return None
-            
+
         if context is None:
             context = {}
-
-        # --- Dynamic Confidence Threshold ---
-        # Start with a high threshold and lower it as the model becomes more mature.
-        base_threshold = 0.85
-        min_threshold = 0.60
-        vocab_size = len(self.pipeline.vocab)
-        log_count = self.get_stats()["task_log_count"]
-        
-        # Lower threshold by 0.05 for every 100 vocab words and 50 log entries
-        vocab_bonus = (vocab_size // 100) * 0.05
-        log_bonus = (log_count // 50) * 0.05
-        
-        dynamic_threshold = max(min_threshold, base_threshold - vocab_bonus - log_bonus)
 
         text_indices, offsets, context_indices = self.pipeline.process_input(text, context)
         with torch.no_grad():
@@ -282,7 +294,7 @@ class AIEngine:
             probabilities = torch.softmax(output, dim=1)
             confidence, predicted_idx = torch.max(probabilities, 1)
 
-        if confidence.item() < dynamic_threshold:
+        if confidence.item() < self.dynamic_threshold:
             # Low confidence, add to review queue
             prediction = {
                 "text": text,
@@ -458,29 +470,32 @@ class AIEngine:
     def analyze_journal_sentiment(self, text: str) -> str:
         """Simple sentiment/reflection analysis for journal entries."""
         text = text.lower()
+        score = 0
         
-        themes = []
-        if any(w in text for w in ["sad", "tired", "stressed", "anxious", "bad", "fail", "overwhelmed"]):
-            themes.append("negative")
-        if any(w in text for w in ["happy", "great", "excited", "good", "win", "success", "proud"]):
-            themes.append("positive")
-        if any(w in text for w in ["busy", "work", "deadline", "rush", "late"]):
-            themes.append("busy")
-        if any(w in text for w in ["learn", "study", "read", "grow"]):
-            themes.append("growth")
+        # Negatives
+        neg_words = ["sad", "tired", "stressed", "anxious", "bad", "fail", "overwhelmed", "angry", "lonely", "hurt", "lost", "hard"]
+        score -= sum(1 for w in neg_words if w in text)
+        
+        # Positives
+        pos_words = ["happy", "great", "excited", "good", "win", "success", "proud", "calm", "peace", "love", "progress", "learned"]
+        score += sum(1 for w in pos_words if w in text)
+        
+        # Contexts
+        is_busy = any(w in text for w in ["busy", "work", "deadline", "rush", "late", "pressure"])
+        is_growth = any(w in text for w in ["learn", "study", "read", "grow", "understand", "realize"])
             
         # Combined reasoning
-        if "negative" in themes and "busy" in themes:
+        if score < -1 and is_busy:
             return "It seems like work pressure is weighing you down. When we are overwhelmed, our brain needs a hard stop. Can you pick just ONE thing to finish today and forgive yourself for the rest?"
-        elif "negative" in themes:
+        elif score < -1:
             return "I hear that things are tough right now. It's okay to not be okay. Sometimes the most productive thing you can do is rest. What does your body need right now?"
-        elif "positive" in themes and "growth" in themes:
+        elif score > 1 and is_growth:
             return "You're on fire! It sounds like you're making progress and learning. Capture this feeling—what's the main lesson you want to remember from today?"
-        elif "positive" in themes:
+        elif score > 0:
             return "It's great to see you in high spirits! Success builds momentum. How can you use this energy to tackle something you've been putting off?"
-        elif "growth" in themes:
+        elif is_growth:
             return "Learning is a journey. Even if it feels slow, you are moving forward. What's one concept that clicked for you today?"
-        elif "busy" in themes:
+        elif is_busy:
              return "Sounds like a busy time. Don't forget to breathe. Is there anything you can delegate or delay to tomorrow?"
         else:
             return "Writing is a powerful tool for clarity. What is the one thing you want to focus on after this?"
@@ -506,51 +521,3 @@ class AIEngine:
                 return ["Design/Plan", "Gather materials", "Construct", "Test/Verify"]
             else:
                 return ["Brainstorm ideas", "Create project plan", "Execute first step", "Review progress"]
-
-    def process_external_task(self, task_data: Dict) -> Dict:
-        """
-        Enriches a task from an external source (like Email) with AI predictions
-        and integration links (Calendar, Maps).
-        """
-        text = task_data.get("text", "")
-        context = task_data.get("context", {})
-
-        # 1. Predict Category using AI
-        category = self.predict_category(text, context)
-        
-        # 2. Estimate Metadata
-        complexity = self.insights.analyze_task_complexity(text)
-        duration = self.insights.estimate_duration(text)
-        subtasks = self.insights.generate_subtasks(text)
-
-        # 3. Generate Integration Links
-        integrations = []
-        
-        # Google Maps Integration
-        location = task_data.get("extracted_location")
-        if location:
-            encoded_loc = urllib.parse.quote(location)
-            integrations.append({
-                "type": "google_maps",
-                "label": f"Open '{location}' in Maps",
-                "url": f"https://www.google.com/maps/search/?api=1&query={encoded_loc}"
-            })
-
-        # Calendar Integration
-        date_hint = task_data.get("extracted_date")
-        if date_hint:
-            integrations.append({
-                "type": "calendar",
-                "label": f"Schedule for {date_hint}",
-                "action": "open_calendar_modal",
-                "suggested_time": date_hint
-            })
-
-        return {
-            **task_data,
-            "ai_category": category,
-            "ai_complexity": complexity,
-            "ai_duration": duration,
-            "ai_subtasks": subtasks,
-            "integrations": integrations
-        }

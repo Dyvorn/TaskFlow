@@ -202,7 +202,11 @@ from core.model import (
     update_task_importance,
     assign_task_to_project,
 )
-from ui.shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
+from ui.shared_widgets import (
+    AnimationManager,
+    ConfettiOverlay,
+    TaskRowWidget,
+)
 from ui.coach import CoachWidget
 
 # --- Voice Input Imports ---
@@ -561,15 +565,6 @@ def open_url_safe(url: str) -> None:
         webbrowser.open(url)
     except Exception:
         pass
-
-def add_dialog_shadow(dialog: QDialog) -> None:
-    """Add drop shadow effect to frameless dialog to make it appear floating."""
-    shadow = QGraphicsDropShadowEffect()
-    shadow.setBlurRadius(20)
-    shadow.setColor(QColor(0, 0, 0, 100))
-    shadow.setOffset(0, 8)
-    dialog.setGraphicsEffect(shadow)
-
 
 class ShadowedDialog(QDialog):
     """Base dialog class with frameless window, shadow, and rounded corners."""
@@ -6170,7 +6165,6 @@ class HubWindow(QMainWindow):
         self.show_toast(f"Processed {count} voice commands.")
         self.schedule_save()
         self._refresh_home()
-        self.confetti.burst()
 
     def break_down_task_by_id(self, task_id: str):
         """Finds a task by ID and triggers the AI breakdown for it."""
@@ -6190,7 +6184,6 @@ class HubWindow(QMainWindow):
                 parent_task_id=task_id,
                 text=st_text
             )
-            
         self.schedule_save()
         self.show_toast(f"Created {len(subtasks_text)} subtasks for '{task['text']}'.")
 
