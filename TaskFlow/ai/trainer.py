@@ -71,10 +71,14 @@ class UserTrainer:
         # Load existing model state ONLY if vocabulary has NOT changed
         if self.model_path.exists() and not vocab_size_changed:
             try:
-                model.load_state_dict(torch.load(self.model_path))
-                print(f"Loaded existing brain for user {self.user_id}.")
-            except RuntimeError:
-                print("Model architecture changed. Re-initializing model.")
+                # Load with strict=False to allow for architecture changes
+                incompatible_keys = model.load_state_dict(torch.load(self.model_path), strict=False)
+                if incompatible_keys.missing_keys or incompatible_keys.unexpected_keys:
+                    print("Loaded existing brain with some new/removed layers for training.")
+                else:
+                    print(f"Loaded existing brain for user {self.user_id}.")
+            except Exception as e:
+                print(f"Could not load existing model for training, starting fresh. Error: {e}")
         elif vocab_size_changed:
             print("Vocabulary has expanded. Re-initializing model to accommodate new words.")
 
@@ -90,12 +94,13 @@ class UserTrainer:
                 optimizer.zero_grad()
                 # Provide context, defaulting to 'unknown' for all fields if not present in older logs
                 context = item.get('context')
-                if not context: # Handle very old logs with no context key
-                    context = {'time_of_day': 'unknown', 'day_of_week': 'unknown', 'mood': 'unknown'}
+                if not context:  # Handle very old logs with no context key
+                    context = {'time_of_day': 'unknown', 'day_of_week': 'unknown', 'mood': 'unknown', 'important': False}
                 else: # Ensure all keys are present
                     context.setdefault('time_of_day', 'unknown')
                     context.setdefault('day_of_week', 'unknown')
                     context.setdefault('mood', 'unknown')
+                    context.setdefault('important', False)
 
                 text_indices, offsets, context_indices = pipeline.process_input(item['text'], context)
                 target = torch.tensor([pipeline.get_category_index(item['category'])], dtype=torch.long)

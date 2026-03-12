@@ -21,7 +21,8 @@ class TaskPipeline:
         self.context_features = {
             'time_of_day': ['morning', 'afternoon', 'evening', 'unknown'],
             'day_of_week': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'unknown'],
-            'mood': ['Low energy', 'Okay', 'Motivated', 'Stressed', 'Great', 'unknown']
+            'mood': ['Low energy', 'Okay', 'Motivated', 'Stressed', 'Great', 'unknown'],
+            'importance': [True, False]
         }
         # Create a mapping from value to index for each feature type
         self.context_to_idx = {
@@ -104,6 +105,10 @@ class TaskPipeline:
         mood_val = context.get('mood', 'unknown')
         mood_idx = self.context_to_idx['mood'].get(mood_val, len(self.context_to_idx['mood']) - 1)
         context_indices_list.append(mood_idx)
+        
+        imp_val = context.get('important', False)
+        imp_idx = self.context_to_idx['importance'].get(imp_val, 1) # Default to False (index 1)
+        context_indices_list.append(imp_idx)
 
         return torch.tensor(indices, dtype=torch.long), torch.tensor([0], dtype=torch.long), torch.tensor([context_indices_list], dtype=torch.long)
 

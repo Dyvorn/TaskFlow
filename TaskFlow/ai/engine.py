@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 
-from core.model import today_str
+from core.model import today_str, current_time_of_day
 from core.user_manager import UserManager
 from .architect import TaskBrain
 from .pipeline import TaskPipeline
@@ -226,10 +226,19 @@ class AIEngine:
                 # Check for corruption (empty file)
                 if model_path.stat().st_size == 0:
                     raise ValueError("Model file is empty")
-                self.model.load_state_dict(torch.load(model_path))
-                print("AI brain loaded successfully.")
+                
+                # Load with strict=False to handle architectural changes gracefully.
+                incompatible_keys = self.model.load_state_dict(torch.load(model_path), strict=False)
+                
+                if not incompatible_keys.missing_keys and not incompatible_keys.unexpected_keys:
+                    print("AI brain loaded successfully.")
+                else:
+                    print("AI brain loaded with mismatched layers. This is normal after an update.")
+
             except Exception as e:
-                print(f"Could not load AI brain (corrupt or incompatible). Re-initializing. Error: {e}")
+                # This block now only runs for true file corruption or other critical errors,
+                # not for simple key mismatches.
+                print(f"Could not load AI brain (file corrupt or other error). Re-initializing. Error: {e}")
                 # Rename corrupt file for safety/debugging
                 try:
                     model_path.rename(model_path.with_suffix(".corrupt"))
@@ -251,7 +260,12 @@ class AIEngine:
                 # Try loading again if bootstrap succeeded
                 if model_path.exists():
                     try:
-                        self.model.load_state_dict(torch.load(model_path))
+                        # Use strict=False here as well, as the base model might be old
+                        incompatible_keys = self.model.load_state_dict(torch.load(model_path), strict=False)
+                        if not incompatible_keys.missing_keys and not incompatible_keys.unexpected_keys:
+                            print("Successfully loaded bootstrapped model.")
+                        else:
+                            print("Bootstrapped model is from an older architecture. Some layers re-initialized.")
                     except Exception as e2:
                         print(f"Failed to load bootstrapped model: {e2}")
                         # If bootstrapped model is also bad, delete it to prevent loop
@@ -411,12 +425,13 @@ class AIEngine:
         Returns a sorted list of tasks.
         """
         mood = context.get("mood", "Okay")
+        time_of_day = context.get("time_of_day", current_time_of_day())
         prefer_easy = mood in ["Low energy", "Stressed"]
 
         def score_task(t):
             score = 0
             # --- Factors that INCREASE score (higher priority) ---
-            
+
             # 1. Importance is paramount
             if t.get("important"):
                 score += 100
@@ -437,21 +452,37 @@ class AIEngine:
             else:
                 # If motivated, give a slight bonus to harder tasks
                 score += difficulty * 2
-            
-            # 4. Age of task (older tasks get a small nudge)
+
+            # 4. Duration (Quick Wins)
+            duration = t.get("estimatedDuration", 0)
+            if duration > 0 and duration <= 15:
+                score += 15  # Big bonus for very short tasks
+            elif duration > 0 and duration <= 30:
+                score += 5  # Small bonus for short tasks
+
+            # 5. Age of task (older tasks get a small nudge)
             try:
                 created_dt = datetime.fromisoformat(t.get("createdAt", ""))
                 days_old = (datetime.now() - created_dt).days
-                
+
                 if t.get("important"):
                     # Neglected important task -> Boost urgency significantly
                     score += days_old * 2
                 else:
+                    # Stale tasks get a small nudge
+                    score += days_old // 2
                     # Fresh tasks get a small momentum bonus
                     if days_old < 3:
                         score += 5
             except:
                 pass
+
+            # 6. Category-Time Alignment
+            category = t.get("category")
+            if time_of_day in ["morning", "afternoon"] and category in ["Work", "Learning", "Dev"]:
+                score += 5
+            if time_of_day == "evening" and category in ["Personal", "Health", "Creative"]:
+                score += 5
 
             return score
 

@@ -2371,7 +2371,8 @@ class TaskListWidget(QWidget):
             context = {
                 "time_of_day": current_time_of_day(),
                 "day_of_week": datetime.now().strftime("%A"),
-                "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+                "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown",
+                "important": action.get("important", False)
             }
             pred_cat = self.ai_engine.predict_category(text, context)
             if pred_cat:
@@ -2817,7 +2818,7 @@ class TaskListWidget(QWidget):
         incomplete = [t for t in tasks if not t.get("completed")]
         
         if not incomplete:
-            self.show_toast("No tasks in Someday to review.")
+            self.window().show_toast("No tasks in Someday to review.")
             return
             
         # Pick 3 random
@@ -5565,7 +5566,8 @@ class HubWindow(QMainWindow):
             context = {
                 "time_of_day": current_time_of_day(),
                 "day_of_week": datetime.now().strftime("%A"),
-                "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+                "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown",
+                "important": action.get("important", False)
             }
             category = self.ai_engine.predict_category(action["text"], context)
             
@@ -6067,7 +6069,8 @@ class HubWindow(QMainWindow):
                         context = {
                             "time_of_day": current_time_of_day(),
                             "day_of_week": datetime.now().strftime("%A"),
-                            "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+                            "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown",
+                            "important": action.get("important", False)
                         }
                         category = self.ai_engine.predict_category(task_text, context)
                 
