@@ -11,6 +11,45 @@ TEXT_GRAY = "#a0a0a0"
 GOLD = "#ffd700"
 HOVER_BG = "rgba(255, 255, 255, 0.1)"
 GLASS_BORDER = "rgba(255, 255, 255, 0.15)"
+DARK_BG = "#121212"
+
+class ReviewItemWidget(QWidget):
+    """Custom card for items in the AI review queue."""
+    def __init__(self, item_data: dict, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+
+        # Task Text
+        lbl_task = QLabel(f"“{item_data['text']}”")
+        lbl_task.setStyleSheet(f"color: {TEXT_WHITE}; font-weight: bold; font-size: 13px;")
+        layout.addWidget(lbl_task)
+
+        # Prediction Info
+        info_layout = QHBoxLayout()
+        conf = int(item_data['confidence'] * 100)
+        conf_color = "#1dd1a1" if conf > 70 else ("#feca57" if conf > 40 else "#ff6b6b")
+        
+        lbl_guess = QLabel(f"Guess: {item_data['predicted_category']}")
+        lbl_guess.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px;")
+        
+        lbl_conf = QLabel(f"{conf}% match")
+        lbl_conf.setStyleSheet(f"color: {conf_color}; font-size: 11px; font-weight: bold;")
+        
+        # Visual meter
+        meter = QProgressBar()
+        meter.setFixedHeight(3)
+        meter.setRange(0, 100)
+        meter.setValue(conf)
+        meter.setTextVisible(False)
+        meter.setStyleSheet(f"QProgressBar {{ background: rgba(255,255,255,0.05); border: none; }} QProgressBar::chunk {{ background: {conf_color}; }}")
+        
+        info_layout.addWidget(lbl_guess)
+        info_layout.addStretch()
+        info_layout.addWidget(lbl_conf)
+        layout.addLayout(info_layout)
+        layout.addWidget(meter)
 
 class SuggestionWidget(QFrame):
     """A custom widget to display an AI suggestion with action buttons."""
@@ -20,29 +59,58 @@ class SuggestionWidget(QFrame):
         super().__init__(parent)
         self.suggestion = suggestion
         self.setObjectName("SuggestionCard")
-        self.setStyleSheet(f"#SuggestionCard {{ background-color: {HOVER_BG}; border-radius: 8px; padding: 12px; }}")
+        
+        # Distinct accent colors based on suggestion type
+        accent_map = {
+            'WELLBEING_CHECK': "#ff6b6b",
+            'SUGGEST_RESCHEDULE': "#4facfe",
+            'SUGGEST_BREAKDOWN_STUCK_TASK': GOLD,
+            'SUGGEST_RECURRENCE': "#1dd1a1"
+        }
+        accent_color = accent_map.get(suggestion['type'], GLASS_BORDER)
+        
+        self.setStyleSheet(f"""
+            #SuggestionCard {{ 
+                background-color: rgba(255, 255, 255, 0.05); 
+                border-radius: 12px; 
+                padding: 14px; 
+                border-left: 4px solid {accent_color};
+            }}
+        """)
 
         layout = QVBoxLayout(self)
         
         # Build text based on type
         s_type = suggestion['type']
+        icon_map = {
+            'SUGGEST_RECURRENCE': "🔄",
+            'WELLBEING_CHECK': "🌿",
+            'REVIEW_STALE_TASKS': "🧹",
+            'SUGGEST_BREAKDOWN_STUCK_TASK': "💎",
+            'SUGGEST_RESCHEDULE': "📅"
+        }
+        icon = icon_map.get(s_type, "💡")
+
         if s_type == 'SUGGEST_RECURRENCE':
-            text = f"I noticed you often complete tasks like <b>'{suggestion['task_text']}'</b>. Would you like to make this a recurring <b>{suggestion['interval']}</b> task?"
-            accept_text = "✅ Create"
+            text = f"I noticed you often complete <b>'{suggestion['task_text']}'</b>. Make it recurring?"
+            accept_text = "Create"
         elif s_type == 'WELLBEING_CHECK':
             text = suggestion.get('text', "How are you feeling?")
-            accept_text = "❤️ Acknowledge"
+            accept_text = "Check-in"
         elif s_type == 'REVIEW_STALE_TASKS':
-            text = suggestion.get('text', "You have some old tasks.")
-            accept_text = "👍 Review Now"
+            text = suggestion.get('text', "Review some old items?")
+            accept_text = "Review"
         elif s_type == 'SUGGEST_BREAKDOWN_STUCK_TASK':
-            text = suggestion.get('text', "A task seems to be stuck.")
-            accept_text = "✨ Break Down"
+            text = suggestion.get('text', "Break down this complex task?")
+            accept_text = "Analyze"
+        elif s_type == 'SUGGEST_RESCHEDULE':
+            text = suggestion.get('text', "Move some tasks to tomorrow?")
+            accept_text = "Reschedule"
         else:
-            text = suggestion.get('text', "I have a suggestion for you.")
-            accept_text = "✅ Accept"
+            text = suggestion.get('text', "I have a suggestion.")
+            accept_text = "Accept"
             
-        lbl_text = QLabel(text)
+        lbl_text = QLabel(f"{icon}  {text}")
         lbl_text.setWordWrap(True)
         lbl_text.setStyleSheet(f"color: {TEXT_WHITE}; background: transparent;")
         layout.addWidget(lbl_text)
@@ -53,10 +121,12 @@ class SuggestionWidget(QFrame):
         
         btn_accept = QPushButton(accept_text)
         btn_accept.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_accept.setStyleSheet(f"background-color: {accent_color}; color: {DARK_BG}; font-weight: bold; border: none; padding: 6px 12px; border-radius: 8px;")
         btn_accept.clicked.connect(lambda: self.action_taken.emit("accept", self.suggestion))
         
-        btn_dismiss = QPushButton("❌ Dismiss")
+        btn_dismiss = QPushButton("Dismiss")
         btn_dismiss.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_dismiss.setStyleSheet(f"color: {TEXT_GRAY}; background: transparent; border: none;")
         btn_dismiss.clicked.connect(lambda: self.action_taken.emit("dismiss", self.suggestion))
         
         btn_layout.addWidget(btn_accept)
@@ -185,10 +255,12 @@ class CoachWidget(QWidget):
             self.btn_confirm.setEnabled(True)
             self.btn_correct.setEnabled(True)
             for item in queue:
-                text = f"Task: '{item['text']}'  →  AI Guessed: {item['predicted_category']} ({int(item['confidence']*100)}%)"
-                list_item = QListWidgetItem(text)
+                list_item = QListWidgetItem()
+                widget = ReviewItemWidget(item)
                 list_item.setData(Qt.ItemDataRole.UserRole, item)
+                list_item.setSizeHint(widget.sizeHint())
                 self.review_list.addItem(list_item)
+                self.review_list.setItemWidget(list_item, widget)
                 
         # Update Recommendations
         self.recommendations_list.clear()
@@ -291,6 +363,11 @@ class CoachWidget(QWidget):
                 if task_id and hasattr(hub, 'break_down_task_by_id'):
                     hub.break_down_task_by_id(task_id)
                     self.message_requested.emit("Let's break that down into smaller pieces.")
+            elif s_type == 'SUGGEST_RESCHEDULE':
+                if hasattr(hub, 'reschedule_overloaded_tasks'):
+                    moved_count = hub.reschedule_overloaded_tasks()
+                    if moved_count > 0:
+                        self.message_requested.emit(f"Moved {moved_count} tasks to give you some breathing room.")
         
         # Dismiss the suggestion in both cases
         self.ai_engine.dismiss_suggestion(suggestion['id'])

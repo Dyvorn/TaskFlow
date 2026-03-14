@@ -57,6 +57,8 @@ from core.model import (
     current_time_of_day,
     get_today_mood,
     today_str,
+    tasks_for_project,
+    now_iso,
 )
 
 from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
@@ -268,10 +270,14 @@ class WidgetWindow(QWidget):
         
         # Add a visual handle to the bump
         bump_layout = QVBoxLayout(self.bump)
+        bump_layout.setContentsMargins(0, 8, 0, 8)
         bump_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        bump_handle = QLabel("⋮")
-        bump_handle.setStyleSheet(f"color: {GOLD}; font-size: 20px; font-weight: bold;")
-        bump_layout.addWidget(bump_handle)
+        
+        self.bump_count_label = QLabel("0")
+        self.bump_count_label.setStyleSheet(f"color: {GOLD}; font-size: 14px; font-weight: 800;")
+        bump_layout.addWidget(self.bump_count_label)
+        
+        bump_layout.addWidget(QLabel("•"), 0, Qt.AlignmentFlag.AlignCenter)
 
         # header row
         header_row = QHBoxLayout()
@@ -428,34 +434,51 @@ class WidgetWindow(QWidget):
             
         self.tasks_list.clear()
 
-        # Today tasks
-        today_tasks = tasks_in_section(self.state, "Today")
-        incomplete_tasks = [t for t in today_tasks if not t.get("completed")]
-
-        # Sort: important first, then by order
-        incomplete_tasks.sort(key=lambda t: (0 if t.get("important") else 1, t.get("order", 0)))
-
         max_visible = self.state.get("settings", {}).get("widgetTaskCount", 5)
-        
         visible_tasks = []
-        is_showing_scheduled = False
+        
+        # Check for a focused project
+        focused_project_id = self.state.get("widgetCurrentProjectId")
+        project = None
+        if focused_project_id:
+            project = next((p for p in self.state.get("projects", []) if p.get("id") == focused_project_id), None)
 
-        if incomplete_tasks:
+        if project:
+            # Project Focus Mode
+            self.header_label.setText(f"Project: {project.get('name', 'Untitled')}")
+            project_tasks = tasks_for_project(self.state, focused_project_id)
+            incomplete_tasks = [t for t in project_tasks if not t.get("completed")]
+            incomplete_tasks.sort(key=lambda t: (0 if t.get("important") else 1, t.get("order", 0)))
             visible_tasks = incomplete_tasks[:max_visible]
-            self.header_label.setText(f"{APP_NAME} Today")
         else:
-            # If Today is empty, look for Scheduled
-            scheduled = tasks_in_section(self.state, "Scheduled")
-            scheduled = [t for t in scheduled if not t.get("completed")]
-            # Sort primarily by date
-            scheduled.sort(key=lambda t: t.get("schedule", {}).get("date", "9999-99-99"))
-            
-            if scheduled:
-                visible_tasks = scheduled[:max_visible]
-                is_showing_scheduled = True
-                self.header_label.setText(f"{APP_NAME} Upcoming")
+            # Default Mode: Today / Upcoming
+            self.header_label.setText(f"{APP_NAME} Today")
+            today_tasks = tasks_in_section(self.state, "Today")
+            incomplete_tasks = [t for t in today_tasks if not t.get("completed")]
+            incomplete_tasks.sort(key=lambda t: (0 if t.get("important") else 1, t.get("order", 0)))
+
+            if incomplete_tasks:
+                visible_tasks = incomplete_tasks[:max_visible]
             else:
-                self.header_label.setText(f"{APP_NAME} Today")
+                # If Today is empty, look for Scheduled
+                scheduled = tasks_in_section(self.state, "Scheduled")
+                scheduled = [t for t in scheduled if not t.get("completed")]
+                # Sort primarily by date
+                scheduled.sort(key=lambda t: t.get("schedule", {}).get("date", "9999-99-99"))
+                
+                if scheduled:
+                    visible_tasks = scheduled[:max_visible]
+                    self.header_label.setText(f"{APP_NAME} Upcoming")
+
+        # Update status label based on what's being shown
+        num_tasks = len(visible_tasks)
+        total_incomplete = len(incomplete_tasks) if 'incomplete_tasks' in locals() else 0
+        self.status_label.setText(f"Showing {num_tasks} of {total_incomplete} tasks")
+        
+        # Update bump count
+        if hasattr(self, "bump_count_label"):
+            today_total = len([t for t in tasks_in_section(self.state, "Today") if not t.get("completed")])
+            self.bump_count_label.setText(str(today_total))
 
         for t in visible_tasks:
             item = QListWidgetItem()
@@ -503,13 +526,21 @@ class WidgetWindow(QWidget):
             task = next((t for t in self.state["tasks"] if t["id"] == task_id), None)
             if not task: return
 
+            act_today = menu.addAction("Move to Today")
             act_imp = menu.addAction("Unmark Important" if task.get("important") else "Mark Important")
+            menu.addSeparator()
             act_del = menu.addAction("Delete")
             
             action = menu.exec(pos)
             
-            if action == act_imp:
+            if action == act_today:
+                task["section"] = "Today"
+                task["updatedAt"] = now_iso()
+                self._save_callback()
+                self._refresh_tasks()
+            elif action == act_imp:
                 task["important"] = not task.get("important")
+                task["updatedAt"] = now_iso()
                 self._save_callback()
                 self._refresh_tasks()
             elif action == act_del:

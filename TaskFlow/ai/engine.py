@@ -504,19 +504,23 @@ class AIEngine:
         score = 0
         
         # Negatives
-        neg_words = ["sad", "tired", "stressed", "anxious", "bad", "fail", "overwhelmed", "angry", "lonely", "hurt", "lost", "hard"]
+        neg_words = ["sad", "tired", "stressed", "anxious", "bad", "fail", "overwhelmed", "angry", "lonely", "hurt", "lost", "hard", "frustrated", "disappointed"]
         score -= sum(1 for w in neg_words if w in text)
         
         # Positives
-        pos_words = ["happy", "great", "excited", "good", "win", "success", "proud", "calm", "peace", "love", "progress", "learned"]
+        pos_words = ["happy", "great", "excited", "good", "win", "success", "proud", "calm", "peace", "love", "progress", "learned", "grateful", "thankful", "achieved"]
         score += sum(1 for w in pos_words if w in text)
         
         # Contexts
-        is_busy = any(w in text for w in ["busy", "work", "deadline", "rush", "late", "pressure"])
-        is_growth = any(w in text for w in ["learn", "study", "read", "grow", "understand", "realize"])
+        is_busy = any(w in text for w in ["busy", "work", "deadline", "rush", "late", "pressure", "so much to do"])
+        is_growth = any(w in text for w in ["learn", "study", "read", "grow", "understand", "realize", "discover"])
+        is_gratitude = any(w in text for w in ["grateful", "thankful", "appreciate"])
+        is_planning = any(w in text for w in ["plan", "next", "tomorrow", "goal", "focus on"])
             
         # Combined reasoning
-        if score < -1 and is_busy:
+        if is_gratitude and score > 0:
+            return "It's wonderful to see you practicing gratitude. Holding onto these positive feelings can make a real difference. What's one more small thing you're thankful for?"
+        elif score < -1 and is_busy:
             return "It seems like work pressure is weighing you down. When we are overwhelmed, our brain needs a hard stop. Can you pick just ONE thing to finish today and forgive yourself for the rest?"
         elif score < -1:
             return "I hear that things are tough right now. It's okay to not be okay. Sometimes the most productive thing you can do is rest. What does your body need right now?"
@@ -528,6 +532,8 @@ class AIEngine:
             return "Learning is a journey. Even if it feels slow, you are moving forward. What's one concept that clicked for you today?"
         elif is_busy:
              return "Sounds like a busy time. Don't forget to breathe. Is there anything you can delegate or delay to tomorrow?"
+        elif is_planning:
+            return "Thinking ahead is a great skill. You're setting yourself up for success. What's the very first step for that plan?"
         else:
             return "Writing is a powerful tool for clarity. What is the one thing you want to focus on after this?"
 

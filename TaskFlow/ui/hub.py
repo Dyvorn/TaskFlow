@@ -47,6 +47,7 @@ from PyQt6.QtGui import (
     QColor,
     QFont,
     QPainter,
+    QLinearGradient,
     QPainterPath,
     QPen,
     QBrush,
@@ -201,12 +202,14 @@ from core.model import (
     update_task_section,
     update_task_importance,
     assign_task_to_project,
+    toggle_subtask_completed,
 )
 from ui.shared_widgets import (
     AnimationManager,
     ConfettiOverlay,
     TaskRowWidget,
 )
+from .widget import WidgetWindow
 from ui.coach import CoachWidget
 
 # --- Voice Input Imports ---
@@ -530,6 +533,21 @@ class SplashWindow(QMainWindow):
 # ──────────────────────────────────────────────────────────────────────────
 # Update helpers
 # ──────────────────────────────────────────────────────────────────────────
+
+def _get_habit_icon(habit_name: str) -> str:
+    """Returns a suitable emoji for a habit name."""
+    name = habit_name.lower()
+    if any(w in name for w in ["water", "drink"]): return "💧"
+    if any(w in name for w in ["walk", "outside", "run", "steps"]): return "🚶"
+    if any(w in name for w in ["read", "book", "learn", "study"]): return "📚"
+    if any(w in name for w in ["meditate", "breathe", "calm"]): return "🧘"
+    if any(w in name for w in ["gym", "workout", "exercise"]): return "💪"
+    if any(w in name for w in ["journal", "write"]): return "✍️"
+    if any(w in name for w in ["sleep", "bed"]): return "😴"
+    if any(w in name for w in ["code", "dev"]): return "💻"
+    if any(w in name for w in ["clean", "tidy"]): return "🧹"
+    if any(w in name for w in ["music", "listen"]): return "🎵"
+    return "🎯" # Default
 
 
 def fetch_latest_release() -> tuple[Optional[str], Optional[str], Optional[str]]:
@@ -1876,6 +1894,39 @@ class BreathingCircle(QWidget):
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text)
         painter.end()
 
+class ZenPageWidget(QWidget):
+    """A custom widget for the Zen page with an animated gradient background."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._anim_val = 0.0
+        self._anim = QVariantAnimation(self)
+        self._anim.setStartValue(0.0)
+        self._anim.setKeyValueAt(0.5, 1.0)
+        self._anim.setEndValue(0.0)
+        self._anim.setDuration(20000) # 20 seconds for a slow cycle
+        self._anim.setLoopCount(-1)
+        self._anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._anim.valueChanged.connect(self._set_anim_val)
+        self._anim.start()
+        
+        self.base_color = QColor(DARK_BG)
+        self.anim_color = QColor("#2c3e50") # Dark slate blue
+
+    def _set_anim_val(self, val):
+        self._anim_val = val
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Interpolate color for the gradient stop
+        r = self.base_color.red() + (self.anim_color.red() - self.base_color.red()) * self._anim_val
+        g = self.base_color.green() + (self.anim_color.green() - self.base_color.green()) * self._anim_val
+        b = self.base_color.blue() + (self.anim_color.blue() - self.base_color.blue()) * self._anim_val
+        
+        painter.fillRect(self.rect(), QColor(int(r), int(g), int(b)))
+        painter.end()
 # ============================================================================
 # SECTION 5: CUSTOM WIDGETS FOR UI ENHANCEMENT
 # ============================================================================
@@ -3572,8 +3623,10 @@ class HubWindow(QMainWindow):
         self._pomodoro_count = 0
         self._zen_session_type = "focus"
         self._consecutive_focus_sessions = 0
+        self._pre_zen_page: Optional[QWidget] = None
         self._panic_breathing_timer = None
         self._panic_phase_counter = 0
+        self.widget_window: Optional[WidgetWindow] = None
         # Prevent app from exiting when window is closed (if tray is enabled)
         QApplication.setQuitOnLastWindowClosed(False)
 
@@ -3621,6 +3674,9 @@ class HubWindow(QMainWindow):
         # Setup Audio
         self._init_audio()
         
+        # Initialize Widget
+        self._setup_widget()
+
         # Listen for data changes to refresh UI (e.g. from Widget)
         self.data_changed.connect(self._on_data_changed)
         
@@ -3632,6 +3688,18 @@ class HubWindow(QMainWindow):
         # Initialize Voice AI in background
         if VOICE_AVAILABLE and self.state.get("settings", {}).get("voiceEnabled", True):
             threading.Thread(target=self._init_voice_ai, daemon=True).start()
+
+    def _setup_widget(self):
+        """Handles creating or updating the companion widget based on settings."""
+        enabled = self.state.get("settings", {}).get("widgetEnabled", True)
+        if enabled:
+            if not self.widget_window:
+                self.widget_window = WidgetWindow(self.state, self.paths, self.schedule_save, self)
+            self.widget_window.show()
+            self.widget_window._refresh_tasks()
+        else:
+            if self.widget_window:
+                self.widget_window.hide()
 
     def resizeEvent(self, event):
         if hasattr(self, "confetti"):
@@ -4141,7 +4209,7 @@ class HubWindow(QMainWindow):
         self.xp_bar.setFixedHeight(6)
         self.xp_bar.setFixedWidth(120)
         self.xp_bar.setTextVisible(False)
-        self.xp_bar.setStyleSheet(f"QProgressBar {{ background-color: {HOVER_BG}; border-radius: 3px; border: none; }} QProgressBar::chunk {{ background-color: {GOLD}; border-radius: 3px; }}")
+        self.xp_bar.setStyleSheet(f"QProgressBar {{ background-color: rgba(255,255,255,0.05); border-radius: 3px; border: none; }} QProgressBar::chunk {{ background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {GOLD}, stop:1 #ffaa00); border-radius: 3px; }}")
         xp_container.addWidget(self.xp_bar)
         
         left_col.addLayout(xp_container)
@@ -4854,6 +4922,7 @@ class HubWindow(QMainWindow):
         settings["startWithWindows"] = self.setting_start_windows.isChecked()
         
         self._set_startup_registry(settings["startWithWindows"])
+        self._setup_widget()
         self.schedule_save()
 
     def _refresh_settings(self):
@@ -5208,6 +5277,14 @@ class HubWindow(QMainWindow):
         self.zen_lbl_note.setVisible(False)
         layout.addWidget(self.zen_lbl_note)
         
+        # Subtask list
+        self.zen_subtasks_list = QListWidget()
+        self.zen_subtasks_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
+        self.zen_subtasks_list.setMaximumHeight(120) # Limit height
+        self.zen_subtasks_list.setSpacing(5)
+        self.zen_subtasks_list.setVisible(False) # Hide by default
+        layout.addWidget(self.zen_subtasks_list)
+        
         self.zen_lbl_status = QLabel("")
         self.zen_lbl_status.setStyleSheet(f"color: {GOLD}; font-size: 18px; font-weight: bold; margin: 5px;")
         self.zen_lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5313,77 +5390,12 @@ class HubWindow(QMainWindow):
         
         sound_layout.addStretch()
 
-    def _update_zen_background(self, soundscape: str):
-        """Changes the background of the Zen page with a fade animation."""
-        # If an animation is already running, let it finish to avoid glitches.
-        if self.page_zen.graphicsEffect() is not None and isinstance(self.page_zen.graphicsEffect(), QGraphicsOpacityEffect):
-             # This check is a bit weak, but it's to prevent overlapping animations.
-             # A more robust solution would use a state flag.
-             return
-        style = f"background-color: {DARK_BG};"  # Default
-        
-        image_map = {
-            "Rain": "rain.jpg",
-            "Forest": "forest.jpg",
-            "Cafe": "cafe.jpg",
-            "Ocean": "ocean.jpg",
-            "Fireplace": "fireplace.jpg",
-        }
-        
-        image_name = image_map.get(soundscape)
-        
-        if image_name:
-            # Path logic adapted from _play_soundscape
-            base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-            # Assume images are in assets/images
-            image_path = os.path.join(base_dir, "assets", "images", image_name)
-            
-            if not os.path.exists(image_path):
-                if not getattr(sys, 'frozen', False):
-                    # Fallback for running from source (ui/hub.py -> TaskFlow/assets/images)
-                    image_path = os.path.join(os.path.dirname(__file__), "..", "assets", "images", image_name)
-
-            if os.path.exists(image_path):
-                css_path = image_path.replace('\\', '/')
-                style = f"border-image: url('{css_path}') 0 0 0 0 stretch stretch;"
-
-        final_style = f"QWidget {{ {style} }}"
-
-        # Avoid animation if style is the same or page is not visible
-        if self.page_zen.styleSheet() == final_style or not self.page_zen.isVisible():
-            self.page_zen.setStyleSheet(final_style)
-            return
-
-        # Animate: Fade out, change background, fade in
-        effect = QGraphicsOpacityEffect(self.page_zen)
-        self.page_zen.setGraphicsEffect(effect)
-        
-        self.page_zen.setStyleSheet(f"QWidget {{ {style} }}")
-        anim_out = QPropertyAnimation(effect, b"opacity", self.page_zen)
-        anim_out.setDuration(250)  # Fast fade out
-        anim_out.setStartValue(1.0)
-        anim_out.setEndValue(0.0)
-        anim_out.setEasingCurve(QEasingCurve.Type.InCubic)
-        
-        def on_faded_out():
-            self.page_zen.setStyleSheet(final_style)
-            
-            anim_in = QPropertyAnimation(effect, b"opacity", self.page_zen)
-            anim_in.setDuration(350)  # Slower fade in
-            anim_in.setStartValue(0.0)
-            anim_in.setEndValue(1.0)
-            anim_in.setEasingCurve(QEasingCurve.Type.OutCubic)
-            anim_in.finished.connect(lambda: self.page_zen.setGraphicsEffect(None))
-            anim_in.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-
-        anim_out.finished.connect(on_faded_out)
-        anim_out.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
-
     def enter_zen_mode(self, task_id: str):
         t = next((x for x in self.state["tasks"] if x["id"] == task_id), None)
         if not t: return
         
         self._zen_task_id = task_id
+        self._pre_zen_page = self.stack.currentWidget()
         self.zen_lbl_text.setText(t.get("text", ""))
         
         # Show note if exists
@@ -5394,6 +5406,22 @@ class HubWindow(QMainWindow):
         else:
             self.zen_lbl_note.setVisible(False)
 
+        # Populate subtasks
+        subtasks = t.get("subtasks", [])
+        self.zen_subtasks_list.clear()
+        if subtasks:
+            self.zen_subtasks_list.setVisible(True)
+            for st in subtasks:
+                item = QListWidgetItem()
+                chk = QCheckBox(st.get("text", ""))
+                chk.setChecked(st.get("completed", False))
+                chk.setStyleSheet(f"color: {TEXT_WHITE};")
+                chk.toggled.connect(lambda checked, tid=t['id'], stid=st['id']: self._toggle_zen_subtask(tid, stid, checked))
+                self.zen_subtasks_list.addItem(item)
+                self.zen_subtasks_list.setItemWidget(item, chk)
+        else:
+            self.zen_subtasks_list.setVisible(False)
+
         # Hide sidebar for focus
         self.nav_scroll_area.setVisible(False)
         self.btn_focus.setChecked(True)
@@ -5401,12 +5429,25 @@ class HubWindow(QMainWindow):
         # Restore sound preference
         saved_sound = self.state.get("settings", {}).get("zenSoundscape", "Silent")
         self.combo_sound.setCurrentText(saved_sound)
-        self._update_zen_background(saved_sound)
         
         self._switch_page(self.page_zen)
         
         # Start default 25m
         self._start_zen_timer(25, "focus")
+
+    def _toggle_zen_subtask(self, task_id: str, subtask_id: str, checked: bool):
+        """Handles toggling a subtask from within Zen mode."""
+        task = next((t for t in self.state.get("tasks", []) if t.get("id") == task_id), None)
+        if not task: return
+        subtask = next((st for st in task.get("subtasks", []) if st.get("id") == subtask_id), None)
+        if not subtask: return
+
+        if subtask.get("completed", False) != checked:
+            toggle_subtask_completed(self.state, task_id, subtask_id)
+            self.schedule_save()
+            if task.get("completed"):
+                self.show_toast("All subtasks done. Task completed!")
+                self._complete_zen_task()
 
     def _toggle_pomodoro(self, checked: bool):
         self._pomodoro_mode = checked
@@ -5671,7 +5712,6 @@ class HubWindow(QMainWindow):
             self.btn_pomodoro.setChecked(False)
         if hasattr(self, "zen_lbl_status"):
             self.zen_lbl_status.setVisible(False)
-        self._update_zen_background("Silent") # Reset background
         self._stop_soundscape()
         self._allow_sleep()
         self._zen_task_id = None
@@ -5679,7 +5719,8 @@ class HubWindow(QMainWindow):
             self._zen_timer.stop()
         self.nav_scroll_area.setVisible(True)
         self.btn_focus.setChecked(False)
-        self._switch_page(self.page_home)
+        target_page = self._pre_zen_page or self.page_home
+        self._switch_page(target_page)
 
     # ────────────────────────────────────────────────────────────────────
     # Home page logic
@@ -5787,11 +5828,10 @@ class HubWindow(QMainWindow):
         
         for h in habits:
             is_done = checks.get(h["id"], False)
-            # Use first letter of habit name
-            letter = h["name"][0].upper() if h["name"] else "?"
-            
-            btn = QPushButton(letter)
+            icon = _get_habit_icon(h["name"])
+            btn = QPushButton(icon)
             btn.setFixedSize(32, 32)
+            btn.setFont(QFont("Segoe UI Emoji", 12)) # Ensure emoji renders well
             btn.setCheckable(True)
             btn.setChecked(is_done)
             btn.setToolTip(h["name"])
@@ -6049,7 +6089,7 @@ class HubWindow(QMainWindow):
             
             for line in lines:
                 # Use CommandParser to interpret the line
-                actions = []
+                actions: List[Dict[str, Any]] = []
                 if self.command_parser:
                     actions = self.command_parser.parse(line)
                 
@@ -6085,7 +6125,7 @@ class HubWindow(QMainWindow):
                     t = add_task(
                         self.state, 
                         text=task_text, 
-                        section="Today", # Default to Today for brain dump, or logic to parse 'tomorrow'
+                        section="Someday", # Default to Someday for brain dump
                         category=category, 
                         important=action.get("important", False),
                         difficulty=diff,
@@ -6098,11 +6138,11 @@ class HubWindow(QMainWindow):
             
             if created_ids:
                 self.confetti.burst()
-                QMessageBox.information(self, "Brain Dump", f"Captured {len(created_ids)} items.")
+                self.show_toast(f"Captured {len(created_ids)} items and sent them to 'Someday'.")
                 
                 # Navigate to where tasks went
-                if any(t["section"] == "Today" for t in self.state["tasks"] if t["id"] in created_ids):
-                    self._switch_page(self.page_today)
+                if any(t["section"] != "Someday" for t in self.state["tasks"] if t["id"] in created_ids):
+                    self._switch_page(self.page_scheduled) # Go to scheduled if dates were parsed
                 else:
                     self._switch_page(self.page_someday)
 
@@ -6168,6 +6208,32 @@ class HubWindow(QMainWindow):
         self.show_toast(f"Processed {count} voice commands.")
         self.schedule_save()
         self._refresh_home()
+
+    def reschedule_overloaded_tasks(self) -> int:
+        """
+        Implements the 'OVERLOAD_DETECTED' suggestion by moving the 3 least
+        important tasks from Today to Tomorrow. Returns the number of tasks moved.
+        """
+        if not self.ai_engine:
+            return 0
+        
+        today_tasks = tasks_in_section(self.state, "Today")
+        incomplete = [t for t in today_tasks if not t.get("completed")]
+        
+        if len(incomplete) < 3:
+            return 0
+            
+        context = {
+            "time_of_day": current_time_of_day(),
+            "day_of_week": datetime.now().strftime("%A"),
+            "mood": get_today_mood(self.state).get("value", "Unknown") if get_today_mood(self.state) else "Unknown"
+        }
+        ranked_tasks = self.ai_engine.rank_tasks(incomplete, context)
+        tasks_to_move = ranked_tasks[-3:]
+        for task in tasks_to_move:
+            update_task_section(self.state, task['id'], "Tomorrow")
+        self.schedule_save()
+        return len(tasks_to_move)
 
     def break_down_task_by_id(self, task_id: str):
         """Finds a task by ID and triggers the AI breakdown for it."""
@@ -6320,6 +6386,10 @@ class HubWindow(QMainWindow):
             self._refresh_stats_and_habits()
         elif current is self.page_home:
             self._refresh_home()
+
+        # Also refresh the widget if it is active
+        if self.widget_window and self.widget_window.isVisible():
+            self.widget_window._refresh_tasks()
 
     def _show_tip_of_the_day(self) -> None:
         """Shows a tip from the AI engine if available."""

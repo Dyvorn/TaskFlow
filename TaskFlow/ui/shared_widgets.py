@@ -89,6 +89,21 @@ class AnimationManager:
         group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
         return group
 
+    @staticmethod
+    def pulse(widget: QWidget, duration: int = 400):
+        """Creates a subtle scale and glow pulse effect."""
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        
+        anim = QPropertyAnimation(effect, b"opacity")
+        anim.setDuration(duration)
+        anim.setStartValue(1.0)
+        anim.setKeyValueAt(0.5, 0.6)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        anim.finished.connect(lambda: widget.setGraphicsEffect(None))
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
 class AnimatedCheckbox(QPushButton):
     """A custom checkbox with a smooth fill animation."""
     def __init__(self, checked: bool = False, parent=None):
@@ -185,14 +200,14 @@ class TaskRowWidget(QWidget):
         self.setObjectName("TaskRow")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         
-        important_style = f"border-left: 3px solid {GOLD};" if self.task.get("important") else "border-left: 3px solid transparent;"
+        important_style = f"border-left: 4px solid {GOLD}; background-color: rgba(255, 215, 0, 0.03);" if self.task.get("important") else "border-left: 4px solid transparent;"
         self.setStyleSheet(f"""
             #TaskRow {{
-                border-radius: 8px;
-                background-color: rgba(255, 255, 255, 0.02);
+                border-radius: 10px;
+                background-color: rgba(255, 255, 255, 0.03);
                 {important_style}
             }}
-            #TaskRow:hover {{ background-color: {HOVER_BG}; }}
+            #TaskRow:hover {{ background-color: rgba(255, 255, 255, 0.08); }}
         """)
         
         hl = QHBoxLayout(self)
@@ -209,12 +224,12 @@ class TaskRowWidget(QWidget):
                 date_str = sched['date']
                 if sched.get("time"):
                     date_str += f" @ {sched['time']}"
-                meta_info.append(f"📅 {date_str}")
+                meta_info.append(f"<span style='color:#4facfe;'>📅 {date_str}</span>")
         if rec := self.task.get("recurrence"):
             if isinstance(rec, dict) and rec.get("type"):
-                meta_info.append(f"↻ {rec['type']}")
+                meta_info.append(f"<span style='color:#1dd1a1;'>↻ {rec['type']}</span>")
         if cat := self.task.get("category"):
-            meta_info.append(f"🏷 {cat}")
+            meta_info.append(f"<span style='color:{GOLD};'>🏷 {cat}</span>")
 
         lbl = QLabel()
         lbl.setWordWrap(True)
