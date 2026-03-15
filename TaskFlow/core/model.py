@@ -303,6 +303,8 @@ def default_state() -> Dict[str, Any]:
             "moodsByDate": {},
             "dailyLogs": {},
             "didShowBrainDumpOnboarding": False,
+            "ai_total_reviewed": 0,
+            "ai_total_confirmed": 0,
         },
         # dayQuality: stores {date, tasksCompleted, tasksPlanned, moodAtStart, moodAtEnd, habitsDone}
         "dayQuality": {},

@@ -32,8 +32,10 @@ class TaskPipeline:
 
     def normalize(self, text: str) -> List[str]:
         """Improved text normalization: lowercase, remove punctuation, and split."""
-        # Remove non-alphanumeric characters (and spaces) and convert to lowercase
-        return re.sub(r'[^\w\s]', '', text.lower()).split()
+        if not text:
+            return []
+        # Remove special characters but keep alphanumeric, then filter out empty strings
+        return [w for w in re.sub(r'[^a-zA-Z0-9\s]', '', text.lower()).split() if w]
 
     def build_or_update_from_log(self, data: List[Dict]):
         """

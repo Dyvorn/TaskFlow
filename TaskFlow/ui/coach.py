@@ -15,6 +15,8 @@ DARK_BG = "#121212"
 
 class ReviewItemWidget(QWidget):
     """Custom card for items in the AI review queue."""
+    action_taken = pyqtSignal(str, dict) # 'confirm' or 'correct', and the item data
+
     def __init__(self, item_data: dict, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -50,6 +52,25 @@ class ReviewItemWidget(QWidget):
         info_layout.addWidget(lbl_conf)
         layout.addLayout(info_layout)
         layout.addWidget(meter)
+
+        # --- Action Buttons ---
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 4, 0, 0)
+        btn_layout.addStretch()
+
+        btn_confirm = QPushButton("✅ Confirm")
+        btn_confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_confirm.setStyleSheet(f"color: #1dd1a1; background: transparent; border: none; font-weight: bold;")
+        btn_confirm.clicked.connect(lambda: self.action_taken.emit('confirm', item_data))
+        btn_layout.addWidget(btn_confirm)
+
+        btn_correct = QPushButton("✏️ Correct")
+        btn_correct.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_correct.setStyleSheet(f"color: #feca57; background: transparent; border: none; font-weight: bold;")
+        btn_correct.clicked.connect(lambda: self.action_taken.emit('correct', item_data))
+        btn_layout.addWidget(btn_correct)
+
+        layout.addLayout(btn_layout)
 
 class SuggestionWidget(QFrame):
     """A custom widget to display an AI suggestion with action buttons."""
@@ -179,6 +200,10 @@ class CoachWidget(QWidget):
         self.lbl_samples.setStyleSheet(f"color: {TEXT_GRAY};")
         s_layout.addWidget(self.lbl_samples)
 
+        self.lbl_agreement = QLabel("Agreement: N/A")
+        self.lbl_agreement.setStyleSheet(f"color: {TEXT_GRAY};")
+        s_layout.addWidget(self.lbl_agreement)
+
         s_layout.addSpacing(10)
         
         self.train_progress = QProgressBar()
@@ -194,6 +219,12 @@ class CoachWidget(QWidget):
         self.btn_train.clicked.connect(self._run_training)
         s_layout.addWidget(self.btn_train)
 
+        self.btn_reset_brain = QPushButton("Reset Brain")
+        self.btn_reset_brain.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_reset_brain.setStyleSheet(f"background-color: transparent; color: #ff6b6b; border: 1px solid #ff6b6b; border-radius: 6px; padding: 8px;")
+        self.btn_reset_brain.clicked.connect(self._reset_brain)
+        s_layout.addWidget(self.btn_reset_brain)
+
         layout.addWidget(stats_card)
 
         # --- Review Queue ---
@@ -202,20 +233,6 @@ class CoachWidget(QWidget):
         self.review_list = QListWidget()
         self.review_list.setStyleSheet(f"background-color: rgba(0,0,0,0.2); border: 1px solid {GLASS_BORDER}; border-radius: 12px; color: {TEXT_WHITE};")
         layout.addWidget(self.review_list, 1)
-
-        # Action buttons for review
-        btn_row = QHBoxLayout()
-        self.btn_confirm = QPushButton("✅ Confirm Prediction")
-        self.btn_confirm.clicked.connect(self._confirm_prediction)
-        self.btn_correct = QPushButton("✏️ Correct Category")
-        self.btn_correct.clicked.connect(self._correct_prediction)
-        
-        for btn in (self.btn_confirm, self.btn_correct):
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 6px; padding: 10px;")
-            btn_row.addWidget(btn)
-            
-        layout.addLayout(btn_row)
         
         # --- AI Recommendations ---
         layout.addSpacing(15)
@@ -233,8 +250,6 @@ class CoachWidget(QWidget):
             self.recommendations_list.clear()
             self.recommendations_list.addItem("No recommendations.")
             self.btn_train.setEnabled(False)
-            self.btn_confirm.setEnabled(False)
-            self.btn_correct.setEnabled(False)
             return
 
         # Update Stats
@@ -242,6 +257,7 @@ class CoachWidget(QWidget):
         self.lbl_status.setText(f"Brain Status: {stats['status']}")
         self.lbl_vocab.setText(f"Vocabulary: {stats['vocab_size']} words")
         self.lbl_samples.setText(f"Training Samples: {stats['task_log_count']}")
+        self.lbl_agreement.setText(f"Agreement Rate: {stats.get('agreement_rate', 0):.1f}%")
         
         # Update Review Queue
         self.review_list.clear()
@@ -249,14 +265,11 @@ class CoachWidget(QWidget):
         
         if not queue:
             self.review_list.addItem("No pending questions. Good job!")
-            self.btn_confirm.setEnabled(False)
-            self.btn_correct.setEnabled(False)
         else:
-            self.btn_confirm.setEnabled(True)
-            self.btn_correct.setEnabled(True)
             for item in queue:
                 list_item = QListWidgetItem()
                 widget = ReviewItemWidget(item)
+                widget.action_taken.connect(self._handle_review_action)
                 list_item.setData(Qt.ItemDataRole.UserRole, item)
                 list_item.setSizeHint(widget.sizeHint())
                 self.review_list.addItem(list_item)
@@ -300,40 +313,45 @@ class CoachWidget(QWidget):
         self.train_progress.hide()
         self.message_requested.emit("Training Complete! The AI has learned.")
 
-    def _confirm_prediction(self):
+    def _handle_review_action(self, action: str, data: dict):
         if not self.ai_engine:
             return
-        item = self.review_list.currentItem()
-        if not item: return
-        data = item.data(Qt.ItemDataRole.UserRole)
-        if not data: return
         
-        self.ai_engine.learn_task(data['text'], data['predicted_category'], data.get('context'))
-        self.refresh()
-        
-    def _correct_prediction(self):
-        if not self.ai_engine:
-            return
-        item = self.review_list.currentItem()
-        if not item: return
-        data = item.data(Qt.ItemDataRole.UserRole)
-        if not data: return
-
-        # Assumes AIEngine can provide a list of all known categories
-        categories = self.ai_engine.get_all_categories()
-        if not categories:
-            QMessageBox.warning(self, "Correction", "No categories available to choose from.")
-            return
-
-        current_index = categories.index(data['predicted_category']) if data['predicted_category'] in categories else 0
-        
-        new_cat, ok = QInputDialog.getItem(self, "Correct Prediction", 
-                                           f"What is the correct category for:\n'{data['text']}'?",
-                                           categories, current_index, False)
-        
-        if ok and new_cat:
-            self.ai_engine.learn_task(data['text'], new_cat, data.get('context'))
+        if action == 'confirm':
+            self.ai_engine.confirm_prediction(data['text'], data['predicted_category'], data.get('context'))
             self.refresh()
+        elif action == 'correct':
+            categories = self.ai_engine.get_all_categories()
+            if not categories:
+                QMessageBox.warning(self, "Correction", "No categories available to choose from.")
+                return
+
+            current_index = categories.index(data['predicted_category']) if data['predicted_category'] in categories else 0
+            
+            new_cat, ok = QInputDialog.getItem(self, "Correct Prediction", 
+                                               f"What is the correct category for:\n'{data['text']}'?",
+                                               categories, current_index, False)
+            
+            if ok and new_cat:
+                self.ai_engine.correct_prediction(data['text'], new_cat, data.get('context'))
+                self.refresh()
+
+    def _reset_brain(self):
+        if not self.ai_engine:
+            return
+        
+        reply = QMessageBox.question(
+            self, 
+            "Reset AI Brain",
+            "Are you sure you want to reset the AI? This will delete its memory and all learned data. The app will use the default brain.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.ai_engine.reset_brain()
+            self.refresh()
+            self.message_requested.emit("AI Brain has been reset.")
 
     def _handle_suggestion_action(self, action: str, suggestion: dict):
         s_type = suggestion['type']

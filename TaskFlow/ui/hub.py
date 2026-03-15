@@ -2081,6 +2081,10 @@ class DynamicListWidget(QListWidget):
             widget = self.itemWidget(item)
             if widget:
                 widget.setFixedWidth(width)
+                # Use sizeHint(), not minimumSizeHint(). For a word-wrapped label,
+                # minimumSizeHint() can report the height of a single line, causing
+                # the cutoff issue. sizeHint() correctly calculates the required
+                # height based on the layout after the width has been fixed.
                 item.setSizeHint(widget.sizeHint())
                 widget.setMinimumWidth(0)
                 widget.setMaximumWidth(16777215)
@@ -3906,9 +3910,10 @@ class HubWindow(QMainWindow):
                 color: {TEXT_WHITE};
             }}
             QFrame#NavBar QPushButton:checked {{
-                background-color: rgba(255, 215, 0, 0.15);
+                background-color: rgba(255, 215, 0, 0.12);
                 color: {GOLD};
-                border-left: 3px solid {GOLD};
+                border-left: 4px solid {GOLD};
+                font-weight: 800;
             }}
             QLabel {{
                 color: {TEXT_WHITE};
@@ -5042,15 +5047,7 @@ class HubWindow(QMainWindow):
 
         self._play_sfx("swoosh")
         self.stack.setCurrentWidget(page)
-        effect = QGraphicsOpacityEffect(page)
-        page.setGraphicsEffect(effect)
-        anim = QPropertyAnimation(effect, b"opacity", self)
-        anim.setDuration(ANIM_DURATION_MEDIUM)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.finished.connect(lambda: page.setGraphicsEffect(None) if page.graphicsEffect() else None)
-        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        AnimationManager.slide_up_fade_in(page, duration=450)
 
         if page is self.page_home:
             self._refresh_home()

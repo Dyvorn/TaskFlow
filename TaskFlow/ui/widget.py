@@ -11,6 +11,7 @@ from PyQt6.QtCore import (
     QSize,
     QPoint,
     QPropertyAnimation,
+    QVariantAnimation,
     QEasingCurve,
     QParallelAnimationGroup,
     QPointF,
@@ -129,6 +130,13 @@ class WidgetWindow(QWidget):
         self._hover_open_timer.setSingleShot(True)
         self._hover_open_timer.timeout.connect(self._on_hover_open_timeout)
 
+        self._bump_pulse_anim = QVariantAnimation(self)
+        self._bump_pulse_anim.setDuration(2000)
+        self._bump_pulse_anim.setStartValue(0.1)
+        self._bump_pulse_anim.setEndValue(0.3)
+        self._bump_pulse_anim.setLoopCount(-1)
+        self._bump_pulse_anim.valueChanged.connect(self._update_bump_glow)
+
         self._idle_timer = QTimer(self)
         self._idle_timer.setSingleShot(True)
         self._idle_timer.timeout.connect(self._on_long_idle_timeout)
@@ -142,6 +150,10 @@ class WidgetWindow(QWidget):
         # Confetti Overlay
         self.confetti = ConfettiOverlay(self)
         self.confetti.resize(self.size())
+
+    def _update_bump_glow(self, val):
+        if self.bump.isVisible():
+            self.bump.setStyleSheet(f"background-color: rgba(255, 215, 0, {val}); border: 1px solid {GOLD}; border-radius: 16px;")
 
     # ────────────────────────────────────────────────────────────────────
     # Geometry & Positioning Helpers
@@ -479,6 +491,11 @@ class WidgetWindow(QWidget):
         if hasattr(self, "bump_count_label"):
             today_total = len([t for t in tasks_in_section(self.state, "Today") if not t.get("completed")])
             self.bump_count_label.setText(str(today_total))
+            if today_total > 0 and not self._expanded:
+                if self._bump_pulse_anim.state() != QVariantAnimation.State.Running:
+                    self._bump_pulse_anim.start()
+            else:
+                self._bump_pulse_anim.stop()
 
         for t in visible_tasks:
             item = QListWidgetItem()

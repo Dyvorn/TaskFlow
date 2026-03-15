@@ -296,7 +296,11 @@ class AIEngine:
 
     def predict_category(self, text: str, context: Optional[Dict] = None) -> Optional[str]:
         """Predicts the category for a given task text and context."""
-        if not self.model or not text:
+        if not self.model or not text or len(text.strip()) < 2:
+            return None
+
+        # Prevent predicting if the vocabulary is empty (new brain)
+        if len(self.pipeline.vocab) <= 1:
             return None
 
         if context is None:
@@ -316,11 +320,50 @@ class AIEngine:
                 "confidence": confidence.item(),
                 "context": context
             }
-            if len(self.review_queue) < 20: # Limit queue size
+            # Only add to queue if not already present
+            if not any(q['text'] == text for q in self.review_queue) and len(self.review_queue) < 25:
                 self.review_queue.append(prediction)
             return None # Don't return a guess if unsure
 
         return self.pipeline.get_category_name(predicted_idx.item())
+
+    def confirm_prediction(self, text: str, category: str, context: Optional[Dict]):
+        """Learns a task from a confirmed prediction and updates stats."""
+        stats = self.state.setdefault("stats", {})
+        stats["ai_total_reviewed"] = stats.get("ai_total_reviewed", 0) + 1
+        stats["ai_total_confirmed"] = stats.get("ai_total_confirmed", 0) + 1
+        self.learn_task(text, category, context)
+
+    def correct_prediction(self, text: str, new_category: str, context: Optional[Dict]):
+        """Learns a task from a corrected prediction and updates stats."""
+        stats = self.state.setdefault("stats", {})
+        stats["ai_total_reviewed"] = stats.get("ai_total_reviewed", 0) + 1
+        self.learn_task(text, new_category, context)
+
+    def reset_brain(self):
+        """Deletes all user-specific AI data and re-bootstraps."""
+        files_to_delete = [
+            self.user_path / "brain.pth",
+            self.user_path / "vocab.json",
+            self.user_path / "categories.json",
+            self.user_path / "usage_log.json"
+        ]
+        for f in files_to_delete:
+            if f.exists():
+                try:
+                    f.unlink()
+                except OSError as e:
+                    print(f"Error deleting {f}: {e}")
+        
+        # Reset stats in the main state
+        if "stats" in self.state:
+            self.state["stats"]["ai_total_reviewed"] = 0
+            self.state["stats"]["ai_total_confirmed"] = 0
+        
+        self.review_queue.clear()
+        self._new_samples_counter = 0
+        self.load_pipeline_and_model()
+        print("AI Brain has been reset to its default state.")
 
     def learn_task(self, text: str, category: str, context: Optional[Dict] = None):
         """Adds a verified task to the training log."""
@@ -346,11 +389,12 @@ class AIEngine:
         self.review_queue = [item for item in self.review_queue if item['text'] != text]
 
         # Trigger auto-training if threshold is met
-        self._new_samples_counter += 1
         if self._new_samples_counter >= self._training_threshold:
+            self._new_samples_counter = 0
             print("Auto-training threshold reached. Starting background training.")
             self.train_model(background=True)
-            self._new_samples_counter = 0
+        else:
+            self._new_samples_counter += 1
 
     def train_model(self, background: bool = True, on_finish_callback=None):
         """Initiates the model training process."""
@@ -367,13 +411,15 @@ class AIEngine:
             self._training_worker.finished.connect(self._on_training_complete)
             self._training_worker.start()
         else:
-            trainer.train_model()
-            self._on_training_complete()
+            success = trainer.train_model()
+            if success:
+                self._on_training_complete(True)
 
-    def _on_training_complete(self):
+    def _on_training_complete(self, success: bool):
         """Called after training finishes to load the new model."""
-        print("AIEngine: Training complete. Reloading model.")
-        self.load_pipeline_and_model()
+        if success:
+            print("AIEngine: Training complete. Reloading model.")
+            self.load_pipeline_and_model()
 
     def get_stats(self) -> Dict:
         """Returns statistics about the AI's state."""
@@ -389,10 +435,17 @@ class AIEngine:
             with open(log_path, 'r') as f:
                 log_count = len(json.load(f))
 
+        agreement_rate = 0
+        total_reviewed = self.state.get("stats", {}).get("ai_total_reviewed", 0)
+        total_confirmed = self.state.get("stats", {}).get("ai_total_confirmed", 0)
+        if total_reviewed > 0:
+            agreement_rate = (total_confirmed / total_reviewed) * 100
+
         return {
             "status": status,
             "vocab_size": len(self.pipeline.vocab),
             "task_log_count": log_count,
+            "agreement_rate": agreement_rate,
         }
 
     def get_review_queue(self) -> List[Dict]:

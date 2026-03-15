@@ -29,13 +29,13 @@ class UserTrainer:
         self.model_path = self.user_path / "brain.pth"
         self.log_path = self.user_path / "usage_log.json"
 
-    def train_model(self, hidden_size: int = 64, epochs: int = 30, lr: float = 0.1):
+    def train_model(self, hidden_size: int = 64, epochs: int = 50, lr: float = 0.001) -> bool:
         """
         Loads user data, trains the model, and saves the updated weights.
         """
         if not self.log_path.exists():
             print(f"No usage log found for user {self.user_id}. Skipping training.")
-            return
+            return False
 
         # 1. Load and process data (this would be more robust in pipeline.py)
         with open(self.log_path, 'r', encoding='utf-8') as f:
@@ -82,8 +82,10 @@ class UserTrainer:
         elif vocab_size_changed:
             print("Vocabulary has expanded. Re-initializing model to accommodate new words.")
 
+        # Use Adam for better handling of sparse embedding gradients
+        # Added weight_decay (L2 regularization) to prevent overfitting on small local logs
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(model.parameters(), lr=lr)
+        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
 
         # 4. Training Loop
         model.train()
@@ -110,7 +112,11 @@ class UserTrainer:
                 optimizer.step()
                 total_loss += loss.item()
             
-            if (epoch + 1) % 5 == 0:
+            # Stop early if loss is effectively zero to prevent over-optimization
+            if total_loss < 0.0001:
+                break
+                
+            if (epoch + 1) % 10 == 0:
                 print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f}")
 
         # 5. Save the newly trained model back to the user's private directory
@@ -120,6 +126,7 @@ class UserTrainer:
             self.model_path.unlink()
         tmp_model_path.rename(self.model_path)
         print(f"Training complete. Brain saved for user {self.user_id}.")
+        return True
 
 
 class TrainingWorker(QThread):
@@ -127,7 +134,7 @@ class TrainingWorker(QThread):
     A QThread worker that runs the UserTrainer's training process in the background.
     This prevents the UI from freezing during training.
     """
-    finished = pyqtSignal()
+    finished = pyqtSignal(bool) # Success status
 
     def __init__(self, trainer: UserTrainer, parent=None):
         super().__init__(parent)
@@ -138,8 +145,8 @@ class TrainingWorker(QThread):
         Executes the training process. This method is called when the thread starts.
         """
         try:
-            self.trainer.train_model()
+            success = self.trainer.train_model()
+            self.finished.emit(success)
         except Exception as e:
             print(f"An error occurred during background training: {e}")
-        finally:
-            self.finished.emit()
+            self.finished.emit(False)

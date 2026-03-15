@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Callable
 from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QVariantAnimation, QRectF
 from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame, QSizePolicy
 
 from core.model import (
     GOLD,
@@ -79,15 +80,33 @@ class AnimationManager:
         group.addAnimation(anim_size)
         
         def cleanup():
-            widget.hide()
-            widget.setMaximumHeight(16777215) # Restore max height
-            widget.setGraphicsEffect(None)
+            if widget:
+                widget.hide()
+                widget.setMaximumHeight(16777215) # Restore max height
+                widget.setGraphicsEffect(None)
             if on_finished:
                 on_finished()
 
         group.finished.connect(cleanup)
         group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
         return group
+
+    @staticmethod
+    def slide_up_fade_in(widget: QWidget, duration: int = 400):
+        """Standard entry transition for pages and large cards."""
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        
+        group = QParallelAnimationGroup(widget)
+        fade = QPropertyAnimation(effect, b"opacity")
+        fade.setDuration(duration)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        group.addAnimation(fade)
+        group.finished.connect(lambda: widget.setGraphicsEffect(None) if widget and widget.graphicsEffect() is effect else None)
+        group.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     @staticmethod
     def pulse(widget: QWidget, duration: int = 400):
@@ -200,14 +219,14 @@ class TaskRowWidget(QWidget):
         self.setObjectName("TaskRow")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         
-        important_style = f"border-left: 4px solid {GOLD}; background-color: rgba(255, 215, 0, 0.03);" if self.task.get("important") else "border-left: 4px solid transparent;"
+        important_style = f"border-left: 4px solid {GOLD}; background-color: rgba(255, 215, 0, 0.05);" if self.task.get("important") else "border-left: 4px solid transparent;"
         self.setStyleSheet(f"""
             #TaskRow {{
-                border-radius: 10px;
-                background-color: rgba(255, 255, 255, 0.03);
+                border-radius: 12px;
+                background-color: rgba(255, 255, 255, 0.04);
                 {important_style}
             }}
-            #TaskRow:hover {{ background-color: rgba(255, 255, 255, 0.08); }}
+            #TaskRow:hover {{ background-color: rgba(255, 255, 255, 0.1); border-color: rgba(255, 215, 0, 0.4); }}
         """)
         
         hl = QHBoxLayout(self)
@@ -233,6 +252,7 @@ class TaskRowWidget(QWidget):
 
         lbl = QLabel()
         lbl.setWordWrap(True)
+        lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         lbl.setStyleSheet(f"color: {TEXT_GRAY if self.task.get('completed') else (GOLD if self.task.get('important') else TEXT_WHITE)};" + ("text-decoration: line-through;" if self.task.get('completed') else ""))
         lbl.setToolTip(text_content)
         
