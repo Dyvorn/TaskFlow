@@ -208,6 +208,7 @@ from ui.shared_widgets import (
     AnimationManager,
     ConfettiOverlay,
     TaskRowWidget,
+    DynamicListWidget,
 )
 from .widget import WidgetWindow
 from ui.coach import CoachWidget
@@ -2064,30 +2065,6 @@ class TaskCalendarWidget(QCalendarWidget):
             event.accept()
         else:
             super().dropEvent(event)
-
-class DynamicListWidget(QListWidget):
-    """
-    A QListWidget that resizes items on window resize to support word-wrapping.
-    """
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        width = self.viewport().width()
-        for i in range(self.count()):
-            item = self.item(i)
-            widget = self.itemWidget(item)
-            if widget:
-                widget.setFixedWidth(width)
-                # Use sizeHint(), not minimumSizeHint(). For a word-wrapped label,
-                # minimumSizeHint() can report the height of a single line, causing
-                # the cutoff issue. sizeHint() correctly calculates the required
-                # height based on the layout after the width has been fixed.
-                item.setSizeHint(widget.sizeHint())
-                widget.setMinimumWidth(0)
-                widget.setMaximumWidth(16777215)
 
 class ReorderableListWidget(DynamicListWidget):
     """

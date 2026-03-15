@@ -62,7 +62,7 @@ from core.model import (
     now_iso,
 )
 
-from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget
+from .shared_widgets import AnimationManager, ConfettiOverlay, TaskRowWidget, DynamicListWidget
 
 try:
     from ai.processor import CommandParser
@@ -315,7 +315,7 @@ class WidgetWindow(QWidget):
         self.content_layout.addLayout(header_row)
 
         # Task List
-        self.tasks_list = QListWidget()
+        self.tasks_list = DynamicListWidget()
         self.tasks_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tasks_list.customContextMenuRequested.connect(self._on_context_menu)
         self.content_layout.addWidget(self.tasks_list, 1)

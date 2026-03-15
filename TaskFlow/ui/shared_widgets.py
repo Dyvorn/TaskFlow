@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Callable
 from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QVariantAnimation, QRectF
 from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame, QSizePolicy, QListWidget
 
 from core.model import (
     GOLD,
@@ -377,3 +377,33 @@ class ConfettiOverlay(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(QPointF(p["x"], p["y"]), p["size"]/2, p["size"]/2)
         painter.end()
+
+class DynamicListWidget(QListWidget):
+    """
+    A QListWidget that resizes items on window resize to support word-wrapping.
+    Calculates item height dynamically based on the width constraint.
+    """
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.setSpacing(2)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        # Defer layout calculation to ensure viewport geometry is finalized
+        QTimer.singleShot(0, self._adjust_item_heights)
+
+    def _adjust_item_heights(self) -> None:
+        width = self.viewport().width()
+        for i in range(self.count()):
+            item = self.item(i)
+            widget = self.itemWidget(item)
+            if widget:
+                widget.setFixedWidth(width)
+                widget.layout().invalidate()
+                widget.layout().activate()
+                sz = widget.sizeHint()
+                # Add buffer to prevent cutoff of descenders or bottom margins
+                item.setSizeHint(QSize(width, sz.height() + 8))
+        
+        self.doItemsLayout()
