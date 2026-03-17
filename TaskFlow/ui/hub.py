@@ -6091,6 +6091,7 @@ class HubWindow(QMainWindow):
                     # AI Complexity
                     diff = 1
                     xp = 10
+                    dur = 0
                     if self.ai_engine:
                         diff = self.ai_engine.insights.analyze_task_complexity(task_text)
                         xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": diff})

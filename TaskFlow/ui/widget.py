@@ -98,7 +98,9 @@ class WidgetWindow(QWidget):
         self._save_callback = save_callback
         self._hub = hub_instance
 
-        if CommandParser:
+        if self._hub:
+            self.command_parser = self._hub.command_parser
+        elif CommandParser:
             self.command_parser = CommandParser()
         else:
             self.command_parser = None

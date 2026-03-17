@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Callable
 
 from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QVariantAnimation, QRectF
 from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame, QSizePolicy, QListWidget
 
 from core.model import (
@@ -317,7 +316,7 @@ class TaskRowWidget(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, 'difficulty_indicator') and self.difficulty_indicator:
-             self.difficulty_indicator.move(6, (self.height() - 18) // 2)
+             self.difficulty_indicator.move(2, (self.height() - 18) // 2)
 
 class ConfettiOverlay(QWidget):
     """
