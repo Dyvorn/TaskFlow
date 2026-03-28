@@ -16,7 +16,7 @@ from PyQt6.QtCore import (
     QParallelAnimationGroup,
     QPointF,
 )
-from PyQt6.QtGui import QMouseEvent, QColor, QPainter, QPen
+from PyQt6.QtGui import QEnterEvent, QMouseEvent, QColor, QPainter, QPen
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -755,14 +755,14 @@ class WidgetWindow(QWidget):
             event.accept()
         super().mouseReleaseEvent(event)
 
-    def enterEvent(self, event) -> None:
+    def enterEvent(self, event: QEnterEvent) -> None:
         if self._docked and not self._expanded:
             if self._hover_expand_enabled and not self._long_idle_mode:
                 self._hover_open_timer.start(300) # Faster response (was 1500)
         self._restart_idle_timers()
         super().enterEvent(event)
 
-    def leaveEvent(self, event) -> None:
+    def leaveEvent(self, event: QEnterEvent) -> None:
         self._hover_open_timer.stop()
         self._restart_idle_timers()
         super().leaveEvent(event)

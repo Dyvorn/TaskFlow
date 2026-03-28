@@ -252,10 +252,10 @@ class TaskRowWidget(QWidget):
         lbl = QLabel()
         lbl.setWordWrap(True)
         lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        lbl.setStyleSheet(f"color: {TEXT_GRAY if self.task.get('completed') else (GOLD if self.task.get('important') else TEXT_WHITE)};" + ("text-decoration: line-through;" if self.task.get('completed') else ""))
+        lbl.setStyleSheet(f"color: {TEXT_GRAY if self.task.get('completed') else (GOLD if self.task.get('important') else TEXT_WHITE)}; font-weight: {'bold' if self.task.get('important') else 'normal'};" + ("text-decoration: line-through;" if self.task.get('completed') else ""))
         lbl.setToolTip(text_content)
         
-        lbl.setText(f"{html.escape(text_content)}<br><span style='color:{TEXT_GRAY}; font-size:10px;'>{'  '.join(meta_info)}</span>" if meta_info else html.escape(text_content))
+        lbl.setText(f"{html.escape(text_content)}<br><span style='color:{TEXT_GRAY}; font-size:10px; line-height: 140%;'>{' &nbsp; '.join(meta_info)}</span>" if meta_info else html.escape(text_content))
 
         focus_btn = QPushButton("👁")
         focus_btn.setFixedSize(QSize(24, 24))

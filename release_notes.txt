@@ -1,0 +1,14 @@
+TaskFlow Version 10.0 - "The AI Command Center"
+
+WHAT'S NEW:
+
+* Contextual Home Dashboard: A brand new 3-column layout that prioritizes your Focus, AI Insights, and Wellness separately.
+* Intuitive Feedback: Dynamic badges on the AI Coach button and sidebar pulsing alert you to pending reviews or new suggestions.
+* Restructured Navigation: Clean, logical sections for Planning, Tasks, Wellbeing, and System tools.
+* AI Coach Integration: Deep integration with the Neural Network brain for better task complexity analysis and proactive suggestions.
+* Zen Mode Enhancements: Improved focus environment with Pomodoro logic and soundscape volume controls.
+* Activity Heatmap: Track your long-term productivity with a GitHub-style activity contribution graph.
+* Voice AI Improvements: More stable transcription and intent parsing.
+* Global Search: Find any task across all sections instantly.
+
+Thank you for helping TaskFlow grow! Plan well and breathe.

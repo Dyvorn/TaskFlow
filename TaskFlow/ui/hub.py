@@ -341,6 +341,7 @@ class SplashWindow(QMainWindow):
         self._load_start_time = time.time()
         self._min_duration_ms = 2000  # Minimum 2 seconds
         self._progress_bar = None
+        self._bg_progress = 0.0
         self.card = None
 
         self._build_ui()
@@ -404,41 +405,38 @@ class SplashWindow(QMainWindow):
         card_layout.addWidget(self.content_container)
         layout.addWidget(self.card)
 
-        # Initial Style
-        self._update_style(0.0)
+        self.setStyleSheet("QMainWindow { background-color: transparent; }")
 
     def _update_style(self, progress: float) -> None:
-        """Interpolates background color from Splash Gradient to Hub Dark Grey."""
-        # Start: rgba(20, 30, 60, 220) -> End: rgba(18, 18, 18, 255) (#121212)
-        def interp(a, b, p):
-            return int(a + (b - a) * p)
+        """Update background progress and trigger repaint."""
+        self._bg_progress = progress
+        self.update()
 
-        r = interp(20, 18, progress)
-        g = interp(30, 18, progress)
-        b = interp(60, 18, progress)
-        a = interp(220, 255, progress)
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Interpolate background color from Splash Gradient to Hub Dark Grey
+        p = self._bg_progress
+        r = int(20 + (18 - 20) * p)
+        g = int(30 + (18 - 30) * p)
+        b = int(60 + (18 - 60) * p)
+        a = int(220 + (255 - 220) * p)
+
+        r2 = int(10 + (18 - 10) * p)
+        g2 = int(15 + (18 - 15) * p)
+        b2 = int(30 + (18 - 30) * p)
+
+        gradient = QLinearGradient(0, 0, self.width(), self.height())
+        gradient.setColorAt(0, QColor(r, g, b, a))
+        gradient.setColorAt(1, QColor(r2, g2, b2, a))
+
+        painter.setBrush(QBrush(gradient))
+        painter.setPen(QPen(QColor(GLASS_BORDER), 1))
         
-        # Second stop for gradient (fading to flat color)
-        r2 = interp(10, 18, progress)
-        g2 = interp(15, 18, progress)
-        b2 = interp(30, 18, progress)
-
-        self.setStyleSheet(
-            f"""
-            QMainWindow {{
-                background-color: transparent;
-            }}
-            QFrame#SplashCard {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba({r}, {g}, {b}, {a}),
-                    stop:1 rgba({r2}, {g2}, {b2}, {a})
-                );
-                border-radius: 24px;
-                border: 1px solid {GLASS_BORDER};
-            }}
-            """
-        )
+        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        painter.drawRoundedRect(rect, 24, 24)
+        painter.end()
 
     def _center_on_screen(self) -> None:
         screen = QApplication.primaryScreen()
@@ -3694,9 +3692,22 @@ class HubWindow(QMainWindow):
         """Starts background checks and dialogs after the window is fully visible."""
         self._check_updates_async()
         QTimer.singleShot(500, self._run_start_of_day_flow)
+        QTimer.singleShot(1000, self._check_ai_notifications)
         # Show a helpful tip and "What's New" after a short delay
         QTimer.singleShot(1500, self._check_for_whats_new)
         QTimer.singleShot(3000, self._show_tip_of_the_day)
+
+    def _check_ai_notifications(self):
+        """Checks if AI has suggestions and pulses the coach button if so."""
+        if self.ai_engine:
+            suggestions = self.ai_engine.get_proactive_suggestions(self.state)
+            queue = self.ai_engine.get_review_queue()
+            total_alerts = len(suggestions) + len(queue)
+            if total_alerts > 0:
+                self.btn_profile.setText(f"🤖 AI Coach ({total_alerts})")
+                AnimationManager.pulse(self.btn_profile)
+            else:
+                self.btn_profile.setText("🤖 AI Coach")
 
     def _init_voice_ai(self):
         """Loads the Whisper model and CommandParser in the background."""
@@ -3835,7 +3846,7 @@ class HubWindow(QMainWindow):
     def _create_nav_group(self, nav_layout: QVBoxLayout, title: str, buttons: List[QPushButton]) -> None:
         """Helper to create a titled group of navigation buttons."""
         lbl = QLabel(title)
-        lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px; font-weight: bold; margin-top: 16px; margin-bottom: 4px; letter-spacing: 1px;")
+        lbl.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 10px; font-weight: bold; margin-top: 12px; margin-bottom: 2px; margin-left: 12px; letter-spacing: 1px;")
         nav_layout.addWidget(lbl)
         for btn in buttons:
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -3889,13 +3900,13 @@ class HubWindow(QMainWindow):
             QFrame#NavBar QPushButton:checked {{
                 background-color: rgba(255, 215, 0, 0.12);
                 color: {GOLD};
-                border-left: 4px solid {GOLD};
+                border-left: 3px solid {GOLD};
                 font-weight: 800;
             }}
             QLabel {{
                 color: {TEXT_WHITE};
             }}
-            QTextEdit, QComboBox, QLineEdit, QSpinBox {{
+            QTextEdit, QComboBox, QLineEdit, QSpinBox, QCalendarWidget {{
                 background-color: rgba(0, 0, 0, 0.3);
                 color: {TEXT_WHITE};
                 border-radius: 12px;
@@ -4009,36 +4020,52 @@ class HubWindow(QMainWindow):
         nav_layout.addWidget(title)
         nav_layout.addSpacing(6)
 
-        # --- Navigation Groups ---
-        self.btn_home = QPushButton("🏠 Home")
-        self.btn_stats = QPushButton("📊 Stats")
-        self.btn_profile = QPushButton("🤖 AI Coach")
-        self._create_nav_group(nav_layout, "DASHBOARD", [self.btn_home, self.btn_stats, self.btn_profile])
+        # --- Scrollable Top Section ---
+        self.nav_scroll_content = QWidget()
+        self.nav_scroll_layout = QVBoxLayout(self.nav_scroll_content)
+        self.nav_scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.nav_scroll_layout.setSpacing(4)
 
+        # Group 1: PLANNING (Core Productivity)
+        self.btn_home = QPushButton("🏠 Home")
         self.btn_today = QPushButton("☀️ Today")
         self.btn_scheduled = QPushButton("📅 Scheduled")
         self.btn_week = QPushButton("🗓️ This Week")
-        self.btn_someday = QPushButton("💡 Someday")
-        self._create_nav_group(nav_layout, "TASKS", [self.btn_today, self.btn_scheduled, self.btn_week, self.btn_someday])
+        self._create_nav_group(self.nav_scroll_layout, "PLANNING", [self.btn_home, self.btn_today, self.btn_scheduled, self.btn_week])
 
+        # Group 2: TASKS & ORGANIZATION
         self.btn_projects = QPushButton("📂 Projects")
-        self.btn_journal = QPushButton("📓 Journal")
-        self._create_nav_group(nav_layout, "ORGANIZE", [self.btn_projects, self.btn_journal])
-
+        self.btn_someday = QPushButton("💡 Someday")
         self.btn_search = QPushButton("🔍 Search")
-        self.btn_focus = QPushButton("🧘 Focus Mode")
+        self._create_nav_group(self.nav_scroll_layout, "TASKS", [self.btn_projects, self.btn_someday, self.btn_search])
+
+        # Group 3: WELLBEING (Health & Mindset)
+        self.btn_journal = QPushButton("📓 Journal")
+        self.btn_profile = QPushButton("🤖 AI Coach")
         self.btn_panic = QPushButton("🆘 Panic Relief")
-        self._create_nav_group(nav_layout, "TOOLS", [self.btn_search, self.btn_focus, self.btn_panic])
+        self._create_nav_group(self.nav_scroll_layout, "WELLBEING", [self.btn_journal, self.btn_profile, self.btn_panic])
 
-        nav_layout.addStretch(1)
+        # Group 4: ANALYTICS
+        self.btn_stats = QPushButton("📊 Stats")
+        self._create_nav_group(self.nav_scroll_layout, "INSIGHTS", [self.btn_stats])
 
-        # Bottom Actions - Separator between Focus Mode and Settings
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFrameShadow(QFrame.Shadow.Sunken)
-        sep.setStyleSheet(f"background-color: {GLASS_BORDER}; margin-top: 8px; margin-bottom: 8px;")
-        sep.setFixedHeight(1)
-        nav_layout.addWidget(sep)
+        # Group 5: TOOLS
+        self.btn_focus = QPushButton("🧘 Focus Mode")
+        self._create_nav_group(self.nav_scroll_layout, "TOOLS", [self.btn_focus])
+
+        self.nav_scroll_area.setWidget(self.nav_scroll_content)
+        nav_layout.addWidget(self.nav_scroll_area, 1)
+
+        # --- Static Bottom Section (SYSTEM) ---
+        bottom_container = QFrame()
+        bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(0, 8, 0, 0)
+        bottom_layout.setSpacing(4)
+
+        bottom_layout.addWidget(self._create_separator())
+        lbl_sys = QLabel("SYSTEM")
+        lbl_sys.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 9px; font-weight: 800; margin-left: 14px; margin-top: 4px; margin-bottom: 2px; letter-spacing: 1.5px;")
+        bottom_layout.addWidget(lbl_sys)
 
         self.btn_tips = QPushButton("💡 Tips")
         self.btn_settings = QPushButton("⚙️ Settings")
@@ -4047,26 +4074,17 @@ class HubWindow(QMainWindow):
         self.btn_check_updates = QPushButton("🔄 Check updates")
         self.btn_quit = QPushButton("🚪 Exit Hub")
 
-        # Add Settings, Support, Feedback, Tips
-        for btn in (self.btn_settings, self.btn_support, self.btn_feedback, self.btn_tips):
+        for btn in (self.btn_tips, self.btn_feedback, self.btn_support, self.btn_settings, self.btn_check_updates, self.btn_quit):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            nav_layout.addWidget(btn)
+            # These two map to actual pages in the stack, so they should be checkable
+            if btn in (self.btn_settings, self.btn_support):
+                btn.setCheckable(True)
+            # System buttons use smaller padding
+            btn.setStyleSheet(btn.styleSheet() + "padding: 6px 12px;")
+            bottom_layout.addWidget(btn)
 
-        # Separator after Tips
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setFrameShadow(QFrame.Shadow.Sunken)
-        sep2.setStyleSheet(f"background-color: {GLASS_BORDER}; margin-top: 8px; margin-bottom: 8px;")
-        sep2.setFixedHeight(1)
-        nav_layout.addWidget(sep2)
-
-        # Add Check updates and Exit Hub
-        for btn in (self.btn_check_updates, self.btn_quit):
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            nav_layout.addWidget(btn)
-
-        self.nav_scroll_area.setWidget(self.nav_frame)
-        root.addWidget(self.nav_scroll_area)
+        nav_layout.addWidget(bottom_container)
+        root.addWidget(self.nav_frame)
 
         # Right pages
         self.stack = QStackedWidget()
@@ -4145,6 +4163,21 @@ class HubWindow(QMainWindow):
         
         # Initialize keyboard shortcuts
         self._setup_shortcuts()
+
+        # Periodic AI notification check
+        self._notif_timer = QTimer(self)
+        self._notif_timer.setInterval(30000) # Check every 30s
+        self._notif_timer.timeout.connect(self._check_ai_notifications)
+        self._notif_timer.start()
+
+    def _create_separator(self) -> QFrame:
+        """Standardized horizontal separator."""
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        sep.setStyleSheet(f"background-color: {GLASS_BORDER}; margin: 4px 8px;")
+        sep.setFixedHeight(1)
+        return sep
 
     def show_toast(self, message: str):
         """Displays a non-intrusive toast notification."""
@@ -4283,44 +4316,55 @@ class HubWindow(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(20)
         
-        # --- Card 1: Focus (Top Left) ---
+        # --- Card 1: Focus (Left) ---
         self.card_focus = self._build_home_focus_card()
         grid.addWidget(self.card_focus, 0, 0)
         
-        # --- Card 2: Insights & Wellness (Top Right) ---
+        # --- Card 2: AI Coach Insights (Middle) ---
         self.card_insights = QFrame()
         self.card_insights.setObjectName("GlassCard")
         l_insights = QVBoxLayout(self.card_insights)
         l_insights.setContentsMargins(20, 20, 20, 20)
-        
-        l_insights.addWidget(QLabel("🧠 AI Insights"))
+        l_insights.addWidget(QLabel("🧠 Assistant"))
         
         self.suggestion_label = QLabel("Analyzing...")
         self.suggestion_label.setWordWrap(True)
         self.suggestion_label.setStyleSheet(f"font-style: italic; color: {TEXT_WHITE}; font-size: 14px;")
         l_insights.addWidget(self.suggestion_label)
+        l_insights.addStretch()
         
-        l_insights.addSpacing(15)
-        
+        btn_open_coach = QPushButton("Talk to Coach →")
+        btn_open_coach.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_open_coach.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 12px; padding: 8px; border: 1px solid {GLASS_BORDER};")
+        btn_open_coach.clicked.connect(lambda: self._switch_page(self.page_profile))
+        l_insights.addWidget(btn_open_coach)
+        grid.addWidget(self.card_insights, 0, 1)
+
+        # --- Card 3: Wellness & Progress (Right) ---
+        self.card_wellness = QFrame()
+        self.card_wellness.setObjectName("GlassCard")
+        l_wellness = QVBoxLayout(self.card_wellness)
+        l_wellness.setContentsMargins(20, 20, 20, 20)
+        l_wellness.addWidget(QLabel("🌿 Wellness"))
+
         self.snapshot_summary = QLabel("Mood & Habits")
         self.snapshot_summary.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
-        l_insights.addWidget(self.snapshot_summary)
-        
-        # Habits Container
+        l_wellness.addWidget(self.snapshot_summary)
+
         self.habits_container = QWidget()
         self.habits_layout = QHBoxLayout(self.habits_container)
         self.habits_layout.setContentsMargins(0, 0, 0, 0)
         self.habits_layout.setSpacing(8)
         self.habits_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        l_insights.addWidget(self.habits_container)
+        l_wellness.addWidget(self.habits_container)
 
         self.snapshot_hint = QLabel("")
         self.snapshot_hint.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 11px;")
-        l_insights.addWidget(self.snapshot_hint)
+        l_wellness.addWidget(self.snapshot_hint)
+        l_wellness.addStretch()
+        grid.addWidget(self.card_wellness, 0, 2)
         
-        l_insights.addStretch()
-        
-        # --- Card 3: Quick Capture (Bottom) ---
+        # --- Card 4: Quick Capture (Bottom) ---
         self.card_capture = QFrame()
         self.card_capture.setObjectName("GlassCard")
         l_capture = QVBoxLayout(self.card_capture)
@@ -4358,13 +4402,13 @@ class HubWindow(QMainWindow):
         self.ideas_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.ideas_list.customContextMenuRequested.connect(self._on_idea_menu)
         l_capture.addWidget(self.ideas_list)
-        
-        grid.addWidget(self.card_insights, 0, 1)
-        grid.addWidget(self.card_capture, 1, 0, 1, 2) # Span 2 columns
-        
+
+        grid.addWidget(self.card_capture, 1, 0, 1, 3) # Span all 3 columns
+
         # Column weights
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
         
         layout.addLayout(grid)
         
@@ -5770,8 +5814,12 @@ class HubWindow(QMainWindow):
 
         # Use AI for the home suggestion
         if self.ai_engine:
+            queue = self.ai_engine.get_review_queue()
             suggestions = self.ai_engine.get_proactive_suggestions(self.state)
-            if suggestions:
+            
+            if queue:
+                self.suggestion_label.setText(f"🙋 <b>Question:</b> I have {len(queue)} items to review in the Coach. Helping me learn improves your experience!")
+            elif suggestions:
                 self.suggestion_label.setText(f"💡 {suggestions[0]['text']}")
             else:
                 self.suggestion_label.setText(f"<i>AI Coach is analyzing...</i>")

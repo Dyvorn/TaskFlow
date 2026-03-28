@@ -1,6 +1,6 @@
 # TaskFlow
 
-A modern, AI-powered productivity application designed to help you manage tasks, optimize your workflow, and stay organized.
+A modern, AI-powered productivity workspace designed to help you plan, focus, and breathe. Version 10.0 introduces deep AI integration and a responsive dashboard layout.
 
 ## Features
 
@@ -11,9 +11,12 @@ A modern, AI-powered productivity application designed to help you manage tasks,
 - **Hub Interface**: Centralized dashboard for managing all aspects of your productivity
 
 ### Key Highlights
-- Intuitive user interface built with modern web technologies
-- Seamless integration with AI-powered features
-- Real-time synchronization and updates
+- **🏠 Contextual Dashboard**: A 3-column home view balancing your goals, assistant insights, and wellbeing.
+- **🧠 AI Coach**: A local neural network that learns your habits and suggests better planning.
+- **🧘 Zen Mode**: An immersive focus screen with Pomodoro logic and calming soundscapes.
+- **🎙️ Voice Commands**: Add tasks or log moods using natural speech.
+- **📊 Advanced Insights**: Completion rates, activity heatmaps, and productivity scoring.
+- **🔔 Intuitive Feedback**: Dynamic notification badges and sidebar pulsing to highlight AI insights.
 - Responsive design for desktop and tablet use
 
 ## Project Structure
