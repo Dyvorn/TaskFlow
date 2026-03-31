@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 import os
 import json
+import subprocess
 
 # Ensure project root is in sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1233,6 +1234,77 @@ class SomedayReviewDialog(ShadowedDialog):
     def _finalize_remove(self, frame):
         frame.hide()
         frame.deleteLater()
+
+class UpdateDownloadWorker(QThread):
+    """
+    Background worker to download the update installer.
+    """
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent)
+        self.url = url
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def run(self):
+        if requests is None:
+            self.error.emit("The 'requests' library is not available.")
+            return
+
+        try:
+            # Use temp directory for the installer
+            temp_dir = os.environ.get("TEMP", os.path.expanduser("~"))
+            local_filename = os.path.join(temp_dir, "TaskFlow_Setup_Update.exe")
+            
+            # Request installer with streaming enabled to track progress
+            with requests.get(self.url, stream=True, timeout=30) as r:
+                r.raise_for_status()
+                total_size = int(r.headers.get('content-length', 0))
+                downloaded = 0
+                
+                with open(local_filename, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if self._is_cancelled:
+                            return
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0:
+                                self.progress.emit(int(downloaded * 100 / total_size))
+            
+            if not self._is_cancelled:
+                self.finished.emit(local_filename)
+        except Exception as e:
+            self.error.emit(str(e))
+
+class UpdateDownloadDialog(ShadowedDialog):
+    """
+    Dialog showing download progress for an update.
+    """
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent, "Downloading Update")
+        self.setMinimumWidth(350)
+        
+        lbl = QLabel("Downloading TaskFlow setup... Please wait.")
+        lbl.setStyleSheet(f"color: {TEXT_WHITE};")
+        self.add_widget(lbl)
+        
+        self.progress = QProgressBar()
+        self.progress.setStyleSheet(f"""
+            QProgressBar {{ background-color: rgba(255,255,255,0.05); border-radius: 6px; border: none; height: 12px; }} 
+            QProgressBar::chunk {{ background-color: {GOLD}; border-radius: 6px; }}
+        """)
+        self.add_widget(self.progress)
+        
+        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_cancel.setStyleSheet(f"background-color: {HOVER_BG}; color: {TEXT_WHITE}; border-radius: 10px; margin-top: 10px;")
+        self.add_widget(self.btn_cancel)
 
 class WeeklyReviewDialog(ShadowedDialog):
     """
@@ -6383,15 +6455,18 @@ class HubWindow(QMainWindow):
         )
         checkbox = QCheckBox("Don't remind me about this version again")
         msg.setCheckBox(checkbox)
+        
         if download_url:
-            msg.setInformativeText(
-                "Would you like to open the download page?"
-            )
-            msg.setStandardButtons(
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel
-            )
-            ret = msg.exec()
-            if ret == QMessageBox.StandardButton.Ok:
+            msg.setInformativeText("A newer version is ready. Would you like to download and install it automatically?")
+            btn_install = msg.addButton("Install Now", QMessageBox.ButtonRole.AcceptRole)
+            btn_browser = msg.addButton("Open GitHub", QMessageBox.ButtonRole.ActionRole)
+            msg.addButton(QMessageBox.StandardButton.Cancel)
+            
+            msg.exec()
+            
+            if msg.clickedButton() == btn_install:
+                self._start_automatic_update(download_url)
+            elif msg.clickedButton() == btn_browser:
                 open_url_safe(download_url)
         else:
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -6400,6 +6475,43 @@ class HubWindow(QMainWindow):
         if checkbox.isChecked():
             stats["lastIgnoredVersion"] = latest_version
             self.schedule_save()
+
+    def _start_automatic_update(self, url: str):
+        self.update_dlg = UpdateDownloadDialog(self)
+        self.update_worker = UpdateDownloadWorker(url)
+        
+        self.update_worker.progress.connect(self.update_dlg.progress.setValue)
+        self.update_worker.finished.connect(self._on_update_download_finished)
+        self.update_worker.error.connect(self._on_update_download_error)
+        
+        self.update_dlg.btn_cancel.clicked.connect(self.update_worker.cancel)
+        self.update_dlg.btn_cancel.clicked.connect(self.update_dlg.reject)
+        
+        self.update_dlg.show()
+        self.update_worker.start()
+
+    def _on_update_download_finished(self, path: str):
+        self.update_dlg.accept()
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            res = QMessageBox.question(self, "Restart Required", 
+                                       "Installer downloaded successfully. Close TaskFlow and start installation?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if res == QMessageBox.StandardButton.Yes:
+                try:
+                    # Launch installer detached
+                    if sys.platform == "win32":
+                        os.startfile(path)
+                    else:
+                        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+                    self._force_quit()
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to launch installer: {e}")
+        else:
+            QMessageBox.critical(self, "Error", "Downloaded installer file is invalid.")
+
+    def _on_update_download_error(self, err: str):
+        self.update_dlg.reject()
+        QMessageBox.critical(self, "Update Error", f"Download failed: {err}")
 
     def _on_save_mood(self) -> None:
         value = self.mood_combo.currentText()
@@ -6642,3 +6754,9 @@ if __name__ == "__main__":
 # [ ] Advanced Natural Language Parsing for subtasks (e.g., 'Do X then Y then Z').
 # [ ] Gamified "Boss Fights": Visualize "Epic" tasks as monsters that require multiple "Focus Hits" to defeat.
 # [ ] Immersive "Focus Environments": Dynamic shaders for Zen Mode (Rainy Window, Cyberpunk Library).
+# [ ] Global Search Shortcuts: Use a pop-up spotlight-style search (like Raycast or macOS Spotlight).
+# [ ] Canvas Mode: A whiteboard-style view where projects and tasks can be connected visually via lines.
+# [ ] Collaborative Tasks: Basic P2P task sharing via local network or encrypted file exchange.
+# [ ] Task Timeline: A Gantt-chart style horizontal view for project planning.
+# [ ] Shared Workspaces: Real-time collaboration on project boards via WebSockets.
+# [ ] Mobile Companion: Lightweight PWA or React Native app for on-the-go task capture.

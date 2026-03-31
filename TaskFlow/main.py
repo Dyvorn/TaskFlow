@@ -216,3 +216,11 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / MAINTENANCE LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Environment Setup Script: Automate the PyTorch DLL fix and dependency installation for new users.
+# [ ] CLI Interface: Add a `--headless` mode to allow task management via command line.
+# [ ] Plugin System: Allow third-party extensions to add new pages or AI features.
+# [ ] Telemetry (Opt-in): Anonymized usage data to help prioritize feature development.

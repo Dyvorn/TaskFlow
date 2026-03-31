@@ -982,3 +982,7 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
 # [ ] History/Versioning for individual tasks.
 # [ ] Zero-Knowledge Encryption: Encrypt task content locally before saving to JSON.
 # [ ] Task Dependency Mapping: Link tasks with "Blocks" or "Is Blocked By" relationships.
+# [ ] Database Migration: Move from flat JSON to SQLite for better performance with large history logs.
+# [ ] Conflict Resolution: Robust merging for multi-device sync scenarios.
+# [ ] Custom Fields: Allow users to define their own task properties (e.g., "URL", "Price", "Priority Score").
+# [ ] Archive Auto-Cleanup: Set TTL (Time To Live) for archived tasks to keep the database lean.

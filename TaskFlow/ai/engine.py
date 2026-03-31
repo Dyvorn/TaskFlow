@@ -625,6 +625,7 @@ class AIEngine:
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST
 # ═══════════════════════════════════════════════════════════════════════════
+# [ ] Neural Duration Estimation: Replace heuristics in `estimate_duration` with a model trained on `actualDuration`.
 # [ ] Integrate a small local LLM (like Phi-2) for complex task breakdown.
 # [ ] Implement 'Time-of-Day' prediction for tasks (When do I usually do X?).
 # [ ] Add 'Burnout Prevention' logic that suggests forced breaks.
@@ -636,5 +637,8 @@ class AIEngine:
 # [ ] Mood-Velocity Correlation: Analyze if specific moods (e.g., 'Stressed') lead to higher task deletion rates.
 # [ ] Semantic Task Search: Find tasks based on meaning (e.g., searching for "car stuff" finds "oil change").
 # [ ] Focus Environment Recommendations: Suggest specific soundscapes based on the task category.
-# [ ] Biometric energy integration: Suggest "Deep Work" when heart-rate variability (HRV) is high.
-# [ ] Predictive "Task Ghosting": Automatically identify and archive tasks that have been ignored for >30 days.
+# [ ] Subtask Auto-Extraction: Use an LLM to automatically generate subtasks for any task with complexity > 3.
+# [ ] Drift Detection: Identify tasks that are frequently rescheduled and prompt for a priority re-evaluation.
+# [ ] Workflow Templates: Suggest "Design -> Build -> Test" flows when certain keywords are detected.
+# [ ] Cognitive Load Balancing: Warn the user if they've scheduled too many "Hard" tasks in a single morning.
+# [ ] Peer Benchmarking: (Opt-in) Compare productivity trends with anonymized aggregated data from other users.
