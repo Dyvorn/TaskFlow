@@ -5,7 +5,7 @@ import html
 from typing import Any, Dict, List, Optional, Callable
 
 from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QVariantAnimation, QRectF
-from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush
+from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush, QRadialGradient, QPainterPath, QFont
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame, QSizePolicy, QListWidget
 
 from core.model import (
@@ -122,6 +122,24 @@ class AnimationManager:
         anim.finished.connect(lambda: widget.setGraphicsEffect(None))
         anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
+    @staticmethod
+    def shake(widget: QWidget):
+        """Standard shake animation for errors or invalid actions."""
+        orig_pos = widget.pos()
+        anim = QVariantAnimation(widget)
+        anim.setDuration(400)
+        anim.setStartValue(0)
+        anim.setEndValue(10) # Amplitude
+        anim.setEasingCurve(QEasingCurve.Type.OutElastic)
+        
+        def update_pos(val):
+            offset = math.sin(val * 4 * math.pi) * (10 - val)
+            widget.move(orig_pos.x() + int(offset), orig_pos.y())
+            
+        anim.valueChanged.connect(update_pos)
+        anim.finished.connect(lambda: widget.move(orig_pos))
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+
 class AnimatedCheckbox(QPushButton):
     """A custom checkbox with a smooth fill animation."""
     def __init__(self, checked: bool = False, parent=None):
@@ -137,7 +155,7 @@ class AnimatedCheckbox(QPushButton):
         
         self._anim = QVariantAnimation()
         self._anim.setDuration(300)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutBack)
+        self._anim.setEasingCurve(QEasingCurve.Type.InOutBack)  # More elastic feel
         self._anim.valueChanged.connect(self._update_anim)
 
     def setChecked(self, checked: bool):
@@ -223,10 +241,15 @@ class TaskRowWidget(QWidget):
             #TaskRow {{
                 border-radius: 12px;
                 background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid transparent;
                 {important_style}
             }}
-            #TaskRow:hover {{ background-color: rgba(255, 255, 255, 0.1); border-color: rgba(255, 215, 0, 0.4); }}
+            #TaskRow:hover {{ 
+                background-color: rgba(255, 255, 255, 0.08); 
+                border: 1px solid rgba(255, 215, 0, 0.3);
+            }}
         """)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         hl = QHBoxLayout(self)
         hl.setContentsMargins(6, 2, 6, 2)
@@ -406,3 +429,130 @@ class DynamicListWidget(QListWidget):
                 item.setSizeHint(QSize(width, sz.height() + 8))
         
         self.doItemsLayout()
+
+class LevelUpOverlay(QWidget):
+    """ Cinematic overlay for level-up events with rotating rays and a golden glow. """
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.hide()
+        
+        self.new_level = 1
+        self._glow_opacity = 0.0
+        self._text_scale = 0.0
+        self._rotation = 0.0
+        
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._rotate)
+
+    def _rotate(self):
+        self._rotation += 1.5
+        self.update()
+
+    def show_level_up(self, level: int):
+        self.new_level = level
+        if self.parent():
+            self.resize(self.parent().size())
+        self.show()
+        self.raise_()
+        
+        self.group = QParallelAnimationGroup(self)
+        
+        # Glow/Flash animation
+        self.glow_anim = QVariantAnimation()
+        self.glow_anim.setDuration(2500)
+        self.glow_anim.setStartValue(0.0)
+        self.glow_anim.setKeyValueAt(0.2, 1.0)
+        self.glow_anim.setKeyValueAt(0.8, 0.8)
+        self.glow_anim.setEndValue(0.0)
+        self.glow_anim.valueChanged.connect(self._set_glow)
+        
+        # Text scale/pop animation
+        self.text_anim = QVariantAnimation()
+        self.text_anim.setDuration(1200)
+        self.text_anim.setStartValue(0.0)
+        self.text_anim.setEndValue(1.0)
+        self.text_anim.setEasingCurve(QEasingCurve.Type.OutBack)
+        self.text_anim.valueChanged.connect(self._set_scale)
+        
+        self.group.addAnimation(self.glow_anim)
+        self.group.addAnimation(self.text_anim)
+        
+        self.group.finished.connect(self._finish)
+        self.group.start()
+        self._anim_timer.start(16)
+
+    def _set_glow(self, val): self._glow_opacity = val; self.update()
+    def _set_scale(self, val): self._text_scale = val; self.update()
+    def _finish(self):
+        self._anim_timer.stop()
+        self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2
+        
+        # 1. Background Glow
+        if self._glow_opacity > 0:
+            grad = QRadialGradient(QPointF(cx, cy), max(w, h) / 2)
+            grad.setColorAt(0, QColor(255, 215, 0, int(180 * self._glow_opacity)))
+            grad.setColorAt(1, Qt.GlobalColor.transparent)
+            painter.setBrush(grad)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(self.rect())
+            
+            # 2. Rotating Victory Rays
+            painter.save()
+            painter.translate(cx, cy)
+            painter.rotate(self._rotation)
+            ray_color = QColor(GOLD)
+            ray_color.setAlpha(int(120 * self._glow_opacity))
+            painter.setBrush(ray_color)
+            for i in range(12):
+                painter.rotate(30)
+                path = QPainterPath()
+                path.moveTo(0, 0)
+                path.lineTo(-50, -max(w, h))
+                path.lineTo(50, -max(w, h))
+                path.closeSubpath()
+                painter.drawPath(path)
+            painter.restore()
+
+        # 3. Text pop-in
+        if self._text_scale > 0:
+            painter.save()
+            painter.translate(cx, cy)
+            painter.scale(self._text_scale, self._text_scale)
+            
+            font = QFont("Segoe UI", 72, QFont.Weight.ExtraBold)
+            painter.setFont(font)
+            
+            # Draw shadow for depth
+            painter.setPen(QColor(0, 0, 0, 100))
+            painter.drawText(QRectF(-400, -150, 800, 150), Qt.AlignmentFlag.AlignCenter, "LEVEL UP!")
+            
+            # Draw main golden text
+            painter.setPen(QColor(GOLD))
+            painter.drawText(QRectF(-404, -154, 800, 150), Qt.AlignmentFlag.AlignCenter, "LEVEL UP!")
+            
+            # New Level number
+            font.setPointSize(48)
+            painter.setFont(font)
+            painter.setPen(QColor(TEXT_WHITE))
+            painter.drawText(QRectF(-400, 0, 800, 100), Qt.AlignmentFlag.AlignCenter, f"Level {self.new_level}")
+            
+            painter.restore()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / IDEAS LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Add 'Ghost' loading state for list items during heavy processing.
+# [ ] Implement a 'Floating Action Button' for mobile-style quick add.
+# [ ] Create a custom scrollbar with a 'minimal' look that expands on hover.
+# [ ] Add particle effects for Level Up (fireworks).
+# [ ] Implement drag-and-drop feedback (ghost image of the task).
+# [ ] Add 'Celebrate' animation for clearing an entire section.

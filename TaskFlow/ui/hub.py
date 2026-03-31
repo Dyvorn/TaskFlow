@@ -208,6 +208,7 @@ from ui.shared_widgets import (
     AnimationManager,
     ConfettiOverlay,
     TaskRowWidget,
+    LevelUpOverlay,
     DynamicListWidget,
 )
 from .widget import WidgetWindow
@@ -2502,8 +2503,12 @@ class TaskListWidget(QWidget):
             stats["xp"] = new_xp
             
             # Level Up Check (Level = 1 + XP/500)
-            if int(1 + (new_xp / 500)) > int(1 + (old_xp / 500)):
-                self.window().show_toast(f"🎉 LEVEL UP! You are now Level {int(1 + (new_xp / 500))}!")
+            new_level = int(1 + (new_xp / 500))
+            if new_level > int(1 + (old_xp / 500)):
+                if hasattr(self.window(), "trigger_level_up"):
+                    self.window().trigger_level_up(new_level)
+                else:
+                    self.window().show_toast(f"🎉 LEVEL UP! You are now Level {new_level}!")
             else:
                 self.window().show_toast(f"Completed! +{xp_gain} XP")
 
@@ -3612,6 +3617,8 @@ class HubWindow(QMainWindow):
         # Confetti Overlay
         self.confetti = ConfettiOverlay(self)
         self.confetti.resize(self.size())
+        self.levelup_overlay = LevelUpOverlay(self)
+        self.levelup_overlay.resize(self.size())
         self.toast = ToastOverlay(self)
         self.toast.resize(self.size())
 
@@ -3683,6 +3690,8 @@ class HubWindow(QMainWindow):
     def resizeEvent(self, event):
         if hasattr(self, "confetti"):
             self.confetti.resize(self.size())
+        if hasattr(self, "levelup_overlay"):
+            self.levelup_overlay.resize(self.size())
         if hasattr(self, "toast"):
             # Toast resizes itself on show, but we ensure it stays centered if needed
             pass
@@ -3708,6 +3717,12 @@ class HubWindow(QMainWindow):
                 AnimationManager.pulse(self.btn_profile)
             else:
                 self.btn_profile.setText("🤖 AI Coach")
+
+    def trigger_level_up(self, level: int):
+        """Displays the cinematic level up overlay."""
+        if hasattr(self, "levelup_overlay"):
+            self.levelup_overlay.show_level_up(level)
+        self._play_sfx("complete") 
 
     def _init_voice_ai(self):
         """Loads the Whisper model and CommandParser in the background."""
@@ -4224,7 +4239,13 @@ class HubWindow(QMainWindow):
         self.xp_bar.setFixedHeight(6)
         self.xp_bar.setFixedWidth(120)
         self.xp_bar.setTextVisible(False)
-        self.xp_bar.setStyleSheet(f"QProgressBar {{ background-color: rgba(255,255,255,0.05); border-radius: 3px; border: none; }} QProgressBar::chunk {{ background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {GOLD}, stop:1 #ffaa00); border-radius: 3px; }}")
+        self.xp_bar.setStyleSheet(f"""
+            QProgressBar {{ background-color: rgba(255,255,255,0.05); border-radius: 3px; border: none; }} 
+            QProgressBar::chunk {{ 
+                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {GOLD}, stop:0.5 #ffffff, stop:1 #ffaa00); 
+                border-radius: 3px; 
+            }}
+        """)
         xp_container.addWidget(self.xp_bar)
         
         left_col.addLayout(xp_container)
@@ -5066,12 +5087,15 @@ class HubWindow(QMainWindow):
         if self.stack.currentWidget() is page:
             return
 
-        self._play_sfx("swoosh")
+        if hasattr(self, "_play_sfx"):
+            self._play_sfx("swoosh")
+            
+        # Coordinated Transition
+        old_page = self.stack.currentWidget()
         self.stack.setCurrentWidget(page)
-        AnimationManager.slide_up_fade_in(page, duration=450)
+        AnimationManager.slide_up_fade_in(page, duration=400)
 
         if page is self.page_home:
-            self._refresh_home()
             self._animate_home_cascade()
         elif page is self.page_today:
             self.page_today.refresh()
@@ -6606,3 +6630,15 @@ def debug_main() -> None:
 
 if __name__ == "__main__":
     debug_main()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / IDEAS LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Deep link support (taskflow://task/id).
+# [ ] Multi-window support (pop out the Timer or Journal).
+# [ ] Rich themes (Solarized, Nord, Midnight).
+# [ ] Global hotkey for Quick Add (even when app is hidden).
+# [ ] Local network sync between desktop and mobile app.
+# [ ] Advanced Natural Language Parsing for subtasks (e.g., 'Do X then Y then Z').
+# [ ] Gamified "Boss Fights": Visualize "Epic" tasks as monsters that require multiple "Focus Hits" to defeat.
+# [ ] Immersive "Focus Environments": Dynamic shaders for Zen Mode (Rainy Window, Cyberpunk Library).

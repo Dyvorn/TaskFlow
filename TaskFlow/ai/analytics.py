@@ -204,3 +204,37 @@ def generate_suggestions(state: dict) -> list:
     final_suggestions.sort(key=lambda s: s.get('confidence', 0), reverse=True)
     
     return final_suggestions[:3] # Return top 3
+
+def predict_future_velocity(state: dict) -> float:
+    """
+    Predicts expected task completion count for tomorrow based on 
+    weighted history of the last 7 days.
+    """
+    log = state.get("activityLog", [])
+    today = datetime.now().date()
+    history = Counter()
+    
+    for entry in log:
+        if entry.get("action") == "completed":
+            ts = entry.get("timestamp", "").split("T")[0]
+            history[ts] += 1
+            
+    # Calculate weighted average (recent days count more)
+    total_weight = 0
+    weighted_sum = 0
+    for i in range(1, 8):
+        d_str = (today - timedelta(days=i)).isoformat()
+        weight = (8 - i)
+        weighted_sum += history.get(d_str, 0) * weight
+        total_weight += weight
+        
+    return weighted_sum / total_weight if total_weight > 0 else 0.0
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / IDEAS LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Prediction of "Burnout Risk" based on high-intensity task density over time.
+# [ ] Time-accuracy score: Comparing estimatedDuration vs actualDuration across categories.
+# [ ] Seasonal productivity trends (e.g., Summer vs Winter performance).
+# [ ] Context-Switch Cost: Estimate time lost when moving between different project categories.
+# [ ] "Golden Hour" detection: Identify the 60-minute window where the user completes the most 'Hard' tasks.

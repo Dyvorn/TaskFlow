@@ -400,3 +400,6 @@ class CoachWidget(QWidget):
 # [ ] Add a 'Personality' selector for the AI Coach (Encouraging, Stoic, Direct).
 # [ ] Implement 'Batch Review' for long queues.
 # [ ] Allow user to 'Ignore' certain words from being learned.
+# [ ] AI Brain Visualization: A 3D or 2D nodes-and-lines graph representing the Neural Network's current state.
+# [ ] Progress Timeline: Visualize how the AI's accuracy has improved over weeks of training.
+# [ ] "Ask the Coach": A chat interface to ask questions about productivity trends (e.g., "Why am I less productive on Tuesdays?").

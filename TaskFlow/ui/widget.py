@@ -133,9 +133,10 @@ class WidgetWindow(QWidget):
         self._hover_open_timer.timeout.connect(self._on_hover_open_timeout)
 
         self._bump_pulse_anim = QVariantAnimation(self)
-        self._bump_pulse_anim.setDuration(2000)
-        self._bump_pulse_anim.setStartValue(0.1)
-        self._bump_pulse_anim.setEndValue(0.3)
+        self._bump_pulse_anim.setDuration(1500)
+        self._bump_pulse_anim.setStartValue(0.15)
+        self._bump_pulse_anim.setEndValue(0.45)
+        self._bump_pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
         self._bump_pulse_anim.setLoopCount(-1)
         self._bump_pulse_anim.valueChanged.connect(self._update_bump_glow)
 
@@ -804,3 +805,11 @@ def debug_main() -> None:
 
 if __name__ == "__main__":
     debug_main()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / IDEAS LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Mini 'Zen Timer' display on the collapsed bump.
+# [ ] Add 'Always on Top' toggle to the context menu.
+# [ ] Snap-to-corners logic (not just sides).
+# [ ] Opacity slider for the widget background.

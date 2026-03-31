@@ -416,6 +416,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         t.setdefault("tags", [])
         t.setdefault("difficulty", 1) # 1: Easy, 2: Medium, 3: Hard
         t.setdefault("xpReward", 10)
+        t.setdefault("actualDuration", 0) # Tracked time in minutes
         fixed_tasks.append(t)
     state["tasks"] = fixed_tasks
 
@@ -971,3 +972,13 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
         return True
     except Exception:
         return False
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / IDEAS LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Implement encrypted SQLite backend for larger datasets.
+# [ ] Cloud Sync (WebDAV / Dropbox / Google Drive).
+# [ ] Multi-user profile switching.
+# [ ] History/Versioning for individual tasks.
+# [ ] Zero-Knowledge Encryption: Encrypt task content locally before saving to JSON.
+# [ ] Task Dependency Mapping: Link tasks with "Blocks" or "Is Blocked By" relationships.

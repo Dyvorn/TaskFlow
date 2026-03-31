@@ -118,7 +118,14 @@ class TaskInsights:
         complexity = self.analyze_task_complexity(text)
         # 1:15m, 2:30m, 3:45m, 4:90m, 5:180m
         base_map = {1: 15, 2: 30, 3: 45, 4: 90, 5: 180}
-        return base_map.get(complexity, 30)
+        
+        # Refinement: Add variance based on cognitive load
+        cognitive_heavy = ["decide", "strategy", "architecture", "solve", "debug", "figure out", "understand"]
+        base_time = base_map.get(complexity, 30)
+        if any(k in text for k in cognitive_heavy):
+            base_time = int(base_time * 1.5)
+            
+        return base_time
 
     def calculate_xp_for_task(self, task: Dict[str, Any]) -> int:
         """Calculates XP based on difficulty and importance."""
@@ -532,7 +539,10 @@ class AIEngine:
 
             # 6. Category-Time Alignment
             category = t.get("category")
-            if time_of_day in ["morning", "afternoon"] and category in ["Work", "Learning", "Dev"]:
+            # High-Focus periods: Morning is for complex "Work/Dev", Afternoon for "Learning"
+            if time_of_day == "morning" and category in ["Work", "Dev"] and t.get("difficulty", 1) >= 3:
+                score += 15
+            elif time_of_day == "afternoon" and category in ["Learning"]:
                 score += 5
             if time_of_day == "evening" and category in ["Personal", "Health", "Creative"]:
                 score += 5
@@ -611,3 +621,20 @@ class AIEngine:
                 return ["Design/Plan", "Gather materials", "Construct", "Test/Verify"]
             else:
                 return ["Brainstorm ideas", "Create project plan", "Execute first step", "Review progress"]
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / IDEAS LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Integrate a small local LLM (like Phi-2) for complex task breakdown.
+# [ ] Implement 'Time-of-Day' prediction for tasks (When do I usually do X?).
+# [ ] Add 'Burnout Prevention' logic that suggests forced breaks.
+# [ ] Cross-user federated learning (Privacy-preserving habit sharing).
+# [ ] Automatic project naming based on task clusters.
+# [ ] Biometric energy integration: Suggest "Deep Work" when heart-rate variability (HRV) is high.
+# [ ] Predictive "Task Ghosting": Automatically identify and archive tasks that have been ignored for >30 days.
+# [ ] Adaptive Difficulty: Automatically increase/decrease task difficulty ratings based on actual completion time vs estimate.
+# [ ] Mood-Velocity Correlation: Analyze if specific moods (e.g., 'Stressed') lead to higher task deletion rates.
+# [ ] Semantic Task Search: Find tasks based on meaning (e.g., searching for "car stuff" finds "oil change").
+# [ ] Focus Environment Recommendations: Suggest specific soundscapes based on the task category.
+# [ ] Biometric energy integration: Suggest "Deep Work" when heart-rate variability (HRV) is high.
+# [ ] Predictive "Task Ghosting": Automatically identify and archive tasks that have been ignored for >30 days.

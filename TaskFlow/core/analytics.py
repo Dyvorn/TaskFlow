@@ -223,3 +223,12 @@ def get_mood_averages(state: Dict[str, Any]) -> Dict[str, float]:
             mood_counts[v] += 1
             
     return {m: (mood_totals[m] / mood_counts[m]) for m in mood_totals}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TODO / IDEAS LIST
+# ═══════════════════════════════════════════════════════════════════════════
+# [ ] Correlation analysis between physical activity (steps) and task completion.
+# [ ] "Focus Tree" visualization: A digital tree that grows as you stay productive.
+# [ ] Prediction of "Burnout Risk" based on high-intensity task density over time.
+# [ ] Time-accuracy score: Comparing estimatedDuration vs actualDuration across categories.
+# [ ] Seasonal productivity trends (e.g., Summer vs Winter performance).
