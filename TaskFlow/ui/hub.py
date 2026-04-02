@@ -416,6 +416,8 @@ class SplashWindow(QMainWindow):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # Interpolate background color from Splash Gradient to Hub Dark Grey
@@ -2567,6 +2569,16 @@ class TaskListWidget(QWidget):
             if self.window() and hasattr(self.window(), "celebrate"):
                 self.window().celebrate()
 
+            # Omni-Learning: Tell the AI how this task actually went
+            if self.ai_engine:
+                self.ai_engine.learn_task(
+                    text=task.get("text", ""),
+                    category=task.get("category", "Personal"),
+                    difficulty=task.get("difficulty", 1),
+                    duration=task.get("actualDuration", 30),
+                    task_id=task_id
+                )
+
             # 10.0: XP Reward
             xp_gain = self.window().ai_engine.insights.calculate_xp_for_task(task)
             stats = self.state.setdefault("stats", {})
@@ -4140,6 +4152,25 @@ class HubWindow(QMainWindow):
         self.btn_focus = QPushButton("🧘 Focus Mode")
         self._create_nav_group(self.nav_scroll_layout, "TOOLS", [self.btn_focus])
 
+        # --- AI STATUS PILL ---
+        self.nav_scroll_layout.addStretch(1)
+        self.ai_status_container = QFrame()
+        self.ai_status_container.setStyleSheet(f"""
+            background-color: rgba(255, 215, 0, 0.05);
+            border: 1px solid {GLASS_BORDER};
+            border-radius: 10px;
+            margin: 10px;
+            padding: 4px;
+        """)
+        ai_status_layout = QHBoxLayout(self.ai_status_container)
+        self.ai_status_dot = QLabel("●")
+        self.ai_status_dot.setStyleSheet(f"color: {GOLD}; font-size: 14px;")
+        self.lbl_ai_thought = QLabel("AI: Ready")
+        self.lbl_ai_thought.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 10px; font-weight: bold;")
+        ai_status_layout.addWidget(self.ai_status_dot)
+        ai_status_layout.addWidget(self.lbl_ai_thought, 1)
+        self.nav_scroll_layout.addWidget(self.ai_status_container)
+
         self.nav_scroll_area.setWidget(self.nav_scroll_content)
         nav_layout.addWidget(self.nav_scroll_area, 1)
 
@@ -4243,6 +4274,10 @@ class HubWindow(QMainWindow):
         self.btn_quit.clicked.connect(self.close)
         self.btn_check_updates.clicked.connect(lambda: self._check_updates_async(manual=True))
         self.btn_focus.clicked.connect(self._toggle_focus_mode)
+
+        # Connect AI thoughts
+        if self.ai_engine:
+            self.ai_engine.status_changed.connect(self._on_ai_status_changed)
         
         # Set Home as the default/initial page
         self._switch_page(self.page_home)
@@ -4251,6 +4286,36 @@ class HubWindow(QMainWindow):
         # Initialize keyboard shortcuts
         self._setup_shortcuts()
 
+    def _on_ai_status_changed(self, msg: str):
+        """Updates the sidebar pill with the AI's current activity."""
+        self.lbl_ai_thought.setText(f"AI: {msg}")
+        
+        if msg == "Ready":
+            self.ai_status_dot.setStyleSheet(f"color: {GOLD};")
+            # Stop pulsing if it was
+            if hasattr(self, "_ai_pulse_anim"):
+                self._ai_pulse_anim.stop()
+        else:
+            self.ai_status_dot.setStyleSheet(f"color: #1dd1a1;") # Active Green
+            self._pulse_ai_indicator()
+
+    def _pulse_ai_indicator(self):
+        """Creates a soft breathing pulse on the AI status dot."""
+        if hasattr(self, "_ai_pulse_anim") and self._ai_pulse_anim.state() == QPropertyAnimation.State.Running:
+            return
+            
+        self._ai_pulse_anim = QVariantAnimation(self)
+        self._ai_pulse_anim.setDuration(800)
+        self._ai_pulse_anim.setStartValue(0.3)
+        self._ai_pulse_anim.setEndValue(1.0)
+        self._ai_pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._ai_pulse_anim.setLoopCount(-1)
+        def update_opacity(val):
+            eff = QGraphicsOpacityEffect(self.ai_status_dot)
+            eff.setOpacity(val)
+            self.ai_status_dot.setGraphicsEffect(eff)
+        self._ai_pulse_anim.valueChanged.connect(update_opacity)
+        self._ai_pulse_anim.start()
         # Periodic AI notification check
         self._notif_timer = QTimer(self)
         self._notif_timer.setInterval(30000) # Check every 30s
@@ -4976,6 +5041,17 @@ class HubWindow(QMainWindow):
             self.setting_voice_enabled.setToolTip("Uncheck to disable the microphone button and unload AI models to save memory.")
             self.setting_voice_enabled.toggled.connect(self._on_settings_changed)
             l_card.addWidget(self.setting_voice_enabled)
+        
+        # --- LLM Settings ---
+        l_card.addSpacing(10)
+        lbl_llm = QLabel("Advanced AI")
+        lbl_llm.setStyleSheet(f"color: {GOLD}; font-weight: bold;")
+        l_card.addWidget(lbl_llm)
+
+        self.setting_llm_enabled = QCheckBox("Enable LLM for complex task breakdown")
+        self.setting_llm_enabled.setToolTip("Uses a small local LLM to generate more detailed subtasks. May increase memory usage.")
+        self.setting_llm_enabled.toggled.connect(self._on_settings_changed)
+        l_card.addWidget(self.setting_llm_enabled)
 
         # --- Maintenance ---
         l_card.addSpacing(10)
@@ -5054,6 +5130,8 @@ class HubWindow(QMainWindow):
         self.setting_start_windows.setChecked(settings.get("startWithWindows", False))
         if VOICE_AVAILABLE and hasattr(self, "setting_voice_enabled"):
             self.setting_voice_enabled.setChecked(settings.get("voiceEnabled", True))
+        if hasattr(self, "setting_llm_enabled"):
+            self.setting_llm_enabled.setChecked(settings.get("llmEnabled", False))
 
     def _set_startup_registry(self, enabled: bool):
         """Add or remove the app from Windows startup registry."""
@@ -5636,6 +5714,17 @@ class HubWindow(QMainWindow):
             if self._zen_session_type == "focus":
                 log_activity(self.state, "completed", "focusSession", self._zen_task_id, {"duration": self._zen_session_duration})
                 self._consecutive_focus_sessions += 1
+                
+                # Track actual duration on the task itself
+                task = next((t for t in self.state.get("tasks", []) if t.get("id") == self._zen_task_id), None)
+                if task:
+                    task["actualDuration"] = task.get("actualDuration", 0) + self._zen_session_duration
+                    if self.ai_engine:
+                        self.ai_engine.learn_task(task["text"], task.get("category", "Work"), difficulty=task.get("difficulty", 1), duration=task["actualDuration"], task_id=task["id"])
+                self.schedule_save()
+            elif self._zen_session_type == "break":
+                log_activity(self.state, "completed", "breakSession", None, {"duration": self._zen_session_duration})
+                self._consecutive_focus_sessions = 0
                 self.schedule_save()
 
             if self._pomodoro_mode:

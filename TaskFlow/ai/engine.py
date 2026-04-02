@@ -1,11 +1,20 @@
 import json
-import torch
+import re
+import torch  # type: ignore
 import shutil
 import random
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 from datetime import datetime
+from PyQt6.QtCore import QObject, pyqtSignal  # type: ignore
 
+# Conditional import for LLM libraries
+try:
+    from transformers import pipeline  # type: ignore
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+    print("Warning: 'transformers' library not found. LLM features will be disabled.")
 from core.model import today_str, current_time_of_day
 from core.user_manager import UserManager
 from .architect import TaskBrain
@@ -18,115 +27,6 @@ class TaskInsights:
     A collection of heuristic-based methods for analyzing and generating task-related data.
     This is separated from the main AIEngine to group non-ML AI features.
     """
-    def analyze_task_complexity(self, text: str) -> int:
-        """
-        Estimates difficulty (1-5) based on keywords, length, and cognitive load.
-        1: Trivial, 2: Easy, 3: Medium, 4: Hard, 5: Epic
-        """
-        text = text.lower()
-        words = text.split()
-        score = 1
-        
-        # 1. Length heuristic (longer tasks often imply more detail/steps)
-        if len(words) > 12:
-            score += 2
-        elif len(words) > 6:
-            score += 1
-            
-        # 2. Scope Keywords
-        epic_keywords = ["entire", "whole", "complete", "overhaul", "rewrite", "migration", "launch", "thesis", "dissertation", "infrastructure"]
-        hard_keywords = ["project", "report", "presentation", "plan", "design", "build", "refactor", "study", "research", "analysis", "develop", "implement", "debug", "audit"]
-        medium_keywords = ["write", "email", "call", "schedule", "fix", "review", "read", "organize", "clean", "prepare", "draft", "meeting", "discuss", "update"]
-        
-        if any(k in text for k in epic_keywords):
-            score += 3
-        elif any(k in text for k in hard_keywords):
-            score += 2
-        elif any(k in text for k in medium_keywords):
-            score += 1
-            
-        # 3. Time heuristics (explicit mentions)
-        if "days" in text or "week" in text:
-            score += 3
-        elif "hours" in text or "hr" in text:
-            score += 1
-        elif "min" in text or "quick" in text:
-            score -= 1 # Explicitly short
-            
-        # 4. Cognitive Load (Abstract vs Concrete)
-        # "Think about", "Decide", "Strategy" imply high cognitive load
-        cognitive_heavy = ["decide", "strategy", "architecture", "solve", "debug", "figure out", "understand"]
-        if any(k in text for k in cognitive_heavy):
-            score += 1
-
-        # Cap at 5, Min 1
-        return min(5, max(1, score))
-
-    def generate_subtasks(self, text: str) -> List[str]:
-        """
-        Returns a list of suggested subtasks based on the parent task text.
-        Uses heuristics for now, can be upgraded to LLM later.
-        """
-        text = text.lower()
-        
-        if "report" in text or "paper" in text:
-            return ["Research topic", "Create outline", "Draft introduction", "Write body paragraphs", "Review and edit"]
-        elif "presentation" in text or "slides" in text or "deck" in text:
-            return ["Outline key points", "Gather visuals/data", "Create slides", "Practice delivery"]
-        elif "meeting" in text or "sync" in text:
-            return ["Prepare agenda", "Send invites", "Prepare notes"]
-        elif "code" in text or "feature" in text or "api" in text:
-            return ["Define requirements", "Design architecture", "Implement core logic", "Write tests", "Refactor"]
-        elif "bug" in text or "error" in text or "fix" in text:
-            return ["Reproduce issue", "Check logs", "Identify root cause", "Apply fix", "Verify fix"]
-        elif "workout" in text or "gym" in text:
-            return ["Pack gear", "Warm up", "Main exercise", "Cool down/Stretch"]
-        elif "clean" in text or "tidy" in text or "house" in text:
-            return ["Clear surfaces", "Dust", "Vacuum/Sweep", "Take out trash"]
-        elif "shop" in text or "groceries" in text:
-            return ["Check fridge", "Make list", "Go to store"]
-        elif "learn" in text or "study" in text:
-            return ["Find resources/tutorial", "Set up environment", "Practice exercises", "Review notes"]
-        elif "fix" in text or "debug" in text:
-            return ["Reproduce issue", "Analyze logs", "Implement fix", "Test solution"]
-        elif "email" in text:
-            return ["Draft content", "Proofread", "Send"]
-        elif "trip" in text or "travel" in text:
-            return ["Book tickets", "Book accommodation", "Pack bags", "Check documents"]
-        
-        # Generic breakdown
-        return ["Step 1: Preparation", "Step 2: Execution", "Step 3: Review"]
-
-    def estimate_duration(self, text: str) -> int:
-        """
-        Returns estimated duration in minutes based on text.
-        Returns 0 if no estimate could be made.
-        """
-        text = text.lower()
-        
-        # Explicit time mentions could be parsed here, but for now we use heuristics
-        if any(k in text for k in ["quick", "call", "email", "check", "pay"]):
-            return 15
-        if any(k in text for k in ["meeting", "review", "clean", "fix", "write", "read", "gym", "workout"]):
-            return 30
-        if any(k in text for k in ["report", "presentation", "design", "study", "code", "debug"]):
-            return 60
-        if any(k in text for k in ["project", "build", "refactor"]):
-            return 120
-            
-        # Fallback to complexity-based estimation if no keywords found
-        complexity = self.analyze_task_complexity(text)
-        # 1:15m, 2:30m, 3:45m, 4:90m, 5:180m
-        base_map = {1: 15, 2: 30, 3: 45, 4: 90, 5: 180}
-        
-        # Refinement: Add variance based on cognitive load
-        cognitive_heavy = ["decide", "strategy", "architecture", "solve", "debug", "figure out", "understand"]
-        base_time = base_map.get(complexity, 30)
-        if any(k in text for k in cognitive_heavy):
-            base_time = int(base_time * 1.5)
-            
-        return base_time
-
     def calculate_xp_for_task(self, task: Dict[str, Any]) -> int:
         """Calculates XP based on difficulty and importance."""
         base = task.get("xpReward", 10)
@@ -137,11 +37,14 @@ class TaskInsights:
         
         return int(base * multiplier)
 
-class AIEngine:
+class AIEngine(QObject):
     """
     Orchestrates all AI operations, including prediction, learning, and training.
     """
+    status_changed = pyqtSignal(str) # Emits what the AI is "thinking"
+
     def __init__(self, user_id: str, state: Dict):
+        super().__init__()
         self.user_id = user_id
         self.state = state
         self.user_manager = UserManager()
@@ -170,7 +73,31 @@ class AIEngine:
         self._training_threshold = 10  # Auto-train after 10 new learned tasks
         self._training_worker: Optional[TrainingWorker] = None
 
+        self.llm_pipeline = None
+        self._load_llm_if_enabled()
+
         self.load_pipeline_and_model()
+        self.status_changed.emit("Ready")
+
+    def _load_llm_if_enabled(self):
+        """Loads the Phi-2 model if enabled in settings."""
+        if self.state.get("settings", {}).get("llmEnabled", False) and LLM_AVAILABLE:
+            self.status_changed.emit("Waking up Phi-2...")
+            print("Loading local LLM (Phi-2) for task reasoning...")
+            try:
+                # Using Phi-2 for complex task reasoning
+                self.llm_pipeline = pipeline(
+                    "text-generation", 
+                    model="microsoft/phi-2", 
+                    device="cpu", 
+                    trust_remote_code=True
+                )
+                print("Local LLM loaded successfully.")
+                self.status_changed.emit("Phi-2 Ready")
+            except Exception as e:
+                print(f"Failed to load LLM: {e}")
+                self.llm_pipeline = None
+                self.status_changed.emit("LLM Error")
 
     def get_tip_of_the_day(self) -> str:
         """Returns a random tip to display on startup."""
@@ -285,56 +212,69 @@ class AIEngine:
 
     def _update_dynamic_threshold(self):
         """
-        Calculates and caches the confidence threshold based on model maturity.
-        This should be called after loading or training the model.
+        Adjusts the confidence threshold based on user agreement rate.
+        Higher agreement -> lower threshold (more trust).
         """
-        base_threshold = 0.85
-        min_threshold = 0.60
-        vocab_size = len(self.pipeline.vocab)
-        # This still reads the file, but only on model load/train, not every prediction.
-        log_count = self.get_stats()["task_log_count"]
+        stats = self.state.get("stats", {})
+        total = stats.get("ai_total_reviewed", 0)
+        confirmed = stats.get("ai_total_confirmed", 0)
+        
+        if total < 10:
+            self.dynamic_threshold = 0.85
+            return
 
-        # Lower threshold by 0.05 for every 100 vocab words and 50 log entries
-        vocab_bonus = (vocab_size // 100) * 0.05
-        log_bonus = (log_count // 50) * 0.05
+        rate = confirmed / total
+        self.dynamic_threshold = max(0.65, min(0.90, 1.0 - (rate * 0.35)))
 
-        self.dynamic_threshold = max(min_threshold, base_threshold - vocab_bonus - log_bonus)
-        print(f"Updated dynamic confidence threshold to: {self.dynamic_threshold:.2f}")
+    def neural_inference(self, text: str, context: Optional[Dict] = None) -> Dict[str, Any]:
+        """Core neural reasoning method. Returns predicted category, complexity, and duration."""
+        self.status_changed.emit(f"Analyzing: {text[:20]}...")
+        if not self.model or not text or len(text.strip()) < 2:
+            self.status_changed.emit("Ready")
+            return {"category": None, "complexity": 1, "duration": 15}
+
+        if len(self.pipeline.vocab) <= 1:
+            self.status_changed.emit("Ready")
+            return {"category": None, "complexity": 1, "duration": 15}
+
+        text_indices, offsets, context_indices = self.pipeline.process_input(text, context or {})
+        with torch.no_grad():
+            cat_logits, comp_logits, dur_pred = self.model(text_indices, offsets, context_indices)
+            
+            # Category
+            cat_probs = torch.softmax(cat_logits, dim=1)
+            cat_conf, cat_idx = torch.max(cat_probs, 1)
+            
+            # Complexity
+            comp_idx = torch.argmax(comp_logits, dim=1).item() + 1
+            
+            # Duration (clamped to realistic bounds)
+            duration = max(5, min(480, int(dur_pred.item())))
+            
+            category = self.pipeline.get_category_name(cat_idx.item())
+            
+            # Handle low-confidence categories for review
+            if cat_conf.item() < self.dynamic_threshold:
+                if not any(q['text'] == text for q in self.review_queue) and len(self.review_queue) < 25:
+                    self.review_queue.append({
+                        "text": text, "predicted_category": category, 
+                        "confidence": cat_conf.item(), "context": context or {}
+                    })
+                category = None
+
+            self.status_changed.emit("Ready")
+            return {
+                "category": category,
+                "complexity": comp_idx,
+                "duration": duration,
+                "confidence": cat_conf.item()
+            }
 
     def predict_category(self, text: str, context: Optional[Dict] = None) -> Optional[str]:
-        """Predicts the category for a given task text and context."""
-        if not self.model or not text or len(text.strip()) < 2:
-            return None
-
-        # Prevent predicting if the vocabulary is empty (new brain)
-        if len(self.pipeline.vocab) <= 1:
-            return None
-
-        if context is None:
-            context = {}
-
-        text_indices, offsets, context_indices = self.pipeline.process_input(text, context)
-        with torch.no_grad():
-            output = self.model(text_indices, offsets, context_indices)
-            probabilities = torch.softmax(output, dim=1)
-            confidence, predicted_idx = torch.max(probabilities, 1)
-
-        if confidence.item() < self.dynamic_threshold:
-            # Low confidence, add to review queue
-            prediction = {
-                "text": text,
-                "predicted_category": self.pipeline.get_category_name(predicted_idx.item()),
-                "confidence": confidence.item(),
-                "context": context
-            }
-            # Only add to queue if not already present
-            if not any(q['text'] == text for q in self.review_queue) and len(self.review_queue) < 25:
-                self.review_queue.append(prediction)
-            return None # Don't return a guess if unsure
-
-        return self.pipeline.get_category_name(predicted_idx.item())
+        return self.neural_inference(text, context)["category"]
 
     def confirm_prediction(self, text: str, category: str, context: Optional[Dict]):
+
         """Learns a task from a confirmed prediction and updates stats."""
         stats = self.state.setdefault("stats", {})
         stats["ai_total_reviewed"] = stats.get("ai_total_reviewed", 0) + 1
@@ -372,15 +312,34 @@ class AIEngine:
         self.load_pipeline_and_model()
         print("AI Brain has been reset to its default state.")
 
-    def learn_task(self, text: str, category: str, context: Optional[Dict] = None):
-        """Adds a verified task to the training log."""
+    def learn_task(self, text: str, category: str, context: Optional[Dict] = None, difficulty: int = 1, duration: int = 30, task_id: Optional[str] = None):
+        """
+        Adds or updates a verified task in the training log.
+        Now supports tracking by task_id to allow 'Outcome Learning'.
+        """
+        self.status_changed.emit("Observing behavior...")
         log_path = self.user_path / "usage_log.json"
         log_data = []
         if log_path.exists():
             with open(log_path, 'r', encoding='utf-8') as f:
                 log_data = json.load(f)
         
-        log_data.append({"text": text, "category": category, "context": context or {}})
+        # Outcome Learning: If this task_id already exists in the log, update it with actual results
+        if task_id:
+            for entry in reversed(log_data):
+                if entry.get("task_id") == task_id:
+                    entry["actual_difficulty"] = difficulty
+                    entry["actual_duration"] = duration
+                    entry["completed"] = True
+                    with open(log_path, 'w', encoding='utf-8') as f:
+                        json.dump(log_data, f, indent=2)
+                    return
+
+        log_data.append({
+            "task_id": task_id,
+            "text": text, "category": category, "context": context or {},
+            "difficulty": difficulty, "duration": duration
+        })
         
         # Log Rotation: Keep the model focused on recent user behavior.
         MAX_LOG_ENTRIES = 500
@@ -402,6 +361,7 @@ class AIEngine:
             self.train_model(background=True)
         else:
             self._new_samples_counter += 1
+        self.status_changed.emit("Ready")
 
     def train_model(self, background: bool = True, on_finish_callback=None):
         """Initiates the model training process."""
@@ -411,6 +371,7 @@ class AIEngine:
 
         trainer = UserTrainer(self.user_id, self.user_manager)
         
+        self.status_changed.emit("Training neural layers...")
         if background:
             self._training_worker = TrainingWorker(trainer)
             if on_finish_callback:
@@ -427,6 +388,7 @@ class AIEngine:
         if success:
             print("AIEngine: Training complete. Reloading model.")
             self.load_pipeline_and_model()
+        self.status_changed.emit("Ready")
 
     def get_stats(self) -> Dict:
         """Returns statistics about the AI's state."""
@@ -553,74 +515,78 @@ class AIEngine:
         return sorted(tasks, key=score_task, reverse=True)
 
     def analyze_task_complexity(self, text: str) -> int:
-        return self.insights.analyze_task_complexity(text)
-
-    def generate_subtasks(self, text: str) -> List[str]:
-        return self.insights.generate_subtasks(text)
+        """Uses local neural brain to estimate complexity."""
+        return self.neural_inference(text)["complexity"]
 
     def estimate_duration(self, text: str) -> int:
-        return self.insights.estimate_duration(text)
+        """Uses local neural brain to estimate duration."""
+        return self.neural_inference(text)["duration"]
+
+    def generate_subtasks(self, text: str) -> List[str]:
+        """
+        Generates subtasks, using LLM if enabled, otherwise falling back to heuristics.
+        """
+        if self.llm_pipeline:
+            self.status_changed.emit("Phi-2 is reasoning...")
+            print(f"Using LLM for subtask generation for: '{text}'")
+            # Improved reasoning prompt for Phi-2
+            prompt = (
+                f"Instruct: You are a productivity expert. Analyze the task '{text}'. "
+                "First, identify the logical phases. Then, output 3 to 5 actionable, "
+                "one-line subtasks that a user can complete in under 30 minutes each.\nOutput:"
+            )
+            
+            try:
+                outputs = self.llm_pipeline(
+                    prompt, 
+                    max_new_tokens=150, 
+                    do_sample=True, 
+                    temperature=0.7, 
+                    pad_token_id=self.llm_pipeline.tokenizer.eos_token_id,
+                    return_full_text=False
+                )
+                response = outputs[0]['generated_text'].strip()
+                
+                # Parse the response into clean lines
+                lines = [l.strip() for l in response.split('\n') if l.strip()]
+                subtasks = []
+                for line in lines:
+                    # Remove list markers like "1. ", "- ", etc.
+                    clean = re.sub(r'^(\d+[\.\)]|\*|-)\s*', '', line).strip()
+                    if clean and len(clean) > 3:
+                        subtasks.append(clean)
+                
+                self.status_changed.emit("Ready")
+                return subtasks[:6] if subtasks else ["Step 1: Preparation", "Step 2: Execution", "Step 3: Review"]
+            except Exception as e:
+                print(f"LLM Breakdown failed: {e}")
+                return ["Step 1: Preparation", "Step 2: Execution", "Step 3: Review"]
+
+        else:
+            return ["Step 1: Preparation", "Step 2: Execution", "Step 3: Review"]
 
     def analyze_journal_sentiment(self, text: str) -> str:
-        """Simple sentiment/reflection analysis for journal entries."""
-        text = text.lower()
-        score = 0
-        
-        # Negatives
-        neg_words = ["sad", "tired", "stressed", "anxious", "bad", "fail", "overwhelmed", "angry", "lonely", "hurt", "lost", "hard", "frustrated", "disappointed"]
-        score -= sum(1 for w in neg_words if w in text)
-        
-        # Positives
-        pos_words = ["happy", "great", "excited", "good", "win", "success", "proud", "calm", "peace", "love", "progress", "learned", "grateful", "thankful", "achieved"]
-        score += sum(1 for w in pos_words if w in text)
-        
-        # Contexts
-        is_busy = any(w in text for w in ["busy", "work", "deadline", "rush", "late", "pressure", "so much to do"])
-        is_growth = any(w in text for w in ["learn", "study", "read", "grow", "understand", "realize", "discover"])
-        is_gratitude = any(w in text for w in ["grateful", "thankful", "appreciate"])
-        is_planning = any(w in text for w in ["plan", "next", "tomorrow", "goal", "focus on"])
-            
-        # Combined reasoning
-        if is_gratitude and score > 0:
-            return "It's wonderful to see you practicing gratitude. Holding onto these positive feelings can make a real difference. What's one more small thing you're thankful for?"
-        elif score < -1 and is_busy:
-            return "It seems like work pressure is weighing you down. When we are overwhelmed, our brain needs a hard stop. Can you pick just ONE thing to finish today and forgive yourself for the rest?"
-        elif score < -1:
-            return "I hear that things are tough right now. It's okay to not be okay. Sometimes the most productive thing you can do is rest. What does your body need right now?"
-        elif score > 1 and is_growth:
-            return "You're on fire! It sounds like you're making progress and learning. Capture this feeling—what's the main lesson you want to remember from today?"
-        elif score > 0:
-            return "It's great to see you in high spirits! Success builds momentum. How can you use this energy to tackle something you've been putting off?"
-        elif is_growth:
-            return "Learning is a journey. Even if it feels slow, you are moving forward. What's one concept that clicked for you today?"
-        elif is_busy:
-             return "Sounds like a busy time. Don't forget to breathe. Is there anything you can delegate or delay to tomorrow?"
-        elif is_planning:
-            return "Thinking ahead is a great skill. You're setting yourself up for success. What's the very first step for that plan?"
-        else:
-            return "Writing is a powerful tool for clarity. What is the one thing you want to focus on after this?"
+        """Uses Local LLM for neural sentiment and reflection."""
+        if self.llm_pipeline:
+            prompt = f"Instruct: Act as a supportive coach. Read this journal entry and provide one sentence of neural insight or encouragement: '{text}'\nOutput:"
+            try:
+                out = self.llm_pipeline(prompt, max_new_tokens=60, return_full_text=False)
+                return out[0]['generated_text'].strip()
+            except:
+                pass
+        return "Writing is a powerful tool for clarity. What is the one thing you want to focus on after this?"
 
     def generate_project_tasks(self, project_name: str) -> List[str]:
-        """Generates a list of tasks for a new project based on its name."""
-        project_name = project_name.lower()
-        if "website" in project_name or "app" in project_name or "code" in project_name:
-            return ["Define requirements", "Design UI/UX", "Set up repository", "Implement core features", "Write tests", "Deploy"]
-        elif "vacation" in project_name or "trip" in project_name or "travel" in project_name:
-            return ["Choose dates", "Book flights", "Book accommodation", "Create itinerary", "Pack luggage"]
-        elif "party" in project_name or "event" in project_name or "birthday" in project_name:
-            return ["Set date and time", "Create guest list", "Send invitations", "Plan menu/food", "Buy decorations"]
-        elif "move" in project_name or "house" in project_name or "apartment" in project_name:
-            return ["Sort belongings", "Buy packing supplies", "Pack rooms", "Hire movers", "Clean old place", "Update address"]
-        elif "learn" in project_name or "course" in project_name:
-            return ["Find resources", "Create study schedule", "Complete module 1", "Practice exercises", "Review notes"]
-        else:
-            # Generic fallback based on verbs
-            if "write" in project_name:
-                return ["Outline content", "Draft first version", "Review and edit", "Finalize"]
-            elif "build" in project_name or "make" in project_name:
-                return ["Design/Plan", "Gather materials", "Construct", "Test/Verify"]
-            else:
-                return ["Brainstorm ideas", "Create project plan", "Execute first step", "Review progress"]
+        """Neural project reasoning via Local LLM."""
+        if self.llm_pipeline:
+            prompt = f"Instruct: Create a list of 5 actionable tasks for a project named '{project_name}'.\nOutput:"
+            try:
+                out = self.llm_pipeline(prompt, max_new_tokens=150, return_full_text=False)
+                lines = out[0]['generated_text'].strip().split('\n')
+                return [re.sub(r'^\d+[\.\)]\s*', '', l).strip() for l in lines if l.strip()][:5]
+            except:
+                pass
+        return ["Brainstorm ideas", "Create project plan", "Execute first step", "Review progress"]
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST
@@ -628,7 +594,6 @@ class AIEngine:
 # [ ] Neural Duration Estimation: Replace heuristics in `estimate_duration` with a model trained on `actualDuration`.
 # [ ] Integrate a small local LLM (like Phi-2) for complex task breakdown.
 # [ ] Implement 'Time-of-Day' prediction for tasks (When do I usually do X?).
-# [ ] Add 'Burnout Prevention' logic that suggests forced breaks.
 # [ ] Cross-user federated learning (Privacy-preserving habit sharing).
 # [ ] Automatic project naming based on task clusters.
 # [ ] Biometric energy integration: Suggest "Deep Work" when heart-rate variability (HRV) is high.

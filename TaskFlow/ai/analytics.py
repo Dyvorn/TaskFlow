@@ -188,6 +188,75 @@ def find_overload(state: dict) -> list:
         
     return suggestions
 
+def find_burnout_risk(state: dict) -> list:
+    """Detects high-intensity work patterns and suggests forced breaks."""
+    suggestions = []
+    log = state.get("activityLog", [])
+    today = today_str()
+    
+    # Filter today's work
+    today_log = [e for e in log if e.get("timestamp", "").startswith(today)]
+    
+    focus_count = sum(1 for e in today_log if e.get("entityType") == "focusSession" and e.get("action") == "completed")
+    break_count = sum(1 for e in today_log if e.get("entityType") == "breakSession" and e.get("action") == "completed")
+    
+    # 1. High focus-to-break ratio check
+    if focus_count >= 3 and break_count == 0:
+        suggestion = {
+            'id': _get_suggestion_id('BURNOUT_RISK_RATIO', today),
+            'type': 'FORCED_BREAK',
+            'text': "You've crushed 3 focus sessions without a break. Your brain needs a reboot to stay sharp. Start a 15-minute break?",
+            'confidence': 95
+        }
+        suggestions.append(suggestion)
+        return suggestions
+
+    # 2. Cognitive Load (Difficulty sum) check
+    tasks = state.get("tasks", [])
+    completed_today = [t for t in tasks if t.get("completed") and t.get("completedAt", "").startswith(today)]
+    total_diff = sum(t.get("difficulty", 1) for t in completed_today)
+    
+    if total_diff >= 12: # Threshold for high-intensity day (e.g. 3 Hard tasks)
+        # Check if last activity was a break recently
+        last_break = next((e for e in reversed(today_log) if e.get("entityType") == "breakSession"), None)
+        needs_break = True
+        if last_break:
+            try:
+                lb_time = datetime.fromisoformat(last_break["timestamp"])
+                if (datetime.now() - lb_time).total_seconds() < 3600: # Within last hour
+                    needs_break = False
+            except: pass
+            
+        if needs_break:
+            suggestions.append({
+                'id': _get_suggestion_id('BURNOUT_RISK_LOAD', today),
+                'type': 'FORCED_BREAK',
+                'text': "You've tackled some heavy tasks today. To prevent mental fatigue, I suggest taking a short break now.",
+                'confidence': 85
+            })
+
+    return suggestions
+
+def find_cognitive_overload(state: dict) -> list:
+    """Detects if too many high-complexity tasks are planned for a single day."""
+    suggestions = []
+    today_tasks = tasks_in_section(state, "Today")
+    incomplete_hard = [t for t in today_tasks if not t.get("completed") and t.get("difficulty", 1) >= 4]
+    
+    if len(incomplete_hard) >= 3:
+        suggestion = {
+            'id': _get_suggestion_id('COGNITIVE_OVERLOAD', today_str()),
+            'type': 'SUGGEST_RESCHEDULE',
+            'text': (
+                f"I noticed you have {len(incomplete_hard)} 'Hard' or 'Epic' tasks today. "
+                "This requires intense focus. Consider moving one to Tomorrow to maintain quality."
+            ),
+            'confidence': 88
+        }
+        suggestions.append(suggestion)
+        
+    return suggestions
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
@@ -198,6 +267,8 @@ def generate_suggestions(state: dict) -> list:
     all_suggestions.extend(find_stale_tasks(state))
     all_suggestions.extend(find_task_churn(state))
     all_suggestions.extend(find_overload(state))
+    all_suggestions.extend(find_burnout_risk(state))
+    all_suggestions.extend(find_cognitive_overload(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]

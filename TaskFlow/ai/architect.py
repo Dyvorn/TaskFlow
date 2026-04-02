@@ -26,9 +26,14 @@ class TaskBrain(nn.Module):
         
         # UPGRADE: Multi-Layer Perceptron for non-linear relationships
         self.fc1 = nn.Linear(combined_size, hidden_size)
+        self.bn1 = nn.BatchNorm1d(hidden_size) # Stabilizes learning on small local datasets
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.3) # Prevent overfitting on small datasets
-        self.fc2 = nn.Linear(hidden_size, num_classes)
+        
+        # Multi-Head Output: One brain, multiple tasks
+        self.category_head = nn.Linear(hidden_size, num_classes)
+        self.complexity_head = nn.Linear(hidden_size, 5) # 1-5 scale
+        self.duration_head = nn.Linear(hidden_size, 1)   # Continuous minutes
         
         self.init_weights()
 
@@ -39,8 +44,11 @@ class TaskBrain(nn.Module):
             emb.weight.data.uniform_(-initrange, initrange)
         self.fc1.weight.data.uniform_(-initrange, initrange)
         self.fc1.bias.data.zero_()
-        self.fc2.weight.data.uniform_(-initrange, initrange)
-        self.fc2.bias.data.zero_()
+        self.category_head.weight.data.uniform_(-initrange, initrange)
+        self.category_head.bias.data.zero_()
+        self.complexity_head.weight.data.uniform_(-initrange, initrange)
+        self.complexity_head.bias.data.zero_()
+        self.duration_head.weight.data.zero_() # Start duration at 0 bias
 
     def forward(self, text_indices: torch.Tensor, offsets: torch.Tensor, context_indices: torch.Tensor) -> torch.Tensor:
         text_embedded = self.embedding(text_indices, offsets)
@@ -57,6 +65,12 @@ class TaskBrain(nn.Module):
         
         # Feed forward through MLP
         x = self.fc1(combined)
+        if x.size(0) > 1: # Batch norm requires batch size > 1
+            x = self.bn1(x)
         x = self.relu(x)
         x = self.dropout(x)
-        return self.fc2(x)
+        
+        cat_out = self.category_head(x)
+        comp_out = self.complexity_head(x)
+        dur_out = self.relu(self.duration_head(x)) # Duration can't be negative
+        return cat_out, comp_out, dur_out

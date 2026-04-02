@@ -1,4 +1,5 @@
 import torch
+import math
 import torch.optim as optim
 import torch.nn as nn
 import json
@@ -84,7 +85,8 @@ class UserTrainer:
 
         # Use Adam for better handling of sparse embedding gradients
         # Added weight_decay (L2 regularization) to prevent overfitting on small local logs
-        criterion = nn.CrossEntropyLoss()
+        ce_loss = nn.CrossEntropyLoss()
+        mse_loss = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
 
         # 4. Training Loop
@@ -105,9 +107,27 @@ class UserTrainer:
                     context.setdefault('important', False)
 
                 text_indices, offsets, context_indices = pipeline.process_input(item['text'], context)
-                target = torch.tensor([pipeline.get_category_index(item['category'])], dtype=torch.long)
-                output = model(text_indices, offsets, context_indices)
-                loss = criterion(output, target)
+                
+                # Targets
+                # Prioritize 'Actual' labels (ground truth from user behavior) over 'Estimates'
+                target_cat = torch.tensor([pipeline.get_category_index(item['category'])], dtype=torch.long)
+                
+                actual_comp = item.get('actual_difficulty', item.get('difficulty', 1))
+                target_comp = torch.tensor([actual_comp - 1], dtype=torch.long) # 0-4 scale
+                
+                actual_dur = item.get('actual_duration', item.get('duration', 30))
+                target_dur = torch.tensor([[float(actual_dur)]], dtype=torch.float)
+
+                cat_pred, comp_pred, dur_pred = model(text_indices, offsets, context_indices)
+                
+                # Combined weighted loss
+                l_cat = ce_loss(cat_pred, target_cat)
+                l_comp = ce_loss(comp_pred, target_comp)
+                # Log-scale duration loss to handle large variance in task lengths
+                l_dur = mse_loss(torch.log1p(dur_pred), torch.log1p(target_dur))
+                
+                loss = l_cat + (0.5 * l_comp) + (0.2 * l_dur)
+                
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()

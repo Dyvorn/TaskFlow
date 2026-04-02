@@ -86,7 +86,8 @@ class SuggestionWidget(QFrame):
             'WELLBEING_CHECK': "#ff6b6b",
             'SUGGEST_RESCHEDULE': "#4facfe",
             'SUGGEST_BREAKDOWN_STUCK_TASK': GOLD,
-            'SUGGEST_RECURRENCE': "#1dd1a1"
+            'SUGGEST_RECURRENCE': "#1dd1a1",
+            'FORCED_BREAK': "#9b59b6" # Purple for rest
         }
         accent_color = accent_map.get(suggestion['type'], GLASS_BORDER)
         
@@ -108,7 +109,8 @@ class SuggestionWidget(QFrame):
             'WELLBEING_CHECK': "🌿",
             'REVIEW_STALE_TASKS': "🧹",
             'SUGGEST_BREAKDOWN_STUCK_TASK': "💎",
-            'SUGGEST_RESCHEDULE': "📅"
+            'SUGGEST_RESCHEDULE': "📅",
+            'FORCED_BREAK': "🧘"
         }
         icon = icon_map.get(s_type, "💡")
 
@@ -127,6 +129,9 @@ class SuggestionWidget(QFrame):
         elif s_type == 'SUGGEST_RESCHEDULE':
             text = suggestion.get('text', "Move some tasks to tomorrow?")
             accept_text = "Reschedule"
+        elif s_type == 'FORCED_BREAK':
+            text = suggestion.get('text', "Take a forced break?")
+            accept_text = "Rest Now"
         else:
             text = suggestion.get('text', "I have a suggestion.")
             accept_text = "Accept"
@@ -386,6 +391,14 @@ class CoachWidget(QWidget):
                     moved_count = hub.reschedule_overloaded_tasks()
                     if moved_count > 0:
                         self.message_requested.emit(f"Moved {moved_count} tasks to give you some breathing room.")
+            elif s_type == 'FORCED_BREAK':
+                if hasattr(hub, '_start_manual_timer'):
+                    # Start a 15-minute break session
+                    hub._start_manual_timer(15, "break")
+                    # Navigate to Zen page to show the timer
+                    if hasattr(hub, 'page_zen'):
+                        hub._switch_page(hub.page_zen)
+                    self.message_requested.emit("Break started. Enjoy your rest!")
         
         # Dismiss the suggestion in both cases
         self.ai_engine.dismiss_suggestion(suggestion['id'])
