@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QInputDialog, QSizePolicy
+    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QInputDialog, QSizePolicy, QLineEdit, QComboBox
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QCursor
@@ -232,6 +232,45 @@ class CoachWidget(QWidget):
 
         layout.addWidget(stats_card)
 
+        # --- Manual Teach Card ---
+        teach_card = QFrame()
+        teach_card.setObjectName("GlassCard")
+        teach_card.setStyleSheet(f"#GlassCard {{ background-color: rgba(0,0,0,0.2); border: 1px solid {GLASS_BORDER}; border-radius: 16px; }}")
+        t_layout = QVBoxLayout(teach_card)
+        t_layout.setContentsMargins(20, 20, 20, 20)
+        t_layout.setSpacing(12)
+        
+        lbl_teach_title = QLabel("Proactive Training (Manual Teach)")
+        lbl_teach_title.setStyleSheet(f"color: {TEXT_WHITE}; font-size: 16px; font-weight: bold;")
+        t_layout.addWidget(lbl_teach_title)
+        
+        self.teach_input = QLineEdit()
+        self.teach_input.setPlaceholderText("Enter a task example (e.g. 'Fix server bug')")
+        self.teach_input.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 8px; padding: 10px;")
+        t_layout.addWidget(self.teach_input)
+        
+        teach_row = QHBoxLayout()
+        self.teach_cat_combo = QComboBox()
+        self.teach_cat_combo.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 8px; padding: 6px;")
+        
+        self.teach_diff_combo = QComboBox()
+        self.teach_diff_combo.addItems(["1 (Easy)", "2", "3 (Medium)", "4", "5 (Epic)"])
+        self.teach_diff_combo.setStyleSheet(f"background-color: rgba(0,0,0,0.3); color: {TEXT_WHITE}; border: 1px solid {GLASS_BORDER}; border-radius: 8px; padding: 6px;")
+        
+        teach_row.addWidget(QLabel("Category:"), 0)
+        teach_row.addWidget(self.teach_cat_combo, 1)
+        teach_row.addWidget(QLabel("Difficulty:"), 0)
+        teach_row.addWidget(self.teach_diff_combo, 1)
+        t_layout.addLayout(teach_row)
+        
+        btn_teach_submit = QPushButton("Teach Neural Brain")
+        btn_teach_submit.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_teach_submit.setStyleSheet(f"background-color: {GOLD}; color: {DARK_BG}; font-weight: bold; border-radius: 8px; padding: 10px;")
+        btn_teach_submit.clicked.connect(self._on_manual_teach)
+        t_layout.addWidget(btn_teach_submit)
+        
+        layout.addWidget(teach_card)
+
         # --- Review Queue ---
         layout.addWidget(QLabel("Review Queue (Teach me!)"))
         
@@ -264,6 +303,12 @@ class CoachWidget(QWidget):
         self.lbl_samples.setText(f"Training Samples: {stats['task_log_count']}")
         self.lbl_agreement.setText(f"Agreement Rate: {stats.get('agreement_rate', 0):.1f}%")
         
+        # Update Manual Teach Categories
+        self.teach_cat_combo.clear()
+        cats = self.ai_engine.get_all_categories()
+        if cats:
+            self.teach_cat_combo.addItems(cats)
+
         # Update Review Queue
         self.review_list.clear()
         queue = self.ai_engine.get_review_queue()
@@ -298,6 +343,25 @@ class CoachWidget(QWidget):
                 item.setSizeHint(widget.sizeHint())
                 self.recommendations_list.addItem(item)
                 self.recommendations_list.setItemWidget(item, widget)
+
+    def _on_manual_teach(self):
+        text = self.teach_input.text().strip()
+        cat = self.teach_cat_combo.currentText()
+        diff_text = self.teach_diff_combo.currentText()
+        
+        if not text or not cat:
+            return
+            
+        try:
+            difficulty = int(diff_text.split()[0])
+        except:
+            difficulty = 1
+        
+        if self.ai_engine:
+            self.ai_engine.learn_task(text, cat, difficulty=difficulty)
+            self.teach_input.clear()
+            self.refresh()
+            self.message_requested.emit(f"Neural Brain updated with example: '{text}'")
 
     def _run_training(self):
         if not self.ai_engine:

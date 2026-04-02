@@ -224,3 +224,4 @@ if __name__ == "__main__":
 # [ ] CLI Interface: Add a `--headless` mode to allow task management via command line.
 # [ ] Plugin System: Allow third-party extensions to add new pages or AI features.
 # [ ] Telemetry (Opt-in): Anonymized usage data to help prioritize feature development.
+# [ ] Hardware Acceleration: Enable GPU support for local LLM inference via ONNX or Vulkan.

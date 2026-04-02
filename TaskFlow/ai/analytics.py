@@ -257,6 +257,55 @@ def find_cognitive_overload(state: dict) -> list:
         
     return suggestions
 
+def find_ghosted_tasks(state: dict) -> list:
+    """Identifies tasks that have been pushed to 'Today' many times but never completed."""
+    suggestions = []
+    log = state.get("activityLog", [])
+    
+    # Count how many times each task was moved TO 'Today'
+    move_counts = Counter(e.get("entityId") for e in log if e.get("action") == "moved" and e.get("details", {}).get("to") == "Today")
+    
+    for task_id, count in move_counts.items():
+        if count >= 5:
+            task = next((t for t in state.get("tasks", []) if t.get("id") == task_id), None)
+            if task and not task.get("completed") and task.get("section") == "Today":
+                suggestions.append({
+                    'id': _get_suggestion_id('TASK_GHOSTING', task_id),
+                    'type': 'SUGGEST_RESCHEDULE',
+                    'text': f"The task <b>'{task['text']}'</b> has been moved to Today {count} times without completion. Should we move it back to 'Someday' for now?",
+                    'task_id': task_id,
+                    'confidence': count * 10
+                })
+    return suggestions
+
+def find_golden_hour(state: dict) -> list:
+    """Identifies the 60-minute window where the user is most productive."""
+    log = state.get("activityLog", [])
+    completions = [e for e in log if e.get("action") == "completed" and e.get("entityType") == "task"]
+    
+    if len(completions) < 10:
+        return []
+
+    hours = Counter()
+    for c in completions:
+        try:
+            dt = datetime.fromisoformat(c["timestamp"])
+            hours[dt.hour] += 1
+        except: continue
+        
+    golden_hour, count = hours.most_common(1)[0]
+    
+    # Suggestion based on current time
+    if datetime.now().hour == golden_hour:
+        suggestions = [{
+            'id': _get_suggestion_id('GOLDEN_HOUR_ACTIVE', today_str()),
+            'type': 'WELLBEING_CHECK',
+            'text': f"It's {golden_hour}:00! This is historically your most productive hour. Want to start a focus session?",
+            'confidence': 100
+        }]
+        return suggestions
+    return []
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
@@ -269,6 +318,8 @@ def generate_suggestions(state: dict) -> list:
     all_suggestions.extend(find_overload(state))
     all_suggestions.extend(find_burnout_risk(state))
     all_suggestions.extend(find_cognitive_overload(state))
+    all_suggestions.extend(find_ghosted_tasks(state))
+    all_suggestions.extend(find_golden_hour(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]
@@ -304,8 +355,8 @@ def predict_future_velocity(state: dict) -> float:
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST
 # ═══════════════════════════════════════════════════════════════════════════
-# [ ] Prediction of "Burnout Risk" based on high-intensity task density over time.
 # [ ] Time-accuracy score: Comparing estimatedDuration vs actualDuration across categories.
 # [ ] Seasonal productivity trends (e.g., Summer vs Winter performance).
 # [ ] Context-Switch Cost: Estimate time lost when moving between different project categories.
-# [ ] "Golden Hour" detection: Identify the 60-minute window where the user completes the most 'Hard' tasks.
+# [ ] "Energy Vampires": Identify categories that frequently result in "Low energy" mood logs after completion.
+# [ ] Prediction of "Estimated Completion Time" for entire projects based on current velocity.

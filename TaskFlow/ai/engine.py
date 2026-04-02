@@ -594,16 +594,13 @@ class AIEngine(QObject):
 # [ ] Neural Duration Estimation: Replace heuristics in `estimate_duration` with a model trained on `actualDuration`.
 # [ ] Integrate a small local LLM (like Phi-2) for complex task breakdown.
 # [ ] Implement 'Time-of-Day' prediction for tasks (When do I usually do X?).
-# [ ] Cross-user federated learning (Privacy-preserving habit sharing).
-# [ ] Automatic project naming based on task clusters.
-# [ ] Biometric energy integration: Suggest "Deep Work" when heart-rate variability (HRV) is high.
-# [ ] Predictive "Task Ghosting": Automatically identify and archive tasks that have been ignored for >30 days.
+# [ ] Federated Learning: Enable (opt-in) privacy-preserving habit sharing to improve the base model.
+# [ ] Biometric Integration: Sync with wearable data (Apple Health/Google Fit) to suggest "Deep Work" when HRV is high.
 # [ ] Adaptive Difficulty: Automatically increase/decrease task difficulty ratings based on actual completion time vs estimate.
-# [ ] Mood-Velocity Correlation: Analyze if specific moods (e.g., 'Stressed') lead to higher task deletion rates.
 # [ ] Semantic Task Search: Find tasks based on meaning (e.g., searching for "car stuff" finds "oil change").
-# [ ] Focus Environment Recommendations: Suggest specific soundscapes based on the task category.
-# [ ] Subtask Auto-Extraction: Use an LLM to automatically generate subtasks for any task with complexity > 3.
+# [ ] Context-Aware Soundscapes: Automatically play specific sounds (e.g., 'Cafe') for 'Work' tasks and 'Rain' for 'Creative' tasks.
 # [ ] Drift Detection: Identify tasks that are frequently rescheduled and prompt for a priority re-evaluation.
 # [ ] Workflow Templates: Suggest "Design -> Build -> Test" flows when certain keywords are detected.
 # [ ] Cognitive Load Balancing: Warn the user if they've scheduled too many "Hard" tasks in a single morning.
-# [ ] Peer Benchmarking: (Opt-in) Compare productivity trends with anonymized aggregated data from other users.
+# [ ] Peer Benchmarking: (Opt-in) Compare anonymous productivity trends with other users in the same 'Role'.
+# [ ] Outcome Prediction: AI predicts the likelihood of a task being completed today based on current mood and history.

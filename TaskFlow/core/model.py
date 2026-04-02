@@ -417,6 +417,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         t.setdefault("difficulty", 1) # 1: Easy, 2: Medium, 3: Hard
         t.setdefault("xpReward", 10)
         t.setdefault("actualDuration", 0) # Tracked time in minutes
+        t.setdefault("blockedBy", []) # List of task IDs that must be completed first
         fixed_tasks.append(t)
     state["tasks"] = fixed_tasks
 
@@ -511,6 +512,28 @@ def set_habit_checked(state: Dict[str, Any], habit_id: str, checked: bool) -> No
     day[habit_id] = checked
     action = "checked" if checked else "unchecked"
     log_activity(state, action, "habit", habit_id)
+
+def add_task_dependency(state: Dict[str, Any], task_id: str, depends_on_id: str) -> bool:
+    """Links a task as dependent on another."""
+    tasks = state.get("tasks", [])
+    target = next((t for t in tasks if t["id"] == task_id), None)
+    dependency = next((t for t in tasks if t["id"] == depends_on_id), None)
+    
+    if target and dependency and depends_on_id not in target["blockedBy"]:
+        target["blockedBy"].append(depends_on_id)
+        target["updatedAt"] = now_iso()
+        log_activity(state, "linked", "task", task_id, {"blockedBy": depends_on_id})
+        return True
+    return False
+
+def is_task_blocked(state: Dict[str, Any], task_id: str) -> bool:
+    """Checks if a task has incomplete dependencies."""
+    task = next((t for t in state.get("tasks", []) if t["id"] == task_id), None)
+    if not task or not task.get("blockedBy"):
+        return False
+    
+    incomplete_deps = [tid for tid in task["blockedBy"] if not next((t.get("completed") for t in state["tasks"] if t["id"] == tid), True)]
+    return len(incomplete_deps) > 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -976,13 +999,12 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST
 # ═══════════════════════════════════════════════════════════════════════════
-# [ ] Implement encrypted SQLite backend for larger datasets.
+# [ ] Database Migration: Move from flat JSON to SQLite for better performance with large history logs.
 # [ ] Cloud Sync (WebDAV / Dropbox / Google Drive).
 # [ ] Multi-user profile switching.
 # [ ] History/Versioning for individual tasks.
 # [ ] Zero-Knowledge Encryption: Encrypt task content locally before saving to JSON.
-# [ ] Task Dependency Mapping: Link tasks with "Blocks" or "Is Blocked By" relationships.
-# [ ] Database Migration: Move from flat JSON to SQLite for better performance with large history logs.
 # [ ] Conflict Resolution: Robust merging for multi-device sync scenarios.
 # [ ] Custom Fields: Allow users to define their own task properties (e.g., "URL", "Price", "Priority Score").
-# [ ] Archive Auto-Cleanup: Set TTL (Time To Live) for archived tasks to keep the database lean.
+# [ ] Task Templates: Define recurring structures (e.g., "Software Release" always has the same 10 subtasks).
+# [ ] Smart Archiving: Automatically compress and move tasks older than 1 year to a separate 'History' file.

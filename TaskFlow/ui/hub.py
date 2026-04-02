@@ -2500,7 +2500,7 @@ class TaskListWidget(QWidget):
         duration = 0
         
         if self.ai_engine:
-            difficulty = self.ai_engine.insights.analyze_task_complexity(text)
+            difficulty = self.ai_engine.analyze_task_complexity(text)
             xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": difficulty})
             duration = self.ai_engine.estimate_duration(text)
         
@@ -4152,24 +4152,7 @@ class HubWindow(QMainWindow):
         self.btn_focus = QPushButton("🧘 Focus Mode")
         self._create_nav_group(self.nav_scroll_layout, "TOOLS", [self.btn_focus])
 
-        # --- AI STATUS PILL ---
         self.nav_scroll_layout.addStretch(1)
-        self.ai_status_container = QFrame()
-        self.ai_status_container.setStyleSheet(f"""
-            background-color: rgba(255, 215, 0, 0.05);
-            border: 1px solid {GLASS_BORDER};
-            border-radius: 10px;
-            margin: 10px;
-            padding: 4px;
-        """)
-        ai_status_layout = QHBoxLayout(self.ai_status_container)
-        self.ai_status_dot = QLabel("●")
-        self.ai_status_dot.setStyleSheet(f"color: {GOLD}; font-size: 14px;")
-        self.lbl_ai_thought = QLabel("AI: Ready")
-        self.lbl_ai_thought.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 10px; font-weight: bold;")
-        ai_status_layout.addWidget(self.ai_status_dot)
-        ai_status_layout.addWidget(self.lbl_ai_thought, 1)
-        self.nav_scroll_layout.addWidget(self.ai_status_container)
 
         self.nav_scroll_area.setWidget(self.nav_scroll_content)
         nav_layout.addWidget(self.nav_scroll_area, 1)
@@ -4204,9 +4187,49 @@ class HubWindow(QMainWindow):
         nav_layout.addWidget(bottom_container)
         root.addWidget(self.nav_frame)
 
-        # Right pages
+        # Right side container (Stack + Footer)
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+
         self.stack = QStackedWidget()
-        root.addWidget(self.stack, 1)
+        right_layout.addWidget(self.stack, 1)
+
+        # --- AI STATUS PILL (Bottom Right) ---
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(0, 0, 24, 12)
+        footer_layout.addStretch(1)
+
+        self.ai_status_container = QFrame()
+        self.ai_status_container.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(255, 215, 0, 0.05);
+                border: 1px solid {GLASS_BORDER};
+                border-radius: 10px;
+                padding: 4px 10px;
+            }}
+            QFrame:hover {{
+                background-color: rgba(255, 215, 0, 0.12);
+                border: 1px solid {GOLD};
+            }}
+        """)
+        ai_status_layout = QHBoxLayout(self.ai_status_container)
+        ai_status_layout.setContentsMargins(4, 2, 4, 2)
+        self.ai_status_dot = QLabel("●")
+        self.ai_status_dot.setStyleSheet(f"color: {GOLD}; font-size: 14px;")
+        self.lbl_ai_thought = QLabel("AI: Ready")
+        self.lbl_ai_thought.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 10px; font-weight: bold;")
+        ai_status_layout.addWidget(self.ai_status_dot)
+        ai_status_layout.addWidget(self.lbl_ai_thought)
+
+        footer_layout.addWidget(self.ai_status_container)
+        right_layout.addLayout(footer_layout)
+
+        root.addWidget(right_container, 1)
+
+        # Subtle entrance animation for the AI status pill when the Hub first appears
+        AnimationManager.fade_in(self.ai_status_container, duration=800, delay=1200)
 
         # Build pages
         self._build_home_page()
@@ -4278,6 +4301,8 @@ class HubWindow(QMainWindow):
         # Connect AI thoughts
         if self.ai_engine:
             self.ai_engine.status_changed.connect(self._on_ai_status_changed)
+            # Initial update to set the tooltip and dot color
+            self._on_ai_status_changed("Ready")
         
         # Set Home as the default/initial page
         self._switch_page(self.page_home)
@@ -4289,6 +4314,17 @@ class HubWindow(QMainWindow):
     def _on_ai_status_changed(self, msg: str):
         """Updates the sidebar pill with the AI's current activity."""
         self.lbl_ai_thought.setText(f"AI: {msg}")
+
+        # Update detailed stats in tooltip on every status change
+        if self.ai_engine:
+            stats = self.ai_engine.get_stats()
+            self.ai_status_container.setToolTip(
+                f"<b>AI Brain Status</b><br/>"
+                f"Status: {stats['status']}<br/>"
+                f"Vocabulary: {stats['vocab_size']} words<br/>"
+                f"Training Samples: {stats['task_log_count']}<br/>"
+                f"Agreement: {stats.get('agreement_rate', 0):.1f}%"
+            )
         
         if msg == "Ready":
             self.ai_status_dot.setStyleSheet(f"color: {GOLD};")
@@ -5816,7 +5852,7 @@ class HubWindow(QMainWindow):
             category = self.ai_engine.predict_category(action["text"], context)
             
             # Analyze Complexity & Duration
-            difficulty = self.ai_engine.insights.analyze_task_complexity(action["text"])
+            difficulty = self.ai_engine.analyze_task_complexity(action["text"])
             xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": difficulty})
             duration = self.ai_engine.estimate_duration(action["text"])
 
@@ -6326,7 +6362,7 @@ class HubWindow(QMainWindow):
                     xp = 10
                     dur = 0
                     if self.ai_engine:
-                        diff = self.ai_engine.insights.analyze_task_complexity(task_text)
+                        diff = self.ai_engine.analyze_task_complexity(task_text)
                         xp = self.ai_engine.insights.calculate_xp_for_task({"difficulty": diff})
                         dur = self.ai_engine.estimate_duration(task_text)
                     
@@ -6845,7 +6881,8 @@ if __name__ == "__main__":
 # [ ] Immersive "Focus Environments": Dynamic shaders for Zen Mode (Rainy Window, Cyberpunk Library).
 # [ ] Global Search Shortcuts: Use a pop-up spotlight-style search (like Raycast or macOS Spotlight).
 # [ ] Canvas Mode: A whiteboard-style view where projects and tasks can be connected visually via lines.
-# [ ] Collaborative Tasks: Basic P2P task sharing via local network or encrypted file exchange.
 # [ ] Task Timeline: A Gantt-chart style horizontal view for project planning.
 # [ ] Shared Workspaces: Real-time collaboration on project boards via WebSockets.
+# [ ] Keyboard-First Navigation: Implement "Vim-style" navigation for power users.
+# [ ] Accessibility: Full screen-reader support and high-contrast theme variants.
 # [ ] Mobile Companion: Lightweight PWA or React Native app for on-the-go task capture.
