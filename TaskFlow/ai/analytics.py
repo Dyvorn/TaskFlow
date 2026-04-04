@@ -306,6 +306,36 @@ def find_golden_hour(state: dict) -> list:
         return suggestions
     return []
 
+def find_productivity_leaks(state: dict) -> list:
+    """Identifies categories that negatively impact user mood."""
+    suggestions = []
+    log = state.get("activityLog", [])
+    moods = state.get("moods", [])
+    
+    # This is a complex cross-reference of task completion followed by mood drops
+    # For now, we suggest a review if a certain category is always active on 'Stressed' days
+    stressed_days = [m['date'] for m in moods if m.get('value') == "Stressed"]
+    if not stressed_days: return []
+    
+    tasks = state.get("tasks", [])
+    
+    # Safety: Ensure completedAt is a string before slicing
+    cats_on_bad_days = Counter(
+        t.get('category') for t in tasks 
+        if isinstance(t.get('completedAt'), str) and t.get('completedAt')[:10] in stressed_days
+    )
+    
+    if cats_on_bad_days:
+        top_leak, count = cats_on_bad_days.most_common(1)[0]
+        if count >= 3:
+            suggestions.append({
+                'id': _get_suggestion_id('PRODUCTIVITY_LEAK', top_leak),
+                'type': 'WELLBEING_CHECK',
+                'text': f"I've noticed tasks in <b>'{top_leak}'</b> often coincide with high stress. Let's try scheduling these for your 'Golden Hour' instead.",
+                'confidence': 70
+            })
+    return suggestions
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
@@ -320,6 +350,7 @@ def generate_suggestions(state: dict) -> list:
     all_suggestions.extend(find_cognitive_overload(state))
     all_suggestions.extend(find_ghosted_tasks(state))
     all_suggestions.extend(find_golden_hour(state))
+    all_suggestions.extend(find_productivity_leaks(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]

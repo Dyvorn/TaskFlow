@@ -15,7 +15,7 @@ try:
 except ImportError:
     LLM_AVAILABLE = False
     print("Warning: 'transformers' library not found. LLM features will be disabled.")
-from core.model import today_str, current_time_of_day
+from core.model import today_str, current_time_of_day, get_today_mood, tasks_in_section
 from core.user_manager import UserManager
 from .architect import TaskBrain
 from .pipeline import TaskPipeline
@@ -150,9 +150,10 @@ class AIEngine(QObject):
 
         self.model = TaskBrain(
             vocab_size=len(self.pipeline.vocab),
-            hidden_size=64,
+            hidden_size=128,
             num_classes=len(self.pipeline.categories),
-            context_dims=context_dims
+            context_dims=context_dims,
+            context_embedding_dim=12
         )
         
         if model_path.exists():
@@ -186,9 +187,10 @@ class AIEngine(QObject):
                 self.pipeline.load()
                 self.model = TaskBrain(
                     vocab_size=len(self.pipeline.vocab),
-                    hidden_size=64,
+                    hidden_size=128,
                     num_classes=len(self.pipeline.categories),
-                    context_dims=context_dims
+                    context_dims=context_dims,
+                    context_embedding_dim=12
                 )
 
                 # Try loading again if bootstrap succeeded
@@ -228,7 +230,16 @@ class AIEngine(QObject):
 
     def neural_inference(self, text: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """Core neural reasoning method. Returns predicted category, complexity, and duration."""
-        self.status_changed.emit(f"Analyzing: {text[:20]}...")
+        # Automatically enrich context with user state if not provided
+        if context is None:
+            mood_data = get_today_mood(self.state)
+            context = {
+                "time_of_day": current_time_of_day(),
+                "day_of_week": datetime.now().strftime("%A"),
+                "mood": mood_data.get("value", "Okay") if mood_data else "Okay"
+            }
+
+        self.status_changed.emit(f"Reasoning: {text[:20]}...")
         if not self.model or not text or len(text.strip()) < 2:
             self.status_changed.emit("Ready")
             return {"category": None, "complexity": 1, "duration": 15}
@@ -318,6 +329,13 @@ class AIEngine(QObject):
         Now supports tracking by task_id to allow 'Outcome Learning'.
         """
         self.status_changed.emit("Observing behavior...")
+        
+        # Enrich context with current mood if missing
+        if context is None or "mood" not in context:
+            mood_data = get_today_mood(self.state)
+            context = context or {}
+            context["mood"] = mood_data.get("value", "Okay") if mood_data else "Okay"
+
         log_path = self.user_path / "usage_log.json"
         log_data = []
         if log_path.exists():
@@ -328,9 +346,25 @@ class AIEngine(QObject):
         if task_id:
             for entry in reversed(log_data):
                 if entry.get("task_id") == task_id:
+                    # Calculate 'Surprise' - how much did we miss the mark?
+                    est_dur = entry.get("duration", 30)
+                    error_factor = abs(duration - est_dur) / max(1, est_dur)
+                    
+                    entry["learning_priority"] = 2.0 if error_factor > 0.5 else 1.0
                     entry["actual_difficulty"] = difficulty
                     entry["actual_duration"] = duration
                     entry["completed"] = True
+                    
+                    if error_factor > 0.8:
+                        self.status_changed.emit("Noting significant outlier...")
+                        # Flag for review: Let the user decide if the category was also a mismatch
+                        if not any(q['text'] == text for q in self.review_queue):
+                            self.review_queue.append({
+                                "text": text, "predicted_category": category, 
+                                "confidence": 1.0, "context": context,
+                                "reason": "high_duration_error"
+                            })
+
                     with open(log_path, 'w', encoding='utf-8') as f:
                         json.dump(log_data, f, indent=2)
                     return
@@ -338,7 +372,8 @@ class AIEngine(QObject):
         log_data.append({
             "task_id": task_id,
             "text": text, "category": category, "context": context or {},
-            "difficulty": difficulty, "duration": duration
+            "difficulty": difficulty, "duration": duration,
+            "learning_priority": 1.0
         })
         
         # Log Rotation: Keep the model focused on recent user behavior.
@@ -440,6 +475,25 @@ class AIEngine(QObject):
         if suggestion_id not in dismissed:
             dismissed.append(suggestion_id)
         # The caller is expected to schedule a save.
+
+    def get_daily_forecast(self, state: Dict) -> str:
+        """Generates a short, encouraging forecast based on current state."""
+        mood_data = get_today_mood(state)
+        mood = mood_data.get("value", "Okay") if mood_data else "Okay"
+        tasks = tasks_in_section(state, "Today")
+        incomplete = [t for t in tasks if not t.get("completed")]
+        
+        if not incomplete:
+            return "A clear slate! Perfect for reflecting or picking a 'Someday' project."
+            
+        if mood in ["Low energy", "Stressed"]:
+            return "Energy is low today. I recommend focusing on 1-2 small 'Quick Wins' to build momentum."
+            
+        hard_tasks = [t for t in incomplete if t.get("difficulty", 1) >= 4]
+        if hard_tasks and current_time_of_day() == "morning":
+            return f"Your focus is likely high. It's a great time to tackle: '{hard_tasks[0]['text']}'."
+            
+        return f"Steady progress! You have {len(incomplete)} tasks to navigate today."
 
     def rank_tasks(self, tasks: List[Dict], context: Dict) -> List[Dict]:
         """

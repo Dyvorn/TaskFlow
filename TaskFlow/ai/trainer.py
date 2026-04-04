@@ -30,7 +30,7 @@ class UserTrainer:
         self.model_path = self.user_path / "brain.pth"
         self.log_path = self.user_path / "usage_log.json"
 
-    def train_model(self, hidden_size: int = 64, epochs: int = 50, lr: float = 0.001) -> bool:
+    def train_model(self, hidden_size: int = 128, epochs: int = 50, lr: float = 0.001) -> bool:
         """
         Loads user data, trains the model, and saves the updated weights.
         """
@@ -66,7 +66,8 @@ class UserTrainer:
             vocab_size=len(pipeline.vocab), 
             hidden_size=hidden_size, 
             num_classes=len(pipeline.categories),
-            context_dims=context_dims
+            context_dims=context_dims,
+            context_embedding_dim=12
         )
         
         # Load existing model state ONLY if vocabulary has NOT changed
@@ -88,6 +89,7 @@ class UserTrainer:
         ce_loss = nn.CrossEntropyLoss()
         mse_loss = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.5)
 
         # 4. Training Loop
         model.train()
@@ -126,15 +128,23 @@ class UserTrainer:
                 # Log-scale duration loss to handle large variance in task lengths
                 l_dur = mse_loss(torch.log1p(dur_pred), torch.log1p(target_dur))
                 
-                loss = l_cat + (0.5 * l_comp) + (0.2 * l_dur)
+                # Base Loss
+                combined_loss = l_cat + (0.5 * l_comp) + (0.2 * l_dur)
+                
+                # Weighted Learning: Focus more on tasks where we missed the mark significantly
+                priority = item.get('learning_priority', 1.0)
+                loss = combined_loss * priority
                 
                 loss.backward()
                 optimizer.step()
                 total_loss += loss.item()
             
-            # Stop early if loss is effectively zero to prevent over-optimization
+            # Stop early if loss is effectively zero
             if total_loss < 0.0001:
                 break
+
+            # Update learning rate based on progress
+            scheduler.step(total_loss)
                 
             if (epoch + 1) % 10 == 0:
                 print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss:.4f}")

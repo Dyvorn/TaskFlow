@@ -266,6 +266,11 @@ class TaskRowWidget(QWidget):
                 if sched.get("time"):
                     date_str += f" @ {sched['time']}"
                 meta_info.append(f"<span style='color:#4facfe;'>📅 {date_str}</span>")
+        if subtasks := self.task.get("subtasks"):
+            total = len(subtasks)
+            done = sum(1 for st in subtasks if st.get("completed"))
+            if total > 0:
+                meta_info.append(f"<span style='color:{TEXT_GRAY};'>📋 {done}/{total}</span>")
         if rec := self.task.get("recurrence"):
             if isinstance(rec, dict) and rec.get("type"):
                 meta_info.append(f"<span style='color:#1dd1a1;'>↻ {rec['type']}</span>")

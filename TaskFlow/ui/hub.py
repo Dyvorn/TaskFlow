@@ -4525,6 +4525,12 @@ class HubWindow(QMainWindow):
         self.suggestion_label.setWordWrap(True)
         self.suggestion_label.setStyleSheet(f"font-style: italic; color: {TEXT_WHITE}; font-size: 14px;")
         l_insights.addWidget(self.suggestion_label)
+
+        self.lbl_forecast = QLabel("")
+        self.lbl_forecast.setWordWrap(True)
+        self.lbl_forecast.setStyleSheet(f"color: {TEXT_GRAY}; font-size: 12px; margin-top: 8px;")
+        l_insights.addWidget(self.lbl_forecast)
+
         l_insights.addStretch()
         
         btn_open_coach = QPushButton("Talk to Coach →")
@@ -6044,6 +6050,9 @@ class HubWindow(QMainWindow):
                 self.suggestion_label.setText(f"💡 {suggestions[0]['text']}")
             else:
                 self.suggestion_label.setText(f"<i>AI Coach is analyzing...</i>")
+            
+            # Set Daily Forecast
+            self.lbl_forecast.setText(self.ai_engine.get_daily_forecast(self.state))
         else:
             self.suggestion_label.setText(f"<i>AI Coach is ready.</i>")
 

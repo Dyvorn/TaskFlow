@@ -210,6 +210,13 @@ class CoachWidget(QWidget):
         s_layout.addWidget(self.lbl_agreement)
 
         s_layout.addSpacing(10)
+        s_layout.addWidget(QLabel("Neural Maturity:"))
+        self.maturity_bar = QProgressBar()
+        self.maturity_bar.setFixedHeight(6)
+        self.maturity_bar.setStyleSheet(f"QProgressBar {{ background: rgba(255,255,255,0.05); border: none; border-radius: 3px; }} QProgressBar::chunk {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4facfe, stop:1 #00f2fe); border-radius: 3px; }}")
+        s_layout.addWidget(self.maturity_bar)
+
+        s_layout.addSpacing(10)
         
         self.train_progress = QProgressBar()
         self.train_progress.setTextVisible(False)
@@ -303,6 +310,12 @@ class CoachWidget(QWidget):
         self.lbl_samples.setText(f"Training Samples: {stats['task_log_count']}")
         self.lbl_agreement.setText(f"Agreement Rate: {stats.get('agreement_rate', 0):.1f}%")
         
+        # Update Maturity Meter
+        samples = stats.get('task_log_count', 0)
+        vocab = stats.get('vocab_size', 0)
+        maturity = min(100, (vocab / 200 * 50) + (samples / 50 * 50))
+        self.maturity_bar.setValue(int(maturity))
+
         # Update Manual Teach Categories
         self.teach_cat_combo.clear()
         cats = self.ai_engine.get_all_categories()

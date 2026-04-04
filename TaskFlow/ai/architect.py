@@ -10,9 +10,9 @@ class TaskBrain(nn.Module):
     features (like time of day, day of week), which are combined with the text 
     embedding to make a more informed prediction.
     """
-    def __init__(self, vocab_size: int, num_classes: int, context_dims: List[int], hidden_size: int = 64, context_embedding_dim: int = 8):
+    def __init__(self, vocab_size: int, num_classes: int, context_dims: List[int], hidden_size: int = 128, context_embedding_dim: int = 12):
         super(TaskBrain, self).__init__()
-        self.embedding = nn.EmbeddingBag(vocab_size, hidden_size, sparse=True)
+        self.embedding = nn.EmbeddingBag(vocab_size, hidden_size, mode='max', sparse=False)
         
         # Create a list of embedding layers, one for each contextual feature
         self.context_embeddings = nn.ModuleList([
@@ -27,7 +27,7 @@ class TaskBrain(nn.Module):
         # UPGRADE: Multi-Layer Perceptron for non-linear relationships
         self.fc1 = nn.Linear(combined_size, hidden_size)
         self.bn1 = nn.BatchNorm1d(hidden_size) # Stabilizes learning on small local datasets
-        self.relu = nn.ReLU()
+        self.activation = nn.LeakyReLU(0.1)
         self.dropout = nn.Dropout(0.3) # Prevent overfitting on small datasets
         
         # Multi-Head Output: One brain, multiple tasks
@@ -67,10 +67,10 @@ class TaskBrain(nn.Module):
         x = self.fc1(combined)
         if x.size(0) > 1: # Batch norm requires batch size > 1
             x = self.bn1(x)
-        x = self.relu(x)
+        x = self.activation(x)
         x = self.dropout(x)
         
         cat_out = self.category_head(x)
         comp_out = self.complexity_head(x)
-        dur_out = self.relu(self.duration_head(x)) # Duration can't be negative
+        dur_out = torch.relu(self.duration_head(x)) # Duration can't be negative
         return cat_out, comp_out, dur_out
