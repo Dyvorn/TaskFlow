@@ -5,7 +5,7 @@ import html
 from typing import Any, Dict, List, Optional, Callable
 
 from PyQt6.QtCore import Qt, QSize, QPoint, QTimer, QPointF, pyqtSignal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QVariantAnimation, QRectF
-from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush, QRadialGradient, QPainterPath, QFont
+from PyQt6.QtGui import QPainter, QColor, QCursor, QPen, QBrush, QRadialGradient, QPainterPath, QFont, QLinearGradient
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QGraphicsOpacityEffect, QFrame, QSizePolicy, QListWidget
 
 from core.model import (
@@ -562,6 +562,49 @@ class LevelUpOverlay(QWidget):
             painter.drawText(QRectF(-400, 0, 800, 100), Qt.AlignmentFlag.AlignCenter, f"Level {self.new_level}")
             
             painter.restore()
+
+class ShimmerWidget(QFrame):
+    """ A placeholder widget with a moving gradient 'shimmer' effect. """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(60)
+        self.setStyleSheet("background-color: rgba(255, 255, 255, 0.05); border-radius: 12px;")
+        self._pos = -1.0
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(1200)
+        self._anim.setStartValue(-1.0)
+        self._anim.setEndValue(2.0)
+        self._anim.setLoopCount(-1)
+        self._anim.valueChanged.connect(self._update_pos)
+        self._anim.start()
+
+    def _update_pos(self, val):
+        self._pos = val
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        rect = self.rect()
+        gradient = QLinearGradient(0, 0, rect.width(), 0)
+        
+        # Calculate gradient stops based on animation position
+        p = self._pos
+        gradient.setColorAt(max(0, min(1, p - 0.2)), Qt.GlobalColor.transparent)
+        gradient.setColorAt(max(0, min(1, p)), QColor(255, 255, 255, 40))
+        gradient.setColorAt(max(0, min(1, p + 0.2)), Qt.GlobalColor.transparent)
+        
+        painter.setBrush(gradient)
+        painter.setPen(Qt.PenStyle.NoPen)
+        
+        # Clip to rounded rect
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), 12, 12)
+        painter.setClipPath(path)
+        painter.drawRect(rect)
+        painter.end()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST

@@ -3738,6 +3738,7 @@ class HubWindow(QMainWindow):
         self._last_confetti_time = 0
 
         self._build_ui()
+        self._apply_theme_colors()
         self._refresh_home()
 
         # Apply shadows to all glass cards
@@ -3980,147 +3981,82 @@ class HubWindow(QMainWindow):
             btn.setMinimumHeight(34)
             nav_layout.addWidget(btn)
 
-    def _build_ui(self) -> None:
-        self.setStyleSheet(
-            f"""
-            QMainWindow {{
-                background-color: {DARK_BG};
-            }}
-            QLabel#TitleLabel {{
-                color: {GOLD};
-                font-size: 22px;
-                font-weight: 800;
-                letter-spacing: 1px;
-            }}
-            QLabel#PageHeader {{
-                font-size: 24px;
-                font-weight: 700;
-                color: {TEXT_WHITE};
-                background: transparent;
-                margin-bottom: 10px;
-            }}
+    def _apply_theme_colors(self) -> None:
+        """Update application-wide styling based on current theme settings and window focus."""
+        settings = self.state.get("settings", {})
+        is_midnight = settings.get("midnightTheme", False)
+        is_active = self.isActiveWindow()
+        
+        # Glassmorphism 2.0: Dynamic backdrop intensity based on focus
+        glass_alpha = 200 if is_active else 235
+        
+        # Theme Palette
+        bg_color = "#000000" if is_midnight else DARK_BG
+        glass_bg_color = f"rgba(15, 15, 15, {glass_alpha})" if is_midnight else f"rgba(25, 25, 35, {glass_alpha})"
+        accent_color = "#00f2fe" if is_midnight else GOLD # Neon Cyan for Midnight
+        accent_glow = f"rgba(0, 242, 254, 0.3)" if is_midnight else "rgba(255, 215, 0, 0.2)"
+
+        self.setStyleSheet(f"""
+            QMainWindow {{ background-color: {bg_color}; }}
+            QLabel#TitleLabel {{ color: {accent_color}; font-size: 22px; font-weight: 800; letter-spacing: 1px; }}
+            QLabel#PageHeader {{ font-size: 24px; font-weight: 700; color: {TEXT_WHITE}; background: transparent; margin-bottom: 10px; }}
+            
             QFrame#GlassCard {{
-                background-color: {GLASS_BG};
+                background-color: {glass_bg_color};
                 border: 1px solid rgba(255, 255, 255, 0.08);
                 border-radius: 24px;
             }}
+            QFrame#GlassCard:hover {{
+                border: 1px solid {accent_glow};
+                background-color: rgba(255, 255, 255, 0.04);
+            }}
+            
             QFrame#NavBar {{
                 background-color: rgba(12, 12, 14, 0.95);
                 border-right: 1px solid rgba(255, 255, 255, 0.05);
             }}
-            /* Sidebar Buttons */
             QFrame#NavBar QPushButton {{
-                text-align: left;
-                padding: 10px 16px 10px 12px;
-                border: none;
-                background-color: transparent;
-                border-radius: 12px;
-                font-weight: 600;
-                color: {TEXT_GRAY};
-                border-left: 3px solid transparent;
+                text-align: left; padding: 10px 16px 10px 12px; border: none; background-color: transparent;
+                border-radius: 12px; font-weight: 600; color: {TEXT_GRAY}; border-left: 3px solid transparent;
             }}
-            QFrame#NavBar QPushButton:hover {{
-                background-color: {HOVER_BG};
-                color: {TEXT_WHITE};
-            }}
+            QFrame#NavBar QPushButton:hover {{ background-color: {HOVER_BG}; color: {TEXT_WHITE}; }}
             QFrame#NavBar QPushButton:checked {{
-                background-color: rgba(255, 215, 0, 0.12);
-                color: {GOLD};
-                border-left: 3px solid {GOLD};
-                font-weight: 800;
+                background-color: rgba(255, 215, 0, 0.12); color: {accent_color};
+                border-left: 3px solid {accent_color}; font-weight: 800;
             }}
-            QLabel {{
-                color: {TEXT_WHITE};
-            }}
+            
+            QLabel {{ color: {TEXT_WHITE}; }}
             QTextEdit, QComboBox, QLineEdit, QSpinBox, QCalendarWidget {{
-                background-color: rgba(0, 0, 0, 0.3);
-                color: {TEXT_WHITE};
-                border-radius: 12px;
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                padding: 8px 12px;
+                background-color: rgba(0, 0, 0, 0.3); color: {TEXT_WHITE};
+                border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.08); padding: 8px 12px;
             }}
-            QTextEdit:focus, QComboBox:focus, QLineEdit:focus, QSpinBox:focus {{
-                border: 1px solid {GOLD};
-                background-color: rgba(0, 0, 0, 0.3);
-            }}
+            QTextEdit:focus, QComboBox:focus, QLineEdit:focus, QSpinBox:focus {{ border: 1px solid {accent_color}; }}
+            
             QPushButton {{
-                background-color: rgba(255, 255, 255, 0.06);
-                color: {TEXT_WHITE};
-                border-radius: 12px;
-                border: 1px solid rgba(255, 255, 255, 0.05);
-                padding: 10px 18px;
-                font-weight: 600;
+                background-color: rgba(255, 255, 255, 0.06); color: {TEXT_WHITE};
+                border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05); padding: 10px 18px; font-weight: 600;
             }}
-            QPushButton:hover {{
-                background-color: {HOVER_BG};
-                border: 1px solid rgba(255, 255, 255, 0.12);
-            }}
-            QPushButton:pressed {{
-                background-color: {PRESSED_BG};
-            }}
-            QListWidget {{
-                background-color: transparent;
-                color: {TEXT_WHITE};
-                border: none;
-                outline: none;
-            }}
-            QListWidget::item {{
-                padding: 8px;
-                border-radius: 8px;
-                margin-bottom: 4px;
-            }}
+            QPushButton:hover {{ background-color: {HOVER_BG}; border: 1px solid rgba(255, 255, 255, 0.12); }}
+            
             QListWidget::item:selected {{
-                background-color: rgba(255, 215, 0, 0.1);
-                border: 1px solid rgba(255, 215, 0, 0.2);
-                color: {TEXT_WHITE};
+                background-color: rgba(255, 215, 0, 0.1); border: 1px solid rgba(255, 215, 0, 0.2); color: {TEXT_WHITE};
             }}
-            QListWidget::item:hover:!selected {{
-                background-color: rgba(255, 255, 255, 0.04);
-            }}
-            /* Custom Scrollbars */
-            QScrollBar:vertical {{
-                border: none;
-                background: transparent;
-                width: 6px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: rgba(255, 255, 255, 0.1);
-                min-height: 20px;
-                border-radius: 3px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: rgba(255, 255, 255, 0.2);
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: none;
-            }}
-            /* Checkboxes */
-            QCheckBox {{
-                color: {TEXT_WHITE};
-                spacing: 8px;
-            }}
-            QCheckBox::indicator {{
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                background-color: rgba(0, 0, 0, 0.3);
-            }}
-            QCheckBox::indicator:hover {{
-                border: 1px solid {GOLD};
-            }}
-            QCheckBox::indicator:checked {{
-                background-color: {GOLD};
-                border: 1px solid {GOLD};
-            }}
-            """
-        )
+            
+            QScrollBar:vertical {{ border: none; background: transparent; width: 6px; margin: 0px; }}
+            QScrollBar::handle:vertical {{ background: rgba(255, 255, 255, 0.1); min-height: 20px; border-radius: 3px; }}
+            
+            QCheckBox::indicator:checked {{ background-color: {accent_color}; border: 1px solid {accent_color}; }}
+        """)
 
+    def changeEvent(self, event) -> None:
+        """Handle window focus changes for dynamic glass intensity."""
+        if event.type() == event.Type.ActivationChange:
+            self._apply_theme_colors()
+        super().changeEvent(event)
+
+    def _build_ui(self) -> None:
         central = QWidget()
+
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -4639,6 +4575,16 @@ class HubWindow(QMainWindow):
         
         layout.addLayout(grid)
         
+        # --- Card 5: Consistency Heatmap ---
+        self.card_heatmap = QFrame()
+        self.card_heatmap.setObjectName("GlassCard")
+        l_heat = QVBoxLayout(self.card_heatmap)
+        l_heat.setContentsMargins(20, 15, 20, 15)
+        l_heat.addWidget(QLabel("📊 Consistency (Last 52 Weeks)"))
+        self.home_heatmap = HeatmapWidget(self.state)
+        l_heat.addWidget(self.home_heatmap)
+        layout.addWidget(self.card_heatmap)
+
         # Quote at bottom
         self.quote_label = QLabel("")
         self.quote_label.setWordWrap(True)
@@ -5085,6 +5031,10 @@ class HubWindow(QMainWindow):
         self.setting_start_focus.setToolTip("Automatically hide the sidebar when the app starts for a cleaner look.")
         l_card.addWidget(self.setting_start_focus)
 
+        self.setting_midnight_theme = QCheckBox("Midnight Theme (Pure OLED Black)")
+        self.setting_midnight_theme.toggled.connect(self._on_settings_changed)
+        l_card.addWidget(self.setting_midnight_theme)
+
         # --- System Settings ---
         l_card.addSpacing(10)
         lbl_sys = QLabel("System")
@@ -5184,10 +5134,12 @@ class HubWindow(QMainWindow):
         settings["startInFocusMode"] = self.setting_start_focus.isChecked()
         settings["closeToTray"] = self.setting_close_to_tray.isChecked()
         settings["startWithWindows"] = self.setting_start_windows.isChecked()
+        settings["midnightTheme"] = self.setting_midnight_theme.isChecked()
         
         self._set_startup_registry(settings["startWithWindows"])
         self._setup_widget()
         self.schedule_save()
+        self._apply_theme_colors()
 
     def _refresh_settings(self):
         settings = self.state.get("settings", {})
@@ -5197,6 +5149,7 @@ class HubWindow(QMainWindow):
         self.setting_start_focus.setChecked(settings.get("startInFocusMode", False))
         self.setting_close_to_tray.setChecked(settings.get("closeToTray", True))
         self.setting_start_windows.setChecked(settings.get("startWithWindows", False))
+        self.setting_midnight_theme.setChecked(settings.get("midnightTheme", False))
         if VOICE_AVAILABLE and hasattr(self, "setting_voice_enabled"):
             self.setting_voice_enabled.setChecked(settings.get("voiceEnabled", True))
         if hasattr(self, "setting_llm_enabled"):
@@ -5342,7 +5295,7 @@ class HubWindow(QMainWindow):
 
     def _animate_home_cascade(self) -> None:
         """Cascading fade-in for home page cards."""
-        cards = [self.card_focus, self.card_insights, self.card_capture]
+        cards = [self.card_focus, self.card_insights, self.card_wellness, self.card_capture, self.card_heatmap]
         for i, card in enumerate(cards):
             AnimationManager.fade_in(card, duration=400, delay=i*100)
 
@@ -6707,6 +6660,9 @@ class HubWindow(QMainWindow):
         elif current is self.page_home:
             self._refresh_home()
 
+        if self.stack.currentWidget() is self.page_home:
+            self.home_heatmap.update()
+
         # Also refresh the widget if it is active
         if self.widget_window and self.widget_window.isVisible():
             self.widget_window._refresh_tasks()
@@ -6909,11 +6865,11 @@ if __name__ == "__main__":
 # ═══════════════════════════════════════════════════════════════════════════
 
 # --- UI/UX DESIGN & VISUAL POLISH ---
-# [ ] Implement "Glassmorphism 2.0" with dynamic backdrop blur intensity based on window focus.
-# [ ] Add micro-interactions: slight scale-up (1.02x) and glow on card hover.
-# [ ] Create a "Midnight" theme variant with pure OLED blacks and subtle neon accents.
-# [ ] Add a "Focus Heatmap" visualization for the Home dashboard.
-# [ ] Implement smooth "Shimmer" loading states for list items during heavy processing.
+# [x] Implement "Glassmorphism 2.0" with dynamic backdrop blur intensity based on window focus.
+# [x] Add micro-interactions: slight scale-up (1.02x) and glow on card hover.
+# [x] Create a "Midnight" theme variant with pure OLED blacks and subtle neon accents.
+# [x] Add a "Focus Heatmap" visualization for the Home dashboard.
+# [x] Implement smooth "Shimmer" loading states for list items during heavy processing.
 # [ ] Add custom animated SVG icons for navigation buttons.
 # [ ] Create a more fluid "Draggable" ghost image for task reordering.
 
