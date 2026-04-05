@@ -271,7 +271,7 @@ def default_state() -> Dict[str, Any]:
         },
         "tasks": [],
         "activityLog": [],
-        "categories": ["Work", "Personal", "Health", "Learning", "Finance", "Dev", "Creative"],
+        "categories": ["Work", "Personal", "UI/UX", "Health", "Learning", "Finance", "Dev", "Creative"],
         "projects": [],
         "habits": [
             {"id": str(uuid.uuid4()), "name": "Drink water", "active": True},
@@ -354,7 +354,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
     _ensure_nested_defaults(state["userProfile"], base["userProfile"])
 
     if not isinstance(state.get("activityLog"), list): state["activityLog"] = []
-    if not isinstance(state.get("categories"), list): state["categories"] = ["Work", "Personal", "Health", "Learning", "Finance", "Dev", "Creative"]
+    if not isinstance(state.get("categories"), list): state["categories"] = ["Work", "Personal", "UI/UX", "Health", "Learning", "Finance", "Dev", "Creative"]
     if not isinstance(state.get("ideas"), list): state["ideas"] = []
     if not isinstance(state.get("tasks"), list): state["tasks"] = []
 

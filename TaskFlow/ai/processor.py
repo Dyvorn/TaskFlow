@@ -124,6 +124,92 @@ class VoiceListener:
         except Exception as e:
             return f"Transcription error: {e}"
 
+    def listen_for_wake_word(self, keyword: str = "wake up", clap_threshold: float = 0.4, callback: Optional[Callable] = None):
+        """
+        Monitors background audio for two sharp spikes (claps) followed by a specific spoken phrase.
+        """
+        if not pyaudio or not self.model:
+            return
+
+        p = pyaudio.PyAudio()
+        rate = 16000
+        chunk = 1024
+        
+        try:
+            stream = p.open(format=pyaudio.paInt16, channels=1, rate=rate, input=True, frames_per_buffer=chunk)
+            
+            last_spike_time = 0
+            spike_count = 0
+            
+            while True:
+                try:
+                    data = stream.read(chunk, exception_on_overflow=False)
+                except:
+                    continue
+                    
+                # Convert buffer to amplitude intensity
+                shorts = struct.unpack(f"%dh" % (len(data) // 2), data)
+                amplitude = max(abs(s) for s in shorts) / 32768.0
+                
+                now = time.time()
+                
+                # Spike Detection (detects the sharp peak of a clap)
+                if amplitude > clap_threshold:
+                    # Debounce to ensure one clap isn't counted twice
+                    if now - last_spike_time > 0.15: 
+                        if now - last_spike_time < 1.2: # Second clap must be within 1.2 seconds
+                            spike_count += 1
+                        else:
+                            spike_count = 1
+                        last_spike_time = now
+                
+                # If double-clap detected, enter voice verification phase
+                if spike_count >= 2:
+                    spike_count = 0
+                    print("Wake sequence triggered: Listening for verification phrase...")
+                    
+                    # Record 2.5 seconds of audio to check for the keyword
+                    frames = []
+                    for _ in range(0, int(rate / chunk * 2.5)):
+                        frames.append(stream.read(chunk, exception_on_overflow=False))
+                    
+                    temp_verify = "wake_verify.wav"
+                    wf = wave.open(temp_verify, 'wb')
+                    wf.setnchannels(1)
+                    wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
+                    wf.setframerate(rate)
+                    wf.writeframes(b''.join(frames))
+                    wf.close()
+                    
+                    # Transcribe and check for the "wake up" keyword
+                    try:
+                        text = self.transcribe(temp_verify).lower()
+                        if keyword.lower() in text:
+                            if callback:
+                                callback()
+                    except Exception as e:
+                        print(f"Wake verification error: {e}")
+                    
+                    # Cleanup temp file
+                    try:
+                        if os.path.exists(temp_verify):
+                            os.remove(temp_verify)
+                    except:
+                        pass
+                        
+                    # Cooldown to avoid accidental loops
+                    time.sleep(1.5)
+                    
+        except Exception as e:
+            print(f"WakeWordListener error: {e}")
+        finally:
+            try:
+                stream.stop_stream()
+                stream.close()
+                p.terminate()
+            except:
+                pass
+
 
 class CommandParser:
     """

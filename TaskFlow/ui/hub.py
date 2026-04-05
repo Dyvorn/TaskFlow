@@ -1903,6 +1903,16 @@ class VoiceWorker(QThread):
         except:
             pass
 
+class WakeWordThread(QThread):
+    """Background thread to listen for the 'Clap-Clap + Wake Up' sequence."""
+    detected = pyqtSignal()
+    def __init__(self, listener, parent=None):
+        super().__init__(parent)
+        self.listener = listener
+    def run(self):
+        if self.listener:
+            self.listener.listen_for_wake_word(callback=self.detected.emit)
+
 class BreathingCircle(QWidget):
     """
     A widget that displays a breathing animation (expanding/contracting circle).
@@ -2102,7 +2112,7 @@ class TaskCalendarWidget(QCalendarWidget):
             
             for i, t in enumerate(tasks):
                 if i >= 5: break
-                color = QColor("#ff6b6b") if t.get("important") else (QColor("#4ECDC4") if t.get("category") == "Work" else QColor(GOLD))
+                color = QColor("#ff6b6b") if t.get("important") else (QColor("#a29bfe") if t.get("category") == "UI/UX" else (QColor("#4ECDC4") if t.get("category") == "Work" else QColor(GOLD)))
                 painter.setBrush(color)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawEllipse(QPointF(start_x + i * (dot_size + spacing) + dot_size/2, y), dot_size/2, dot_size/2)
@@ -3812,8 +3822,25 @@ class HubWindow(QMainWindow):
         """Loads the Whisper model and CommandParser in the background."""
         try:
             self.voice_listener = VoiceListener(model_size="tiny")
+            # Once the AI is loaded, start the background 'Wake Up' listener
+            if self.voice_listener and self.voice_listener.model:
+                self.wake_thread = WakeWordThread(self.voice_listener, self)
+                self.wake_thread.detected.connect(self._on_wake_up)
+                self.wake_thread.start()
         except Exception as e:
             print(f"Failed to initialize Voice AI: {e}")
+
+    def _on_wake_up(self):
+        """Triggered when the clap+voice sequence is detected. Restores window and starts voice AI."""
+        self.showNormal()
+        self.activateWindow()
+        self.raise_()
+        self.show_toast("✨ Systems Online: How can I help?")
+        self._play_sfx("add")
+
+        # Automatically transition to the AI Coach and start listening for a command
+        self._switch_page(self.page_profile)
+        QTimer.singleShot(1000, self._on_voice_input)
 
     def _setup_shortcuts(self) -> None:
         """Initialize keyboard shortcuts (called once during startup)."""
@@ -6880,6 +6907,17 @@ if __name__ == "__main__":
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST
 # ═══════════════════════════════════════════════════════════════════════════
+
+# --- UI/UX DESIGN & VISUAL POLISH ---
+# [ ] Implement "Glassmorphism 2.0" with dynamic backdrop blur intensity based on window focus.
+# [ ] Add micro-interactions: slight scale-up (1.02x) and glow on card hover.
+# [ ] Create a "Midnight" theme variant with pure OLED blacks and subtle neon accents.
+# [ ] Add a "Focus Heatmap" visualization for the Home dashboard.
+# [ ] Implement smooth "Shimmer" loading states for list items during heavy processing.
+# [ ] Add custom animated SVG icons for navigation buttons.
+# [ ] Create a more fluid "Draggable" ghost image for task reordering.
+
+# --- FUNCTIONAL & SYSTEM ---
 # [ ] Deep link support (taskflow://task/id).
 # [ ] Multi-window support (pop out the Timer or Journal).
 # [ ] Rich themes (Solarized, Nord, Midnight).

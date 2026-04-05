@@ -275,12 +275,23 @@ class TaskRowWidget(QWidget):
             if isinstance(rec, dict) and rec.get("type"):
                 meta_info.append(f"<span style='color:#1dd1a1;'>↻ {rec['type']}</span>")
         if cat := self.task.get("category"):
-            meta_info.append(f"<span style='color:{GOLD};'>🏷 {cat}</span>")
+            cat_color = "#a29bfe" if cat == "UI/UX" else GOLD
+            meta_info.append(f"<span style='color:{cat_color};'>🏷 {cat}</span>")
 
         lbl = QLabel()
         lbl.setWordWrap(True)
         lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        lbl.setStyleSheet(f"color: {TEXT_GRAY if self.task.get('completed') else (GOLD if self.task.get('important') else TEXT_WHITE)}; font-weight: {'bold' if self.task.get('important') else 'normal'};" + ("text-decoration: line-through;" if self.task.get('completed') else ""))
+        
+        # Determine label color based on category and importance
+        text_color = TEXT_WHITE
+        if self.task.get('completed'):
+            text_color = TEXT_GRAY
+        elif self.task.get('important'):
+            text_color = GOLD
+        elif self.task.get('category') == "UI/UX":
+            text_color = "#a29bfe"
+            
+        lbl.setStyleSheet(f"color: {text_color}; font-weight: {'bold' if self.task.get('important') else 'normal'};" + ("text-decoration: line-through;" if self.task.get('completed') else ""))
         lbl.setToolTip(text_content)
         
         lbl.setText(f"{html.escape(text_content)}<br><span style='color:{TEXT_GRAY}; font-size:10px; line-height: 140%;'>{' &nbsp; '.join(meta_info)}</span>" if meta_info else html.escape(text_content))
