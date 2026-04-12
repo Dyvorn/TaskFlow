@@ -324,6 +324,7 @@ def default_state() -> Dict[str, Any]:
             "zenSoundscape": "Silent",
             "zenVolume": 0.5,
             "voiceEnabled": True,
+            "widgetAlwaysOnTop": True,
         },
         "widgetCurrentProjectId": None,
     }

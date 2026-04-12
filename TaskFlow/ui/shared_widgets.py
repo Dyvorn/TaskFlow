@@ -614,4 +614,4 @@ class ShimmerWidget(QFrame):
 # [ ] Create a custom scrollbar with a 'minimal' look that expands on hover.
 # [ ] Add particle effects for Level Up (fireworks).
 # [ ] Implement drag-and-drop feedback (ghost image of the task).
-# [ ] Add 'Celebrate' animation for clearing an entire section.
+# [x] Add 'Celebrate' animation for clearing an entire section.

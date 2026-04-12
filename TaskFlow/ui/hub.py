@@ -2196,6 +2196,7 @@ class TaskListWidget(QWidget):
         self._save_callback = save_callback
         self.command_parser = command_parser
         self.ai_engine = ai_engine
+        self._skip_next_refresh = False
 
         self._build_ui()
         self.refresh()
@@ -2369,7 +2370,7 @@ class TaskListWidget(QWidget):
     # Refresh & rendering
     # ────────────────────────────────────────────────────────────────────
 
-    def refresh(self) -> None:
+    def refresh(self, animate: bool = False) -> None:
         """Rebuild the list for the current section."""
         scroll_pos = self.tasks_list.verticalScrollBar().value()
         
@@ -2428,7 +2429,7 @@ class TaskListWidget(QWidget):
                 self.tasks_list.setItemWidget(item, row)
 
                 # Cascade animation for visible items
-                if total < 20: # Only animate if list isn't huge to save perf
+                if animate and total < 20: # Only animate if list isn't huge to save perf
                     AnimationManager.fade_in(row, duration=300, delay=(len(self.tasks_list)-1) * 40)
 
         self.tasks_list.setUpdatesEnabled(True)
@@ -2445,6 +2446,7 @@ class TaskListWidget(QWidget):
 
     def _on_reorder(self):
         """Update the order field in the state based on the new list order."""
+        self._skip_next_refresh = True
         for i in range(self.tasks_list.count()):
             item = self.tasks_list.item(i)
             tid = item.data(Qt.ItemDataRole.UserRole)
@@ -2611,20 +2613,25 @@ class TaskListWidget(QWidget):
                 if item.data(Qt.ItemDataRole.UserRole) == task_id:
                     row = self.tasks_list.itemWidget(item)
                     if row:
-                        AnimationManager.slide_and_fade_out(row, on_finished=lambda: self._finalize_toggle(task_id))
+                        AnimationManager.slide_and_fade_out(row, on_finished=lambda i=item: self._finalize_toggle(task_id, i))
                     return
         else:
             toggle_task_completed(self.state, task_id)
             self._save_callback()
             self.refresh()
 
-    def _finalize_toggle(self, task_id: str):
+    def _finalize_toggle(self, task_id: str, item: QListWidgetItem):
+        # Optimization: remove item locally to avoid lag
+        idx = self.tasks_list.row(item)
+        if idx >= 0:
+            self.tasks_list.takeItem(idx)
+            
         toggle_task_completed(self.state, task_id)
         self._save_callback()
-        # self.refresh() is called via the data_changed signal from save_callback
 
     def _on_delete_task(self, task_id: str) -> None:
         delete_task(self.state, task_id)
+
         self._save_callback()
         self.refresh()
 
@@ -2658,6 +2665,9 @@ class TaskListWidget(QWidget):
                     task["updatedAt"] = now_iso()
             self._save_callback()
             self.refresh()
+            # Celebrate clearing the section
+            if self.window() and hasattr(self.window(), "celebrate"):
+                self.window().celebrate()
         elif action is clear_completed:
             self.state["tasks"] = [
                 t
@@ -2983,6 +2993,7 @@ class ProjectTaskListWidget(QWidget):
         self.command_parser = command_parser
         self.ai_engine = ai_engine
         self._project_id: Optional[str] = None
+        self._skip_next_refresh = False
 
         self._build_ui()
         self.refresh()
@@ -5270,14 +5281,14 @@ class HubWindow(QMainWindow):
         if page is self.page_home:
             self._animate_home_cascade()
         elif page is self.page_today:
-            self.page_today.refresh()
+            self.page_today.refresh(animate=True)
         elif page is self.page_week:
-            self.page_week.refresh()
+            self.page_week.refresh(animate=True)
         elif page is self.page_scheduled:
             self._on_calendar_date_changed()
             self.calendar.update()
         elif page is self.page_someday:
-            self.page_someday.refresh()
+            self.page_someday.refresh(animate=True)
         elif page is self.page_journal:
             self.page_journal.refresh()
             # Refresh home insights in case journal changed
@@ -6644,6 +6655,16 @@ class HubWindow(QMainWindow):
     def _on_data_changed(self) -> None:
         """Refresh the currently visible page when data changes."""
         current = self.stack.currentWidget()
+        
+        # Performance optimization: Skip refresh if the page handled the update internally (e.g. drag & drop)
+        if hasattr(current, "_skip_next_refresh") and current._skip_next_refresh:
+            current._skip_next_refresh = False
+            return
+        # Check project task widget inside the project page
+        if current is self.page_projects and hasattr(self.project_task_widget, "_skip_next_refresh") and self.project_task_widget._skip_next_refresh:
+            self.project_task_widget._skip_next_refresh = False
+            return
+            
         if current is self.page_today:
             self.page_today.refresh()
         elif current is self.page_week:

@@ -91,7 +91,11 @@ class WidgetWindow(QWidget):
         save_callback: Callable[[], None],
         hub_instance: Optional[QWidget],
     ) -> None:
-        super().__init__(flags=Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        settings = state.get("settings", {})
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        if settings.get("widgetAlwaysOnTop", True):
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        super().__init__(flags=flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.state = state
         self.paths = paths
@@ -106,7 +110,6 @@ class WidgetWindow(QWidget):
             self.command_parser = None
 
         # collapse state
-        settings = self.state.get("settings", {})
         self._docked = settings.get("widgetDocked", True)
         self._docked_side = settings.get("widgetDockSide", "right")
         self._expanded = not settings.get("widgetCollapsed", False)
@@ -522,10 +525,15 @@ class WidgetWindow(QWidget):
             if item.data(Qt.ItemDataRole.UserRole) == task_id:
                 row = self.tasks_list.itemWidget(item)
                 if row:
-                    AnimationManager.slide_and_fade_out(row, on_finished=lambda: self._finalize_toggle(task_id))
+                    AnimationManager.slide_and_fade_out(row, on_finished=lambda i=item: self._finalize_toggle(task_id, i))
                 break
-
-    def _finalize_toggle(self, task_id: str):
+            
+    def _finalize_toggle(self, task_id: str, item: QListWidgetItem):
+        # Local cleanup to reduce visual stutter
+        row_idx = self.tasks_list.row(item)
+        if row_idx >= 0:
+            self.tasks_list.takeItem(row_idx)
+            
         toggle_task_completed(self.state, task_id)
         self._save_callback()
         self._refresh_tasks()
@@ -547,6 +555,10 @@ class WidgetWindow(QWidget):
             if not task: return
 
             act_today = menu.addAction("Move to Today")
+            act_top = menu.addAction("Always on Top")
+            act_top.setCheckable(True)
+            act_top.setChecked(self.state.get("settings", {}).get("widgetAlwaysOnTop", True))
+            
             act_imp = menu.addAction("Unmark Important" if task.get("important") else "Mark Important")
             menu.addSeparator()
             act_del = menu.addAction("Delete")
@@ -558,6 +570,8 @@ class WidgetWindow(QWidget):
                 task["updatedAt"] = now_iso()
                 self._save_callback()
                 self._refresh_tasks()
+            elif action == act_top:
+                self._toggle_always_on_top()
             elif action == act_imp:
                 task["important"] = not task.get("important")
                 task["updatedAt"] = now_iso()
@@ -571,6 +585,9 @@ class WidgetWindow(QWidget):
             # Background context menu
             act_add = menu.addAction("Quick Add")
             act_hub = menu.addAction("Open Hub")
+            act_top = menu.addAction("Always on Top")
+            act_top.setCheckable(True)
+            act_top.setChecked(self.state.get("settings", {}).get("widgetAlwaysOnTop", True))
             
             action = menu.exec(pos)
             
@@ -578,6 +595,19 @@ class WidgetWindow(QWidget):
                 self._toggle_quick_add()
             elif action == act_hub:
                 self._open_hub_page("home")
+            elif action == act_top:
+                self._toggle_always_on_top()
+
+    def _toggle_always_on_top(self):
+        s = self.state.setdefault("settings", {})
+        current = s.get("widgetAlwaysOnTop", True)
+        new_val = not current
+        s["widgetAlwaysOnTop"] = new_val
+        self._save_callback()
+        
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, new_val)
+        # Necessary to re-show the window after flag changes to apply them
+        self.show()
 
     # ────────────────────────────────────────────────────────────────────
 
@@ -810,6 +840,5 @@ if __name__ == "__main__":
 # TODO / IDEAS LIST
 # ═══════════════════════════════════════════════════════════════════════════
 # [ ] Mini 'Zen Timer' display on the collapsed bump.
-# [ ] Add 'Always on Top' toggle to the context menu.
-# [ ] Snap-to-corners logic (not just sides).
-# [ ] Opacity slider for the widget background.
+# [x] Add 'Always on Top' toggle to the context menu.
+# [ ] Snap-to-corners logic (not just sides).r
