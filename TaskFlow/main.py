@@ -27,7 +27,7 @@ from PyQt6.QtCore import QTimer, QRect, QObject, pyqtSignal, QThread
 from ui.hub import HubWindow, SplashWindow
 
 # Import Data Model
-from core.model import get_data_paths, load_state, save_state, rollover_tasks
+from core.model import get_data_paths, load_state, save_state, rollover_tasks, archive_old_tasks
 
 class AILoader(QObject):
     """
@@ -107,6 +107,7 @@ def main():
     
     # 3. Daily Maintenance
     rollover_tasks(state)
+    archive_old_tasks(paths, state)
     save_state(paths, state)
     
     # 4. Splash Screen

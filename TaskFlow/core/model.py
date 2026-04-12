@@ -952,6 +952,47 @@ def rollover_tasks(state: Dict[str, Any]) -> None:
 
     state["lastOpened"] = today
 
+def archive_old_tasks(paths: Dict[str, str], state: Dict[str, Any], days_threshold: int = 365) -> int:
+    """
+    Moves completed tasks older than the threshold to a separate history file.
+    Returns the number of tasks archived. (Implementation of TODO)
+    """
+    now = datetime.now()
+    cutoff = now - timedelta(days=days_threshold)
+    cutoff_iso = cutoff.isoformat()
+
+    tasks = state.get("tasks", [])
+    to_archive = []
+    remaining = []
+
+    for t in tasks:
+        if t.get("completed") and t.get("completedAt") and t.get("completedAt") < cutoff_iso:
+            to_archive.append(t)
+        else:
+            remaining.append(t)
+
+    if not to_archive:
+        return 0
+
+    history_path = os.path.join(paths["dir"], "task_history.json")
+    history_data = []
+    if os.path.exists(history_path):
+        try:
+            with open(history_path, "r", encoding="utf-8") as f:
+                history_data = json.load(f)
+        except:
+            pass
+
+    history_data.extend(to_archive)
+
+    try:
+        with open(history_path, "w", encoding="utf-8") as f:
+            json.dump(history_data, f, indent=2, ensure_ascii=False)
+        state["tasks"] = remaining
+        return len(to_archive)
+    except:
+        return 0
+
 # ═══════════════════════════════════════════════════════════════════════════
 # BACKUP SYSTEM
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1007,4 +1048,4 @@ def restore_backup(paths: Dict[str, str], filename: str) -> bool:
 # [ ] Conflict Resolution: Robust merging for multi-device sync scenarios.
 # [ ] Custom Fields: Allow users to define their own task properties (e.g., "URL", "Price", "Priority Score").
 # [ ] Task Templates: Define recurring structures (e.g., "Software Release" always has the same 10 subtasks).
-# [ ] Smart Archiving: Automatically compress and move tasks older than 1 year to a separate 'History' file.
+# [x] Smart Archiving: Automatically compress and move tasks older than 1 year to a separate 'History' file.

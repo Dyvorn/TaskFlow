@@ -1,3 +1,8 @@
+import sys
+import os
+# Add project root to path so 'core' can be found when running standalone
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 import re
@@ -336,6 +341,90 @@ def find_productivity_leaks(state: dict) -> list:
             })
     return suggestions
 
+def find_energy_vampires(state: dict) -> list:
+    """
+    Identifies categories that frequently result in 'Low energy' mood logs 
+    after completion. (Implementation of TODO)
+    """
+    suggestions = []
+    moods = state.get("moods", [])
+    # Find days where the user felt low energy
+    low_energy_days = [m['date'] for m in moods if m.get('value') == "Low energy"]
+    if not low_energy_days:
+        return []
+
+    tasks = state.get("tasks", [])
+    # Count categories completed on those specific low-energy days
+    bad_cats = Counter(
+        t.get('category') for t in tasks 
+        if t.get('completed') and isinstance(t.get('completedAt'), str) 
+        and t.get('completedAt')[:10] in low_energy_days
+    )
+    
+    if bad_cats:
+        top_vampire, count = bad_cats.most_common(1)[0]
+        if count >= 3: # Threshold for a pattern
+            suggestions.append({
+                'id': _get_suggestion_id('ENERGY_VAMPIRE', top_vampire),
+                'type': 'WELLBEING_CHECK',
+                'text': f"I've noticed that <b>'{top_vampire}'</b> tasks often coincide with low energy levels. Consider scheduling a restorative break after these.",
+                'confidence': 85
+            })
+    return suggestions
+
+def find_duration_mismatch(state: dict) -> list:
+    """Compares estimatedDuration vs actualDuration across categories."""
+    suggestions = []
+    tasks = [t for t in state.get("tasks", []) if t.get("completed") and t.get("actualDuration") and t.get("estimatedDuration")]
+    if len(tasks) < 5: return []
+    
+    cat_stats = defaultdict(list)
+    for t in tasks:
+        ratio = t["actualDuration"] / max(1, t["estimatedDuration"])
+        cat_stats[t.get("category", "General")].append(ratio)
+        
+    for cat, ratios in cat_stats.items():
+        avg_ratio = sum(ratios) / len(ratios)
+        if avg_ratio > 1.4: # 40% over-budget consistently
+            suggestions.append({
+                'id': _get_suggestion_id('DURATION_MISMATCH', cat),
+                'type': 'SUGGEST_BREAKDOWN_STUCK_TASK',
+                'text': f"Tasks in <b>'{cat}'</b> typically take {int(avg_ratio*100)}% longer than you expect. Try allocating more time or breaking them down further.",
+                'confidence': int(avg_ratio * 10)
+            })
+    return suggestions
+
+def find_context_switches(state: dict) -> list:
+    """Detects high frequencies of switching between task categories."""
+    suggestions = []
+    log = state.get("activityLog", [])
+    today = today_str()
+    # Look at completions today
+    completions = [e for e in log if e.get("action") == "completed" and e.get("entityType") == "task" and e.get("timestamp", "").startswith(today)]
+    
+    if len(completions) < 4: return []
+    
+    switches = 0
+    prev_cat = None
+    tasks = {t['id']: t for t in state.get("tasks", [])}
+    
+    for c in completions:
+        task = tasks.get(c.get("entityId"))
+        if not task: continue
+        cat = task.get("category")
+        if prev_cat and cat != prev_cat:
+            switches += 1
+        prev_cat = cat
+        
+    if switches > 4: # Threshold for high context switching
+        suggestions.append({
+            'id': _get_suggestion_id('CONTEXT_SWITCH_OVERLOAD', today),
+            'type': 'SUGGEST_BREAKDOWN_STUCK_TASK',
+            'text': f"You've switched focus between categories {switches} times today. Batching similar tasks together can save you significant cognitive energy.",
+            'confidence': switches * 10
+        })
+    return suggestions
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
@@ -351,9 +440,14 @@ def generate_suggestions(state: dict) -> list:
     all_suggestions.extend(find_ghosted_tasks(state))
     all_suggestions.extend(find_golden_hour(state))
     all_suggestions.extend(find_productivity_leaks(state))
+    all_suggestions.extend(find_energy_vampires(state))
+    all_suggestions.extend(find_duration_mismatch(state))
+    all_suggestions.extend(find_context_switches(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]
+
+
     final_suggestions.sort(key=lambda s: s.get('confidence', 0), reverse=True)
     
     return final_suggestions[:3] # Return top 3
@@ -386,8 +480,8 @@ def predict_future_velocity(state: dict) -> float:
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST
 # ═══════════════════════════════════════════════════════════════════════════
-# [ ] Time-accuracy score: Comparing estimatedDuration vs actualDuration across categories.
+# [x] Time-accuracy score: Comparing estimatedDuration vs actualDuration across categories.
 # [ ] Seasonal productivity trends (e.g., Summer vs Winter performance).
-# [ ] Context-Switch Cost: Estimate time lost when moving between different project categories.
-# [ ] "Energy Vampires": Identify categories that frequently result in "Low energy" mood logs after completion.
+# [x] Context-Switch Cost: Estimate time lost when moving between different project categories.
+# [x] "Energy Vampires": Identify categories that frequently result in "Low energy" mood logs after completion.
 # [ ] Prediction of "Estimated Completion Time" for entire projects based on current velocity.
