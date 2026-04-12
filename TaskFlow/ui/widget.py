@@ -295,6 +295,11 @@ class WidgetWindow(QWidget):
         self.bump_count_label.setStyleSheet(f"color: {GOLD}; font-size: 14px; font-weight: 800;")
         bump_layout.addWidget(self.bump_count_label)
         
+        self.bump_timer_label = QLabel("")
+        self.bump_timer_label.setStyleSheet(f"color: {GOLD}; font-size: 10px; font-weight: bold;")
+        self.bump_timer_label.hide()
+        bump_layout.addWidget(self.bump_timer_label)
+        
         bump_layout.addWidget(QLabel("•"), 0, Qt.AlignmentFlag.AlignCenter)
 
         # header row
@@ -364,6 +369,17 @@ class WidgetWindow(QWidget):
         self._highlight_overlay.setGraphicsEffect(self._highlight_effect)
 
         outer.addWidget(self.card)
+
+    def update_zen_timer(self, time_str: Optional[str]):
+        """Updates the mini timer display on the collapsed bump."""
+        if not hasattr(self, "bump_timer_label"): return
+        if time_str:
+            self.bump_timer_label.setText(time_str)
+            self.bump_timer_label.show()
+            self.bump_count_label.hide()
+        else:
+            self.bump_timer_label.hide()
+            self.bump_count_label.show()
 
     # ────────────────────────────────────────────────────────────────────
     # Actions
@@ -765,6 +781,14 @@ class WidgetWindow(QWidget):
                 side = "right"
                 x = self._expanded_anchor_x("right", geo)
             
+            # Check top/bottom docking (snap-to-corners)
+            dist_top = abs(y - geo.top())
+            dist_bottom = abs((y + WIDGET_HEIGHT - 1) - geo.bottom())
+            if dist_top <= SNAP_THRESHOLD:
+                y = geo.top()
+            elif dist_bottom <= SNAP_THRESHOLD:
+                y = geo.bottom() - WIDGET_HEIGHT + 1
+
             # Always clamp Y
             y = self._clamp_y(y, geo)
             
@@ -839,6 +863,6 @@ if __name__ == "__main__":
 # ═══════════════════════════════════════════════════════════════════════════
 # TODO / IDEAS LIST
 # ═══════════════════════════════════════════════════════════════════════════
-# [ ] Mini 'Zen Timer' display on the collapsed bump.
+# [x] Mini 'Zen Timer' display on the collapsed bump.
 # [x] Add 'Always on Top' toggle to the context menu.
-# [ ] Snap-to-corners logic (not just sides).r
+# [x] Snap-to-corners logic (not just sides).

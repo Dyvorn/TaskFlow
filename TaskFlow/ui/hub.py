@@ -2641,6 +2641,15 @@ class TaskListWidget(QWidget):
             if item:
                 tid = item.data(Qt.ItemDataRole.UserRole)
                 self._on_delete_task(tid)
+        elif event.key() == Qt.Key.Key_J:
+            self.tasks_list.setCurrentRow(min(self.tasks_list.count() - 1, self.tasks_list.currentRow() + 1))
+        elif event.key() == Qt.Key.Key_K:
+            self.tasks_list.setCurrentRow(max(0, self.tasks_list.currentRow() - 1))
+        elif event.key() == Qt.Key.Key_Space:
+            item = self.tasks_list.currentItem()
+            if item:
+                tid = item.data(Qt.ItemDataRole.UserRole)
+                self._on_toggle_task(tid)
         super().keyPressEvent(event)
 
     def _show_section_menu(self) -> None:
@@ -5733,6 +5742,10 @@ class HubWindow(QMainWindow):
             if winsound:
                 try: winsound.MessageBeep(winsound.MB_ICONASTERISK)
                 except: pass
+                
+            # Clear widget bump timer
+            if self.widget_window:
+                self.widget_window.update_zen_timer(None)
             
             # Notify if minimized or in background
             if self.isMinimized() or not self.isActiveWindow():
@@ -5955,6 +5968,9 @@ class HubWindow(QMainWindow):
             self._zen_timer.stop()
         self.nav_scroll_area.setVisible(True)
         self.btn_focus.setChecked(False)
+        # Clear widget timer on exit
+        if self.widget_window:
+            self.widget_window.update_zen_timer(None)
         target_page = self._pre_zen_page or self.page_home
         self._switch_page(target_page)
 

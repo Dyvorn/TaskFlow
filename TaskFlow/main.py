@@ -2,6 +2,7 @@ import os
 import sys
 import time
 from pathlib import Path
+import argparse
 
 # --- PyTorch DLL Fix ---
 # This is a workaround for a common PyTorch issue on Windows.
@@ -51,6 +52,28 @@ class AILoader(QObject):
 
 def main():
     # 1. Setup Application
+    parser = argparse.ArgumentParser(description="TaskFlow Productivity Hub")
+    parser.add_argument("--headless", action="store_true", help="Run without GUI")
+    parser.add_argument("--list", action="store_true", help="List active tasks")
+    parser.add_argument("--add", type=str, help="Quickly add a task via CLI")
+    args, unknown = parser.parse_known_args()
+
+    if args.headless or args.list or args.add:
+        paths = get_data_paths()
+        state = load_state(paths)
+        if args.add:
+            from core.model import add_task
+            add_task(state, args.add)
+            save_state(paths, state)
+            print(f"✔ Task added: {args.add}")
+        if args.list:
+            print("\n--- Active Tasks ---")
+            for t in state.get("tasks", []):
+                if not t.get("completed"):
+                    status = "!" if t.get("important") else " "
+                    print(f"[{status}] {t.get('text')} ({t.get('section')})")
+        return
+
     app = QApplication(sys.argv)
     app.setApplicationName("TaskFlow")
 
@@ -222,7 +245,7 @@ if __name__ == "__main__":
 # TODO / MAINTENANCE LIST
 # ═══════════════════════════════════════════════════════════════════════════
 # [ ] Environment Setup Script: Automate the PyTorch DLL fix and dependency installation for new users.
-# [ ] CLI Interface: Add a `--headless` mode to allow task management via command line.
+# [x] CLI Interface: Add a `--headless` mode to allow task management via command line.
 # [ ] Plugin System: Allow third-party extensions to add new pages or AI features.
 # [ ] Telemetry (Opt-in): Anonymized usage data to help prioritize feature development.
 # [ ] Hardware Acceleration: Enable GPU support for local LLM inference via ONNX or Vulkan.

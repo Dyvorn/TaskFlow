@@ -452,6 +452,31 @@ def generate_suggestions(state: dict) -> list:
     
     return final_suggestions[:3] # Return top 3
 
+def predict_project_completion(state: dict, project_id: str) -> dict:
+    """
+    Estimates completion date for a project based on recent velocity.
+    (Implementation of TODO)
+    """
+    project_tasks = [t for t in state.get("tasks", []) if t.get("projectId") == project_id]
+    if not project_tasks:
+        return {"ready": False, "reason": "No tasks in project"}
+
+    incomplete = [t for t in project_tasks if not t.get("completed")]
+    if not incomplete:
+        return {"ready": True, "date": "Finished"}
+
+    velocity = predict_future_velocity(state)
+    if velocity <= 0.1: # Threshold to avoid division by near-zero
+        return {"ready": False, "reason": "Not enough recent data to predict"}
+
+    days_needed = len(incomplete) / velocity
+    est_date = datetime.now() + timedelta(days=days_needed)
+    return {
+        "ready": True,
+        "date": est_date.strftime("%Y-%m-%d"),
+        "days": int(days_needed)
+    }
+
 def predict_future_velocity(state: dict) -> float:
     """
     Predicts expected task completion count for tomorrow based on 
@@ -484,4 +509,4 @@ def predict_future_velocity(state: dict) -> float:
 # [ ] Seasonal productivity trends (e.g., Summer vs Winter performance).
 # [x] Context-Switch Cost: Estimate time lost when moving between different project categories.
 # [x] "Energy Vampires": Identify categories that frequently result in "Low energy" mood logs after completion.
-# [ ] Prediction of "Estimated Completion Time" for entire projects based on current velocity.
+# [x] Prediction of "Estimated Completion Time" for entire projects based on current velocity.

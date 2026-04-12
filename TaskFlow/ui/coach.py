@@ -1,9 +1,11 @@
+import random
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QInputDialog, QSizePolicy, QLineEdit, QComboBox
+    QFrame, QListWidget, QListWidgetItem, QMessageBox, QProgressBar, QInputDialog, QSizePolicy, QLineEdit, QComboBox,
+    QSpacerItem
 )
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QCursor
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QPointF, QRectF
+from PyQt6.QtGui import QCursor, QPainter, QColor, QPen,  QFont
 
 # Theme constants (matching hub.py)
 TEXT_WHITE = "#ffffff"
@@ -159,6 +161,125 @@ class SuggestionWidget(QFrame):
         btn_layout.addWidget(btn_dismiss)
         layout.addLayout(btn_layout)
 
+class BrainVisualizer(QWidget):
+    """
+    A structural visualization of the TaskBrain architecture.
+    Shows input features, hidden layers, and multi-head outputs.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(220)
+        self.layers = [] # List of lists of nodes
+        self._is_thinking = False
+        self._pulse_offset = 0.0
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_nodes)
+        self.timer.start(30) # ~33 FPS
+
+    def set_thinking(self, thinking: bool):
+        self._is_thinking = thinking
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.init_nodes()
+
+    def init_nodes(self):
+        self.layers = []
+        w, h = self.width(), self.height()
+        if w < 100 or h < 100: return
+
+        # Define Layer Structure: [Input, Hidden, Output]
+        # Input: 1 Text, 3 Context features
+        # Hidden: 10 neurons
+        # Output: 3 heads (Cat, Comp, Dur)
+        layer_counts = [4, 10, 3]
+        layer_labels = [
+            ["Text", "Time", "Day", "Mood"],
+            ["" for _ in range(10)],
+            ["Category", "Complexity", "Duration"]
+        ]
+        
+        margin = 40
+        layer_x_dist = (w - (2 * margin)) / (len(layer_counts) - 1)
+
+        for i, count in enumerate(layer_counts):
+            layer_nodes = []
+            x = margin + (i * layer_x_dist)
+            
+            # Vertical spacing
+            v_space = (h - (2 * margin)) / (count + 1)
+            for j in range(count):
+                y = margin + ((j + 1) * v_space)
+                layer_nodes.append({
+                    'pos': QPointF(x, y),
+                    'size': 6 if i != 1 else 4,
+                    'label': layer_labels[i][j]
+                })
+            self.layers.append(layer_nodes)
+
+    def update_nodes(self):
+        if self._is_thinking:
+            self._pulse_offset += 0.08
+            if self._pulse_offset > 1.0:
+                self._pulse_offset = 0.0
+        else:
+            self._pulse_offset = 0.0
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        if not self.layers: return
+
+        # 1. Draw Synapses (Connections)
+        for i in range(len(self.layers) - 1):
+            curr_layer = self.layers[i]
+            next_layer = self.layers[i + 1]
+            
+            for n1 in curr_layer:
+                for n2 in next_layer:
+                    # Base line
+                    color = QColor(GOLD if not self._is_thinking else "#00f2fe")
+                    alpha = 40 if not self._is_thinking else 70
+                    color.setAlpha(alpha)
+                    painter.setPen(QPen(color, 1))
+                    painter.drawLine(n1['pos'], n2['pos'])
+
+                    # Signal Pulse (when thinking)
+                    if self._is_thinking:
+                        p1 = n1['pos']
+                        p2 = n2['pos']
+                        # Interpolate position
+                        pulse_pos = p1 + (p2 - p1) * self._pulse_offset
+                        painter.setPen(QPen(QColor("#00f2fe"), 2))
+                        painter.drawPoint(pulse_pos)
+
+        # 2. Draw Neurons (Nodes)
+        font = QFont("Segoe UI", 8)
+        painter.setFont(font)
+
+        for i, layer in enumerate(self.layers):
+            for node in layer:
+                color = QColor(GOLD if not self._is_thinking else "#00f2fe")
+                painter.setBrush(color)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(node['pos'], node['size'], node['size'])
+                
+                # Label for Input/Output layers
+                if node['label']:
+                    painter.setPen(QColor(TEXT_GRAY))
+                    label_rect = QRectF(node['pos'].x() - 40, node['pos'].y() + 8, 80, 20)
+                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, node['label'])
+
+        # Layer Descriptors
+        painter.setPen(QColor(TEXT_GRAY))
+        painter.setOpacity(0.5)
+        painter.drawText(int(self.layers[0][0]['pos'].x() - 20), 25, "INPUT")
+        painter.drawText(int(self.layers[1][0]['pos'].x() - 20), 25, "HIDDEN")
+        painter.drawText(int(self.layers[2][0]['pos'].x() - 20), 25, "OUTPUT")
+
 
 class CoachWidget(QWidget):
     """
@@ -175,6 +296,8 @@ class CoachWidget(QWidget):
         self.ai_engine = ai_engine
         self._build_ui()
         self.refresh()
+        if self.ai_engine:
+            self.ai_engine.status_changed.connect(self._on_ai_status_changed)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -185,6 +308,10 @@ class CoachWidget(QWidget):
         header = QLabel("AI Coach 🤖")
         header.setStyleSheet(f"color: {GOLD}; font-size: 24px; font-weight: bold;")
         layout.addWidget(header)
+
+        # Neural Visualizer
+        self.visualizer = BrainVisualizer()
+        layout.addWidget(self.visualizer)
 
         # --- Stats Card ---
         stats_card = QFrame()
@@ -290,6 +417,10 @@ class CoachWidget(QWidget):
         layout.addWidget(QLabel("AI Recommendations"))
         self.recommendations_list = QListWidget()
         layout.addWidget(self.recommendations_list, 1)
+
+    def _on_ai_status_changed(self, status: str):
+        is_busy = status != "Ready"
+        self.visualizer.set_thinking(is_busy)
 
     def refresh(self, state: dict = None):
         if not self.ai_engine:
@@ -487,6 +618,8 @@ class CoachWidget(QWidget):
 # ═══════════════════════════════════════════════════════════════════════════
 # [ ] Add 'Explain' button for AI categories (LIME/SHAP style text highlights).
 # [ ] Visualize the Neural Network weights as a heat-map background.
-# [ ] Add a 'Personality' selector for the AI Coach (Encouraging, Stoic, Direct).
+# [ ] Add 'Personality' selector for the AI Coach (Encouraging, Stoic, Direct).
 # [ ] Implement 'Batch Review' for long queues.
 # [ ] Allow user to 'Ignore' certain words from being learned.
+# [x] AI Brain Visualization: A 3D or 2D nodes-and-lines graph representing the Neural Network's current state.
+# [ ] Progress Timeline: Visualize how the AI's accuracy has improved over weeks of training.
