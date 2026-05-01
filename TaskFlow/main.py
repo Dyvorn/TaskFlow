@@ -3,6 +3,7 @@ import sys
 import time
 from pathlib import Path
 import argparse
+import importlib.util
 
 # --- PyTorch DLL Fix ---
 # This is a workaround for a common PyTorch issue on Windows.
@@ -42,6 +43,8 @@ class AILoader(QObject):
         self.state = state
 
     def run(self):
+        """Load plugins then AI engine."""
+        self._load_plugins()
         """Load the AI engine."""
         try:
             ai_engine = AIEngine(user_id="user_123", state=self.state)
@@ -49,6 +52,22 @@ class AILoader(QObject):
         except Exception as e:
             print(f"DEBUG: AI engine error: {e}")
             self.error.emit()
+
+    def _load_plugins(self):
+        """Stub for dynamic plugin loading."""
+        plugin_dir = Path(__file__).parent / "plugins"
+        if not plugin_dir.exists(): return
+        
+        for p in plugin_dir.glob("*.py"):
+            try:
+                spec = importlib.util.spec_from_file_location(p.stem, p)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                if hasattr(module, "initialize"):
+                    module.initialize(self.state)
+                print(f"Plugin loaded: {p.name}")
+            except Exception as e:
+                print(f"Failed to load plugin {p.name}: {e}")
 
 def main():
     # 1. Setup Application

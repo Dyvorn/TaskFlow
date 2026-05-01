@@ -144,6 +144,7 @@ from core.model import (
     GOLD,
     PRESSED_BG,
     SECTIONS,
+    THEMES,
     MOTIVATIONAL_QUOTES,
     MODE_RECOVERY,
     JOURNAL_PROMPTS,
@@ -4004,17 +4005,21 @@ class HubWindow(QMainWindow):
     def _apply_theme_colors(self) -> None:
         """Update application-wide styling based on current theme settings and window focus."""
         settings = self.state.get("settings", {})
-        is_midnight = settings.get("midnightTheme", False)
+        theme_name = settings.get("currentTheme", "Default")
+        if settings.get("midnightTheme", False): # Migration check for old builds
+            theme_name = "Midnight"
+        
+        theme = THEMES.get(theme_name, THEMES["Default"])
         is_active = self.isActiveWindow()
         
         # Glassmorphism 2.0: Dynamic backdrop intensity based on focus
         glass_alpha = 200 if is_active else 235
         
         # Theme Palette
-        bg_color = "#000000" if is_midnight else DARK_BG
-        glass_bg_color = f"rgba(15, 15, 15, {glass_alpha})" if is_midnight else f"rgba(25, 25, 35, {glass_alpha})"
-        accent_color = "#00f2fe" if is_midnight else GOLD # Neon Cyan for Midnight
-        accent_glow = f"rgba(0, 242, 254, 0.3)" if is_midnight else "rgba(255, 215, 0, 0.2)"
+        bg_color = theme["bg"]
+        glass_bg_color = theme["glass"].replace("200", str(glass_alpha))
+        accent_color = theme["accent"]
+        accent_glow = f"{accent_color}33" # 20% opacity hex
 
         self.setStyleSheet(f"""
             QMainWindow {{ background-color: {bg_color}; }}
@@ -4062,8 +4067,11 @@ class HubWindow(QMainWindow):
                 background-color: rgba(255, 215, 0, 0.1); border: 1px solid rgba(255, 215, 0, 0.2); color: {TEXT_WHITE};
             }}
             
-            QScrollBar:vertical {{ border: none; background: transparent; width: 6px; margin: 0px; }}
-            QScrollBar::handle:vertical {{ background: rgba(255, 255, 255, 0.1); min-height: 20px; border-radius: 3px; }}
+            QScrollBar:vertical {{ border: none; background: transparent; width: 4px; margin: 0px; }}
+            QScrollBar::handle:vertical {{ 
+                background: rgba(255, 255, 255, 0.05); min-height: 20px; border-radius: 2px; 
+            }}
+            QScrollBar::handle:vertical:hover {{ background: {accent_color}; }}
             
             QCheckBox::indicator:checked {{ background-color: {accent_color}; border: 1px solid {accent_color}; }}
         """)
@@ -5051,9 +5059,13 @@ class HubWindow(QMainWindow):
         self.setting_start_focus.setToolTip("Automatically hide the sidebar when the app starts for a cleaner look.")
         l_card.addWidget(self.setting_start_focus)
 
-        self.setting_midnight_theme = QCheckBox("Midnight Theme (Pure OLED Black)")
-        self.setting_midnight_theme.toggled.connect(self._on_settings_changed)
-        l_card.addWidget(self.setting_midnight_theme)
+        theme_layout = QHBoxLayout()
+        theme_layout.addWidget(QLabel("Current Theme:"))
+        self.setting_theme_combo = QComboBox()
+        self.setting_theme_combo.addItems(list(THEMES.keys()))
+        self.setting_theme_combo.currentTextChanged.connect(self._on_settings_changed)
+        theme_layout.addWidget(self.setting_theme_combo)
+        l_card.addLayout(theme_layout)
 
         # --- System Settings ---
         l_card.addSpacing(10)
@@ -5154,7 +5166,7 @@ class HubWindow(QMainWindow):
         settings["startInFocusMode"] = self.setting_start_focus.isChecked()
         settings["closeToTray"] = self.setting_close_to_tray.isChecked()
         settings["startWithWindows"] = self.setting_start_windows.isChecked()
-        settings["midnightTheme"] = self.setting_midnight_theme.isChecked()
+        settings["currentTheme"] = self.setting_theme_combo.currentText()
         
         self._set_startup_registry(settings["startWithWindows"])
         self._setup_widget()
@@ -5169,7 +5181,7 @@ class HubWindow(QMainWindow):
         self.setting_start_focus.setChecked(settings.get("startInFocusMode", False))
         self.setting_close_to_tray.setChecked(settings.get("closeToTray", True))
         self.setting_start_windows.setChecked(settings.get("startWithWindows", False))
-        self.setting_midnight_theme.setChecked(settings.get("midnightTheme", False))
+        self.setting_theme_combo.setCurrentText(settings.get("currentTheme", "Default"))
         if VOICE_AVAILABLE and hasattr(self, "setting_voice_enabled"):
             self.setting_voice_enabled.setChecked(settings.get("voiceEnabled", True))
         if hasattr(self, "setting_llm_enabled"):

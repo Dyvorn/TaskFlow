@@ -30,6 +30,26 @@ PRESSED_BG = "rgba(255, 255, 255, 0.25)"
 TEXT_WHITE = "#e0e0e0"
 TEXT_GRAY = "#a0a0a0"
 
+# Theme Definitions
+THEMES = {
+    "Midnight": {
+        "bg": "#000000",
+        "accent": "#00f2fe",
+        "glass": "rgba(15, 15, 15, 200)",
+    },
+    "Nord": {
+        "bg": "#2e3440",
+        "accent": "#88c0d0",
+        "glass": "rgba(46, 52, 64, 200)",
+    },
+    "Solarized": {
+        "bg": "#002b36",
+        "accent": "#268bd2",
+        "glass": "rgba(0, 43, 54, 200)",
+    },
+    "Default": {"bg": DARK_BG, "accent": GOLD, "glass": GLASS_BG}
+}
+
 # Sections used by the hub
 SECTIONS = ["Today", "Tomorrow", "This Week", "Someday", "Scheduled", "Archived"]
 
@@ -325,6 +345,7 @@ def default_state() -> Dict[str, Any]:
             "zenVolume": 0.5,
             "voiceEnabled": True,
             "widgetAlwaysOnTop": True,
+            "currentTheme": "Default",
         },
         "widgetCurrentProjectId": None,
     }
@@ -419,6 +440,7 @@ def validate_and_migrate_state(state: Dict[str, Any]) -> Dict[str, Any]:
         t.setdefault("xpReward", 10)
         t.setdefault("actualDuration", 0) # Tracked time in minutes
         t.setdefault("blockedBy", []) # List of task IDs that must be completed first
+        t.setdefault("customFields", {}) # For user-defined task properties
         fixed_tasks.append(t)
     state["tasks"] = fixed_tasks
 

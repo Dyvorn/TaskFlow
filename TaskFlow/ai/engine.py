@@ -489,6 +489,11 @@ class AIEngine(QObject):
         if mood in ["Low energy", "Stressed"]:
             return "Energy is low today. I recommend focusing on 1-2 small 'Quick Wins' to build momentum."
             
+        # Cognitive Load Balancing: Warn about too many hard tasks
+        hard_tasks = [t for t in incomplete if t.get("difficulty", 1) >= 4]
+        if len(hard_tasks) >= 3:
+            return f"Caution: You have {len(hard_tasks)} complex tasks planned. Consider spreading these out to avoid burnout."
+
         hard_tasks = [t for t in incomplete if t.get("difficulty", 1) >= 4]
         if hard_tasks and current_time_of_day() == "morning":
             return f"Your focus is likely high. It's a great time to tackle: '{hard_tasks[0]['text']}'."
@@ -580,12 +585,20 @@ class AIEngine(QObject):
         """
         Generates subtasks, using LLM if enabled, otherwise falling back to heuristics.
         """
+        # Personality Prefix
+        style = self.state.get("userProfile", {}).get("style", "Encouraging")
+        style_prompt = ""
+        if style == "Stoic": style_prompt = "Keep instructions brief and objective. "
+        elif style == "Direct": style_prompt = "Focus on efficiency and specific metrics. "
+        elif style == "Hype": style_prompt = "Be extremely energetic and motivating. "
+        elif style == "Encouraging": style_prompt = "Be supportive and kind. "
+
         if self.llm_pipeline:
             self.status_changed.emit("Phi-2 is reasoning...")
             print(f"Using LLM for subtask generation for: '{text}'")
             # Improved reasoning prompt for Phi-2
             prompt = (
-                f"Instruct: You are a productivity expert. Analyze the task '{text}'. "
+                f"Instruct: You are a productivity expert. {style_prompt}Analyze the task '{text}'. "
                 "First, identify the logical phases. Then, output 3 to 5 actionable, "
                 "one-line subtasks that a user can complete in under 30 minutes each.\nOutput:"
             )

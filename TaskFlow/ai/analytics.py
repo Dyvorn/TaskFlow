@@ -425,6 +425,25 @@ def find_context_switches(state: dict) -> list:
         })
     return suggestions
 
+def find_seasonal_trends(state: dict) -> list:
+    """Detects productivity shifts between months."""
+    log = state.get("activityLog", [])
+    completions = [e for e in log if e.get("action") == "completed"]
+    if len(completions) < 50: return []
+    
+    month_counts = Counter(e["timestamp"][5:7] for e in completions if "timestamp" in e)
+    curr_month = datetime.now().strftime("%m")
+    avg_comp = sum(month_counts.values()) / len(month_counts)
+    
+    if month_counts[curr_month] < avg_comp * 0.7:
+        return [{
+            'id': _get_suggestion_id('SEASONAL_DROP', curr_month),
+            'type': 'WELLBEING_CHECK',
+            'text': "Your productivity is lower than your usual average this month. Seasonal shifts can affect energy—be kind to yourself.",
+            'confidence': 60
+        }]
+    return []
+
 def generate_suggestions(state: dict) -> list:
     """The main entry point for generating all proactive AI suggestions."""
     dismissed = state.get("dismissed_suggestions", [])
@@ -443,6 +462,7 @@ def generate_suggestions(state: dict) -> list:
     all_suggestions.extend(find_energy_vampires(state))
     all_suggestions.extend(find_duration_mismatch(state))
     all_suggestions.extend(find_context_switches(state))
+    all_suggestions.extend(find_seasonal_trends(state))
     
     # Filter out dismissed suggestions and sort by confidence
     final_suggestions = [s for s in all_suggestions if s['id'] not in dismissed]

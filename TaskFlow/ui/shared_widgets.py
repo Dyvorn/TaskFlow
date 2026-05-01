@@ -220,6 +220,7 @@ class TaskRowWidget(QWidget):
         super().__init__(parent)
         self.task = task
         self.task_id = task.get("id")
+        self._is_ghost = False
         self._build_ui(show_delete_button, show_focus_button)
 
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -228,6 +229,17 @@ class TaskRowWidget(QWidget):
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.editRequested.emit(self.task_id)
+
+    def set_ghost(self, is_ghost: bool):
+        """Sets a semi-transparent 'ghost' state for processing."""
+        self._is_ghost = is_ghost
+        eff = self.graphicsEffect()
+        if not isinstance(eff, QGraphicsOpacityEffect):
+            eff = QGraphicsOpacityEffect(self)
+            self.setGraphicsEffect(eff)
+        
+        eff.setOpacity(0.4 if is_ghost else 1.0)
+        self.setEnabled(not is_ghost)
 
     def _emit_context_menu(self, pos: QPoint):
         self.contextMenuRequested.emit(pos, self.task_id)
