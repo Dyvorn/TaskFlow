@@ -13,7 +13,7 @@ A modern, AI-powered productivity workspace designed to help you plan, focus, an
 ### Key Highlights
 - **🏠 Contextual Dashboard**: A 3-column home view balancing your goals, assistant insights, and wellbeing.
 - **🧠 AI Coach**: A local neural network that learns your habits and suggests better planning.
-- **🧘 Zen Mode**: An immersive focus screen with Pomodoro logic and calming soundscapes.
+- **🧘 Zen Mode**: An immersive focus screen with Pomodoro logic.
 - **🎙️ Voice Commands**: Add tasks or log moods using natural speech.
 - **📊 Advanced Insights**: Completion rates, activity heatmaps, and productivity scoring.
 - **🔔 Intuitive Feedback**: Dynamic notification badges and sidebar pulsing to highlight AI insights.

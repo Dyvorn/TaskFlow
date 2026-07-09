@@ -1,1 +1,42 @@
-All Versions/TaskFlow_Setup_v9.0.exe
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Database / User Data
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+*.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.spec
+
+# IDEs
+.vscode/
+.vs/
+.idea/
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# AI Models / Weights
+*.pth
+*.pt
+*.onnx
+
+# Project Specific
+All Versions/
