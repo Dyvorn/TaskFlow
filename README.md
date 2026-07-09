@@ -24,8 +24,10 @@ TaskFlow/
 ├── data/                 # Database storage (taskflow.db)
 ├── assets/               # Media and image assets
 ├── _legacy_code/         # Archived code from v9.0
+├── graphify-out/         # Knowledge graph and codebase analysis data
 ├── requirements.txt      # Python dependencies
-└── README.md             # Project documentation
+├── README.md             # Project documentation
+└── LICENSE               # MIT License
 ```
 
 ## Getting Started
