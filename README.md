@@ -12,24 +12,6 @@ A modern, clean, and robust productivity workspace designed to help you organize
 
 *(Note: Advanced features like AI Coach, Voice Commands, and Zen Mode from earlier versions are currently archived in `_legacy_code/` and are planned for integration in future updates.)*
 
-## Project Structure
-
-```
-TaskFlow/
-├── src/                  # Main application source code
-│   ├── main.py           # Application entry point
-│   ├── core/             # Database connection and task logic
-│   └── ui/               # PyQt6 widgets, windows, and styles
-├── tests/                # Automated test scripts (e.g., test_db.py)
-├── data/                 # Database storage (taskflow.db)
-├── assets/               # Media and image assets
-├── _legacy_code/         # Archived code from v9.0
-├── graphify-out/         # Knowledge graph and codebase analysis data
-├── requirements.txt      # Python dependencies
-├── README.md             # Project documentation
-└── LICENSE               # MIT License
-```
-
 ## Getting Started
 
 ### Prerequisites
