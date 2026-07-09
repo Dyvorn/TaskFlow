@@ -1,42 +1,38 @@
 # TaskFlow
 
-A modern, AI-powered productivity workspace designed to help you plan, focus, and breathe. Version 10.0 introduces deep AI integration and a responsive dashboard layout.
+A modern, clean, and robust productivity workspace designed to help you organize your tasks. Version 10.0 (The Remake) focuses on a highly responsive PyQt6 dashboard and a rock-solid SQLite backend.
 
 ## Features
 
 ### Core Functionality
-- **Task Management**: Create, organize, and track your tasks with ease
-- **AI Assistant Integration**: Leverage artificial intelligence to help with task planning and optimization
-- **Widget System**: Customizable widgets for quick access to your most important information
-- **Hub Interface**: Centralized dashboard for managing all aspects of your productivity
+- **Task Management**: Create, organize, prioritize (starred), and track your tasks across different timelines (Today, Tomorrow, This Week, Someday).
+- **Modern UI**: A responsive, sleek PyQt6 interface featuring a clean sidebar navigation and contextual dashboard view.
+- **Robust Data Storage**: SQLite-powered backend with safe transaction context managers, ensuring your data is never lost.
+- **Clean Architecture**: A thoroughly refactored, modular codebase separating UI components from core business logic.
 
-### Key Highlights
-- **🏠 Contextual Dashboard**: A 3-column home view balancing your goals, assistant insights, and wellbeing.
-- **🧠 AI Coach**: A local neural network that learns your habits and suggests better planning.
-- **🧘 Zen Mode**: An immersive focus screen with Pomodoro logic.
-- **🎙️ Voice Commands**: Add tasks or log moods using natural speech.
-- **📊 Advanced Insights**: Completion rates, activity heatmaps, and productivity scoring.
-- **🔔 Intuitive Feedback**: Dynamic notification badges and sidebar pulsing to highlight AI insights.
-- Responsive design for desktop and tablet use
+*(Note: Advanced features like AI Coach, Voice Commands, and Zen Mode from earlier versions are currently archived in `_legacy_code/` and are planned for integration in future updates.)*
 
 ## Project Structure
 
 ```
 TaskFlow/
-├── TaskFlow/           # Main application source code
-├── All Versions/       # Version history and releases
-├── data/              # Data storage and configuration
-├── dist/              # Built distribution files
-├── TaskFlow.spec      # Application specification
-├── build.py           # Build script
-└── taskflow.iss       # Installer script
+├── src/                  # Main application source code
+│   ├── main.py           # Application entry point
+│   ├── core/             # Database connection and task logic
+│   └── ui/               # PyQt6 widgets, windows, and styles
+├── tests/                # Automated test scripts (e.g., test_db.py)
+├── data/                 # Database storage (taskflow.db)
+├── assets/               # Media and image assets
+├── _legacy_code/         # Archived code from v9.0
+├── requirements.txt      # Python dependencies
+└── README.md             # Project documentation
 ```
 
 ## Getting Started
 
 ### Prerequisites
 - Python 3.x
-- Required dependencies (see requirements in setup)
+- Git
 
 ### Installation
 
@@ -51,36 +47,19 @@ cd TaskFlow
 pip install -r requirements.txt
 ```
 
-3. Build the application:
-```bash
-python build.py
-```
-
 ### Running the Application
 
+To launch the main application interface, run:
 ```bash
-python -m TaskFlow
+python src/main.py
 ```
 
-## Development
+### Running Tests
 
-### Building from Source
-
-TaskFlow uses a custom build system. To create a new build:
-
+To verify your database connection and task logic:
 ```bash
-python build.py
+python tests/test_db.py
 ```
-
-This will generate distributable files in the `dist/` directory.
-
-### Architecture
-
-TaskFlow is built with a modular architecture:
-- **UI Layer**: Modern, responsive interface
-- **AI Layer**: Integration with AI services for intelligent task management
-- **Data Layer**: Robust data storage and management
-- **Widget System**: Pluggable widgets for extensibility
 
 ## Contributing
 
@@ -90,13 +69,10 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 
 This project is open source. See the LICENSE file for details.
 
-## Author
+## Authors
 
-**Refined** - App Developer and Creator
-
-## Status
-
-TaskFlow is currently in active development. Features and functionality may change as the project evolves.
+**Refined** - Developer and Creator
+**Craft2Fun** - Developer and Contributor
 
 ## Support
 
